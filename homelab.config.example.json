@@ -1,0 +1,32 @@
+{
+  "$schema": "./config.schema.json",
+  "hosts": [
+    {
+      "name": "unraid",
+      "host": "unraid.local",
+      "port": 2375,
+      "protocol": "http",
+      "tags": ["media", "storage"]
+    },
+    {
+      "name": "proxmox-docker",
+      "host": "192.168.1.100",
+      "port": 2375,
+      "protocol": "http",
+      "tags": ["vms"]
+    },
+    {
+      "name": "pi-cluster",
+      "host": "pi1.local",
+      "port": 2375,
+      "protocol": "http",
+      "tags": ["arm", "iot"]
+    },
+    {
+      "name": "local",
+      "host": "localhost",
+      "protocol": "http",
+      "dockerSocketPath": "/var/run/docker.sock"
+    }
+  ]
+}
