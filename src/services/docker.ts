@@ -874,3 +874,167 @@ export async function pruneDocker(
 
   return results;
 }
+
+/**
+ * Pull an image on a host
+ */
+export async function pullImage(
+  imageName: string,
+  host: HostConfig
+): Promise<{ status: string }> {
+  if (!imageName || imageName.trim() === "") {
+    throw new Error("Image name is required");
+  }
+
+  const docker = getDockerClient(host);
+
+  return new Promise((resolve, reject) => {
+    docker.pull(imageName, (err: Error | null, stream: NodeJS.ReadableStream) => {
+      if (err) {
+        reject(new Error(`Failed to pull image: ${err.message}`));
+        return;
+      }
+
+      docker.modem.followProgress(stream, (err: Error | null) => {
+        if (err) {
+          reject(new Error(`Pull failed: ${err.message}`));
+        } else {
+          resolve({ status: `Successfully pulled ${imageName}` });
+        }
+      });
+    });
+  });
+}
+
+/**
+ * Recreate a container (stop, remove, pull latest, start with same config)
+ */
+export async function recreateContainer(
+  containerId: string,
+  host: HostConfig,
+  options: { pull?: boolean } = {}
+): Promise<{ status: string; containerId: string }> {
+  const docker = getDockerClient(host);
+  const container = docker.getContainer(containerId);
+
+  // Get current container config
+  const info = await container.inspect();
+  const imageName = info.Config.Image;
+
+  // Stop container if running
+  if (info.State.Running) {
+    await container.stop();
+  }
+
+  // Remove container
+  await container.remove();
+
+  // Pull latest image if requested
+  if (options.pull !== false) {
+    await pullImage(imageName, host);
+  }
+
+  // Create new container with same config
+  const newContainer = await docker.createContainer({
+    ...info.Config,
+    HostConfig: info.HostConfig,
+    NetworkingConfig: {
+      EndpointsConfig: info.NetworkSettings.Networks
+    }
+  });
+
+  // Start new container
+  await newContainer.start();
+
+  return {
+    status: "Container recreated successfully",
+    containerId: newContainer.id
+  };
+}
+
+/**
+ * Remove an image
+ */
+export async function removeImage(
+  imageId: string,
+  host: HostConfig,
+  options: { force?: boolean } = {}
+): Promise<{ status: string }> {
+  const docker = getDockerClient(host);
+  const image = docker.getImage(imageId);
+
+  await image.remove({ force: options.force });
+
+  return { status: `Successfully removed image ${imageId}` };
+}
+
+/**
+ * Build an image from a Dockerfile (SSH-based for remote hosts)
+ */
+export async function buildImage(
+  host: HostConfig,
+  options: {
+    context: string;
+    tag: string;
+    dockerfile?: string;
+    noCache?: boolean;
+  }
+): Promise<{ status: string }> {
+  // For remote builds, we need to use SSH and docker build command
+  // dockerode's build() requires local tar stream which won't work for remote
+
+  const { context, tag, dockerfile, noCache } = options;
+
+  // Validate inputs
+  if (!/^[a-zA-Z0-9._\-/:]+$/.test(tag)) {
+    throw new Error(`Invalid image tag: ${tag}`);
+  }
+  if (!/^[a-zA-Z0-9._\-/]+$/.test(context)) {
+    throw new Error(`Invalid build context: ${context}`);
+  }
+
+  const args: string[] = ["build", "-t", tag];
+
+  if (noCache) {
+    args.push("--no-cache");
+  }
+
+  if (dockerfile) {
+    if (!/^[a-zA-Z0-9._\-/]+$/.test(dockerfile)) {
+      throw new Error(`Invalid dockerfile path: ${dockerfile}`);
+    }
+    args.push("-f", dockerfile);
+  }
+
+  args.push(context);
+
+  // Execute via SSH for remote hosts, or locally for socket connections
+  if (host.host.startsWith("/")) {
+    // Local socket - use docker directly
+    const { execFile } = await import("child_process");
+    const { promisify } = await import("util");
+    const execFileAsync = promisify(execFile);
+
+    await execFileAsync("docker", args, { timeout: 600000 }); // 10 min timeout for builds
+  } else {
+    // Remote - use SSH
+    const { validateHostForSsh, sanitizeForShell } = await import("./ssh.js");
+    const { execFile } = await import("child_process");
+    const { promisify } = await import("util");
+    const execFileAsync = promisify(execFile);
+
+    validateHostForSsh(host);
+
+    const sshArgs = [
+      "-o", "BatchMode=yes",
+      "-o", "ConnectTimeout=5",
+      "-o", "StrictHostKeyChecking=accept-new",
+      sanitizeForShell(host.name),
+      `docker ${args.join(" ")}`
+    ];
+
+    await execFileAsync("ssh", sshArgs, { timeout: 600000 });
+  }
+
+  return { status: `Successfully built image ${tag}` };
+}

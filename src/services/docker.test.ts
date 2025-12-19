@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatBytes, formatUptime, isSocketPath, dockerClients, clearDockerClients, formatImageId, checkConnection } from "./docker.js";
+import { formatBytes, formatUptime, isSocketPath, dockerClients, clearDockerClients, formatImageId, checkConnection, pullImage, recreateContainer, removeImage, buildImage } from "./docker.js";
 
 describe("formatBytes", () => {
   it("should return '0 B' for 0 bytes", () => {
@@ -154,5 +154,103 @@ describe("checkConnection", () => {
     // Verify client was removed from cache
     const cacheKey = `${hostConfig.name}-${hostConfig.host}`;
     expect(dockerClients.has(cacheKey)).toBe(false);
+  });
+});
+
+describe("pullImage", () => {
+  it("should be an async function that accepts imageName and host", () => {
+    expect(typeof pullImage).toBe("function");
+    expect(pullImage.length).toBe(2); // 2 parameters
+  });
+
+  it("should reject with error message when Docker connection fails", async () => {
+    const invalidHost = {
+      name: "invalid",
+      host: "nonexistent.local",
+      protocol: "http" as const,
+      port: 9999
+    };
+    await expect(pullImage("nginx:latest", invalidHost))
+      .rejects.toThrow(/Failed to pull image|ENOTFOUND|ECONNREFUSED/);
+  });
+
+  it("should reject with error for empty image name", async () => {
+    const invalidHost = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(pullImage("", invalidHost))
+      .rejects.toThrow();
+  });
+});
+
+describe("recreateContainer", () => {
+  it("should be an async function that accepts containerId, host, and options", () => {
+    expect(typeof recreateContainer).toBe("function");
+    expect(recreateContainer.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("should reject when container does not exist", async () => {
+    const invalidHost = {
+      name: "invalid",
+      host: "nonexistent.local",
+      protocol: "http" as const,
+      port: 9999
+    };
+    await expect(recreateContainer("nonexistent-container", invalidHost))
+      .rejects.toThrow();
+  });
+});
+
+describe("removeImage", () => {
+  it("should be an async function that accepts imageId, host, and options", () => {
+    expect(typeof removeImage).toBe("function");
+    expect(removeImage.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("should reject when image does not exist", async () => {
+    const invalidHost = {
+      name: "invalid",
+      host: "nonexistent.local",
+      protocol: "http" as const,
+      port: 9999
+    };
+    await expect(removeImage("nonexistent:image", invalidHost))
+      .rejects.toThrow();
+  });
+});
+
+describe("buildImage", () => {
+  it("should be an async function that accepts host and options", () => {
+    expect(typeof buildImage).toBe("function");
+    expect(buildImage.length).toBe(2);
+  });
+
+  it("should reject with validation error for invalid tag characters", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(buildImage(host, {
+      context: "/valid/path",
+      tag: "invalid tag with spaces"
+    })).rejects.toThrow("Invalid image tag");
+  });
+
+  it("should reject with validation error for invalid context path", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(buildImage(host, {
+      context: "path with spaces",
+      tag: "valid:tag"
+    })).rejects.toThrow("Invalid build context");
   });
 });
