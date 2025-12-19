@@ -233,3 +233,6 @@ export const HostResourcesSchema = z
   })
   .strict();
 export type HostResourcesInput = z.infer<typeof HostResourcesSchema>;
+
+// Export unified schema
+export * from "./unified.js";
