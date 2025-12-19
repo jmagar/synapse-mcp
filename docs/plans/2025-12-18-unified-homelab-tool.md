@@ -458,27 +458,103 @@ EOF
 
 Add to `src/services/docker.test.ts`:
 ```typescript
+import { pullImage, recreateContainer, removeImage, buildImage } from "./docker.js";
+
 describe("pullImage", () => {
-  it("should be a function", () => {
+  it("should be an async function that accepts imageName and host", () => {
     expect(typeof pullImage).toBe("function");
+    expect(pullImage.length).toBe(2); // 2 parameters
+  });
+
+  it("should reject with error message when Docker connection fails", async () => {
+    const invalidHost = {
+      name: "invalid",
+      host: "nonexistent.local",
+      protocol: "http" as const,
+      port: 9999
+    };
+    await expect(pullImage("nginx:latest", invalidHost))
+      .rejects.toThrow(/Failed to pull image|ENOTFOUND|ECONNREFUSED/);
+  });
+
+  it("should reject with error for empty image name", async () => {
+    const invalidHost = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(pullImage("", invalidHost))
+      .rejects.toThrow();
   });
 });
 
 describe("recreateContainer", () => {
-  it("should be a function", () => {
+  it("should be an async function that accepts containerId, host, and options", () => {
     expect(typeof recreateContainer).toBe("function");
+    expect(recreateContainer.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("should reject when container does not exist", async () => {
+    const invalidHost = {
+      name: "invalid",
+      host: "nonexistent.local",
+      protocol: "http" as const,
+      port: 9999
+    };
+    await expect(recreateContainer("nonexistent-container", invalidHost))
+      .rejects.toThrow();
   });
 });
 
 describe("removeImage", () => {
-  it("should be a function", () => {
+  it("should be an async function that accepts imageId, host, and options", () => {
     expect(typeof removeImage).toBe("function");
+    expect(removeImage.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("should reject when image does not exist", async () => {
+    const invalidHost = {
+      name: "invalid",
+      host: "nonexistent.local",
+      protocol: "http" as const,
+      port: 9999
+    };
+    await expect(removeImage("nonexistent:image", invalidHost))
+      .rejects.toThrow();
   });
 });
 
 describe("buildImage", () => {
-  it("should be a function", () => {
+  it("should be an async function that accepts host and options", () => {
     expect(typeof buildImage).toBe("function");
+    expect(buildImage.length).toBe(2);
+  });
+
+  it("should reject with validation error for invalid tag characters", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(buildImage(host, {
+      context: "/valid/path",
+      tag: "invalid tag with spaces"
+    })).rejects.toThrow("Invalid image tag");
+  });
+
+  it("should reject with validation error for invalid context path", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(buildImage(host, {
+      context: "path with spaces",
+      tag: "valid:tag"
+    })).rejects.toThrow("Invalid build context");
   });
 });
 ```
@@ -486,7 +562,7 @@ describe("buildImage", () => {
 **Step 2: Run test to verify it fails**
 
 Run: `pnpm test src/services/docker.test.ts`
-Expected: FAIL with "pullImage is not defined"
+Expected: FAIL with "pullImage is not exported" or similar import error
 
 **Step 3: Implement the new functions**
 
@@ -689,21 +765,62 @@ EOF
 
 Add to `src/services/compose.test.ts`:
 ```typescript
+import { composeBuild, composePull, composeRecreate } from "./compose.js";
+
 describe("composeBuild", () => {
-  it("should be a function", () => {
+  it("should be an async function that accepts host, project, and options", () => {
     expect(typeof composeBuild).toBe("function");
+    expect(composeBuild.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("should reject with validation error for invalid service name", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(composeBuild(host, "myproject", {
+      service: "invalid service name with spaces"
+    })).rejects.toThrow("Invalid service name");
   });
 });
 
 describe("composePull", () => {
-  it("should be a function", () => {
+  it("should be an async function that accepts host, project, and options", () => {
     expect(typeof composePull).toBe("function");
+    expect(composePull.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("should reject with validation error for invalid service name", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(composePull(host, "myproject", {
+      service: "invalid!service"
+    })).rejects.toThrow("Invalid service name");
   });
 });
 
 describe("composeRecreate", () => {
-  it("should be a function", () => {
+  it("should be an async function that accepts host, project, and options", () => {
     expect(typeof composeRecreate).toBe("function");
+    expect(composeRecreate.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("should reject with validation error for invalid service name", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(composeRecreate(host, "myproject", {
+      service: "bad@service"
+    })).rejects.toThrow("Invalid service name");
   });
 });
 ```
@@ -711,7 +828,7 @@ describe("composeRecreate", () => {
 **Step 2: Run test to verify it fails**
 
 Run: `pnpm test src/services/compose.test.ts`
-Expected: FAIL with "composeBuild is not defined"
+Expected: FAIL with "composeBuild is not exported" or similar import error
 
 **Step 3: Implement the new functions**
 
@@ -809,9 +926,84 @@ EOF
 
 **Files:**
 - Create: `src/tools/unified.ts`
+- Create: `src/tools/unified.test.ts`
 - Modify: `src/tools/index.ts` (replace all individual registrations)
 
-**Step 1: Create the unified tool handler**
+**Step 1: Write the failing tests**
+
+```typescript
+// src/tools/unified.test.ts
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+describe("registerUnifiedTool", () => {
+  let mockServer: McpServer;
+  let registeredTools: Map<string, unknown>;
+
+  beforeEach(() => {
+    registeredTools = new Map();
+    mockServer = {
+      registerTool: vi.fn((name, config, handler) => {
+        registeredTools.set(name, { config, handler });
+      })
+    } as unknown as McpServer;
+  });
+
+  it("should register a single 'homelab' tool", async () => {
+    const { registerUnifiedTool } = await import("./unified.js");
+    registerUnifiedTool(mockServer);
+
+    expect(mockServer.registerTool).toHaveBeenCalledTimes(1);
+    expect(registeredTools.has("homelab")).toBe(true);
+  });
+
+  it("should register tool with correct title and description", async () => {
+    const { registerUnifiedTool } = await import("./unified.js");
+    registerUnifiedTool(mockServer);
+
+    const tool = registeredTools.get("homelab") as { config: { title: string; description: string } };
+    expect(tool.config.title).toBe("Homelab Manager");
+    expect(tool.config.description).toContain("container");
+    expect(tool.config.description).toContain("compose");
+    expect(tool.config.description).toContain("host");
+    expect(tool.config.description).toContain("docker");
+    expect(tool.config.description).toContain("image");
+  });
+
+  it("should have a handler function", async () => {
+    const { registerUnifiedTool } = await import("./unified.js");
+    registerUnifiedTool(mockServer);
+
+    const tool = registeredTools.get("homelab") as { handler: unknown };
+    expect(typeof tool.handler).toBe("function");
+  });
+});
+
+describe("routeAction", () => {
+  it("should throw error for unknown action", async () => {
+    // This tests the internal routing logic
+    const { registerUnifiedTool } = await import("./unified.js");
+    const mockServer = {
+      registerTool: vi.fn()
+    } as unknown as McpServer;
+
+    registerUnifiedTool(mockServer);
+
+    const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
+    const result = await handler({ action: "invalid", subaction: "list" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Unknown action");
+  });
+});
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `pnpm test src/tools/unified.test.ts`
+Expected: FAIL with "Cannot find module './unified.js'"
+
+**Step 3: Create the unified tool handler**
 
 ```typescript
 // src/tools/unified.ts
@@ -961,11 +1153,16 @@ async function routeAction(params: UnifiedHomelabInput, hosts: HostConfig[]) {
 // Each handler function routes based on subaction and calls the service layer
 ```
 
-**Step 2: Implement all action handlers**
+**Step 4: Run test to verify it passes**
+
+Run: `pnpm test src/tools/unified.test.ts`
+Expected: PASS - all 4 tests should pass
+
+**Step 5: Implement all action handlers**
 
 Create individual handler functions for each action category that dispatch based on subaction. These reuse the existing service layer and formatting functions.
 
-**Step 3: Update tools/index.ts**
+**Step 6: Update tools/index.ts**
 
 Replace the entire file with:
 ```typescript
@@ -980,17 +1177,17 @@ export function registerTools(server: McpServer): void {
 }
 ```
 
-**Step 4: Run all tests**
+**Step 7: Run all tests**
 
 Run: `pnpm test`
 Expected: All tests PASS
 
-**Step 5: Build and verify**
+**Step 8: Build and verify**
 
 Run: `pnpm build`
 Expected: Build successful
 
-**Step 6: Commit**
+**Step 9: Commit**
 
 ```bash
 git add src/tools/unified.ts src/tools/index.ts
@@ -1010,26 +1207,148 @@ EOF
 
 **Files:**
 - Create: `src/formatters/index.ts`
+- Create: `src/formatters/formatters.test.ts`
 - Modify: `src/tools/unified.ts` (import formatters)
 
-**Step 1: Extract all format* functions to src/formatters/index.ts**
+**Step 1: Write tests for formatting functions BEFORE moving them**
+
+```typescript
+// src/formatters/formatters.test.ts
+import { describe, it, expect } from "vitest";
+import {
+  formatContainersMarkdown,
+  formatLogsMarkdown,
+  formatHostStatusMarkdown,
+  truncateIfNeeded
+} from "./index.js";
+
+describe("truncateIfNeeded", () => {
+  it("should return text unchanged if under limit", () => {
+    const text = "short text";
+    expect(truncateIfNeeded(text)).toBe(text);
+  });
+
+  it("should truncate text exceeding CHARACTER_LIMIT", () => {
+    const longText = "x".repeat(50000);
+    const result = truncateIfNeeded(longText);
+    expect(result.length).toBeLessThan(longText.length);
+    expect(result).toContain("truncated");
+  });
+});
+
+describe("formatContainersMarkdown", () => {
+  it("should return 'No containers found' for empty array", () => {
+    const result = formatContainersMarkdown([], 0, 0, false);
+    expect(result).toContain("No containers found");
+  });
+
+  it("should format container list with state emojis", () => {
+    const containers = [{
+      id: "abc123",
+      name: "test-container",
+      image: "nginx:latest",
+      state: "running" as const,
+      status: "Up 2 hours",
+      hostName: "tootie",
+      ports: [],
+      labels: {}
+    }];
+    const result = formatContainersMarkdown(containers, 1, 0, false);
+    expect(result).toContain("🟢");
+    expect(result).toContain("test-container");
+    expect(result).toContain("nginx:latest");
+  });
+
+  it("should show pagination info when hasMore is true", () => {
+    const containers = [{
+      id: "abc123",
+      name: "test",
+      image: "nginx",
+      state: "running" as const,
+      status: "Up",
+      hostName: "tootie",
+      ports: [],
+      labels: {}
+    }];
+    const result = formatContainersMarkdown(containers, 10, 0, true);
+    expect(result).toContain("More results available");
+  });
+});
+
+describe("formatLogsMarkdown", () => {
+  it("should return 'No logs found' for empty array", () => {
+    const result = formatLogsMarkdown([], "test", "host");
+    expect(result).toContain("No logs found");
+  });
+
+  it("should format log entries with timestamps", () => {
+    const logs = [
+      { timestamp: "2024-01-01T12:00:00Z", message: "Test log message" }
+    ];
+    const result = formatLogsMarkdown(logs, "container", "host");
+    expect(result).toContain("12:00:00");
+    expect(result).toContain("Test log message");
+  });
+});
+
+describe("formatHostStatusMarkdown", () => {
+  it("should show online status with green emoji", () => {
+    const status = [{
+      name: "tootie",
+      connected: true,
+      containerCount: 10,
+      runningCount: 8
+    }];
+    const result = formatHostStatusMarkdown(status);
+    expect(result).toContain("🟢");
+    expect(result).toContain("Online");
+    expect(result).toContain("tootie");
+  });
+
+  it("should show offline status with red emoji", () => {
+    const status = [{
+      name: "offline-host",
+      connected: false,
+      containerCount: 0,
+      runningCount: 0,
+      error: "Connection refused"
+    }];
+    const result = formatHostStatusMarkdown(status);
+    expect(result).toContain("🔴");
+    expect(result).toContain("Offline");
+  });
+});
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `pnpm test src/formatters/formatters.test.ts`
+Expected: FAIL with "Cannot find module './index.js'"
+
+**Step 3: Extract all format* functions to src/formatters/index.ts**
 
 Move all the formatting helper functions (formatContainersMarkdown, formatLogsMarkdown, etc.) from tools/index.ts to a dedicated formatters module.
 
-**Step 2: Update imports in unified.ts**
+**Step 4: Run test to verify it passes**
 
-**Step 3: Run tests**
+Run: `pnpm test src/formatters/formatters.test.ts`
+Expected: PASS - all formatter tests should pass
+
+**Step 5: Update imports in unified.ts**
+
+**Step 6: Run all tests**
 
 Run: `pnpm test`
 Expected: All tests PASS
 
-**Step 4: Commit**
+**Step 7: Commit**
 
 ```bash
-git add src/formatters/index.ts src/tools/unified.ts
+git add src/formatters/index.ts src/formatters/formatters.test.ts src/tools/unified.ts
 git commit -m "$(cat <<'EOF'
 refactor: extract formatting helpers to dedicated module
 
+Adds comprehensive tests for formatters before refactoring.
 Improves code organization and reusability.
 EOF
 )"
@@ -1041,24 +1360,94 @@ EOF
 
 **Files:**
 - Modify: `src/schemas/index.ts`
+- Modify: `src/schemas/unified.test.ts`
 
-**Step 1: Remove individual schema exports**
+**Step 1: Write tests verifying unified schema can replace legacy schemas (RED)**
 
-Keep only the unified schema exports. The old schemas are no longer needed.
+Add to `src/schemas/unified.test.ts`:
+```typescript
+describe("unified schema replaces legacy schemas", () => {
+  it("should export homelabSchema as default schema", async () => {
+    const { homelabSchema } = await import("./unified.js");
+    expect(homelabSchema).toBeDefined();
+    expect(typeof homelabSchema.parse).toBe("function");
+  });
 
-**Step 2: Run tests**
+  it("should export all subaction schemas for composition", async () => {
+    const schemas = await import("./unified.js");
+
+    // Container schemas
+    expect(schemas.containerListSchema).toBeDefined();
+    expect(schemas.containerActionSchema).toBeDefined();
+    expect(schemas.containerLogsSchema).toBeDefined();
+    expect(schemas.containerStatsSchema).toBeDefined();
+    expect(schemas.containerInspectSchema).toBeDefined();
+    expect(schemas.containerSearchSchema).toBeDefined();
+    expect(schemas.containerPullSchema).toBeDefined();
+    expect(schemas.containerRecreateSchema).toBeDefined();
+
+    // Compose schemas
+    expect(schemas.composeListSchema).toBeDefined();
+    expect(schemas.composeStatusSchema).toBeDefined();
+    expect(schemas.composeUpSchema).toBeDefined();
+    expect(schemas.composeDownSchema).toBeDefined();
+    expect(schemas.composeRestartSchema).toBeDefined();
+    expect(schemas.composeLogsSchema).toBeDefined();
+    expect(schemas.composeBuildSchema).toBeDefined();
+    expect(schemas.composeRecreateSchema).toBeDefined();
+    expect(schemas.composePullSchema).toBeDefined();
+
+    // Host schemas
+    expect(schemas.hostStatusSchema).toBeDefined();
+    expect(schemas.hostResourcesSchema).toBeDefined();
+
+    // Docker schemas
+    expect(schemas.dockerInfoSchema).toBeDefined();
+    expect(schemas.dockerDfSchema).toBeDefined();
+    expect(schemas.dockerPruneSchema).toBeDefined();
+
+    // Image schemas
+    expect(schemas.imageListSchema).toBeDefined();
+    expect(schemas.imagePullSchema).toBeDefined();
+    expect(schemas.imageBuildSchema).toBeDefined();
+    expect(schemas.imageRemoveSchema).toBeDefined();
+  });
+
+  it("should validate that unified schema index exports work", async () => {
+    // This test ensures the index.ts re-export works correctly
+    const { homelabSchema } = await import("./index.js");
+    expect(homelabSchema).toBeDefined();
+  });
+});
+```
+
+**Step 2: Run test to verify it passes (GREEN)**
+
+Run: `pnpm test src/schemas/unified.test.ts`
+Expected: PASS - confirming unified schema exports work correctly
+
+**Step 3: Remove individual schema exports from index.ts (REFACTOR)**
+
+Modify `src/schemas/index.ts` to keep only unified schema exports:
+```typescript
+// src/schemas/index.ts
+export * from "./unified.js";
+```
+
+**Step 4: Run all tests to verify nothing breaks**
 
 Run: `pnpm test`
-Expected: All tests PASS
+Expected: All tests PASS - no code depends on legacy schema exports
 
-**Step 3: Commit**
+**Step 5: Commit**
 
 ```bash
-git add src/schemas/index.ts
+git add src/schemas/index.ts src/schemas/unified.test.ts
 git commit -m "$(cat <<'EOF'
 refactor: remove legacy individual tool schemas
 
 Unified schema replaces all individual schemas.
+Tests verify all schema exports work correctly.
 EOF
 )"
 ```
@@ -1068,49 +1457,239 @@ EOF
 ## Task 7: Integration Testing
 
 **Files:**
-- No new files
+- Create: `src/tools/unified.integration.test.ts`
 
-**Step 1: Build the project**
+**Step 1: Write integration tests for the unified tool handler (RED)**
+
+Create `src/tools/unified.integration.test.ts`:
+```typescript
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerUnifiedTool } from "./unified.js";
+
+describe("unified tool integration", () => {
+  let mockServer: McpServer;
+  let toolHandler: (params: unknown) => Promise<unknown>;
+
+  beforeEach(() => {
+    const registeredTools = new Map<string, (params: unknown) => Promise<unknown>>();
+    mockServer = {
+      tool: vi.fn((name, _desc, handler) => {
+        registeredTools.set(name, handler);
+      })
+    } as unknown as McpServer;
+
+    registerUnifiedTool(mockServer);
+    toolHandler = registeredTools.get("homelab")!;
+  });
+
+  describe("container actions", () => {
+    it("should handle container list with valid params", async () => {
+      const result = await toolHandler({
+        action: "container",
+        subaction: "list",
+        state: "running"
+      });
+      expect(result).toBeDefined();
+      expect(typeof result).toBe("object");
+    });
+
+    it("should reject invalid container action", async () => {
+      await expect(toolHandler({
+        action: "container",
+        subaction: "invalid_action"
+      })).rejects.toThrow();
+    });
+
+    it("should handle container stats request", async () => {
+      const result = await toolHandler({
+        action: "container",
+        subaction: "stats"
+      });
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe("compose actions", () => {
+    it("should handle compose list with host param", async () => {
+      const result = await toolHandler({
+        action: "compose",
+        subaction: "list",
+        host: "tootie"
+      });
+      expect(result).toBeDefined();
+    });
+
+    it("should reject compose up without required project param", async () => {
+      await expect(toolHandler({
+        action: "compose",
+        subaction: "up",
+        host: "tootie"
+        // missing project param
+      })).rejects.toThrow();
+    });
+  });
+
+  describe("host actions", () => {
+    it("should handle host status request", async () => {
+      const result = await toolHandler({
+        action: "host",
+        subaction: "status"
+      });
+      expect(result).toBeDefined();
+    });
+
+    it("should handle host resources request", async () => {
+      const result = await toolHandler({
+        action: "host",
+        subaction: "resources"
+      });
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe("docker actions", () => {
+    it("should handle docker info request", async () => {
+      const result = await toolHandler({
+        action: "docker",
+        subaction: "info"
+      });
+      expect(result).toBeDefined();
+    });
+
+    it("should handle docker df request", async () => {
+      const result = await toolHandler({
+        action: "docker",
+        subaction: "df"
+      });
+      expect(result).toBeDefined();
+    });
+
+    it("should reject prune without force flag", async () => {
+      await expect(toolHandler({
+        action: "docker",
+        subaction: "prune",
+        target: "images"
+        // missing force: true
+      })).rejects.toThrow();
+    });
+  });
+
+  describe("image actions", () => {
+    it("should handle image list request", async () => {
+      const result = await toolHandler({
+        action: "image",
+        subaction: "list"
+      });
+      expect(result).toBeDefined();
+    });
+
+    it("should reject image pull without image_name", async () => {
+      await expect(toolHandler({
+        action: "image",
+        subaction: "pull"
+        // missing image_name
+      })).rejects.toThrow();
+    });
+  });
+
+  describe("response format", () => {
+    it("should return markdown by default", async () => {
+      const result = await toolHandler({
+        action: "host",
+        subaction: "status"
+      }) as { content: Array<{ type: string; text: string }> };
+
+      expect(result.content).toBeDefined();
+      expect(result.content[0].type).toBe("text");
+    });
+
+    it("should return JSON when response_format is json", async () => {
+      const result = await toolHandler({
+        action: "host",
+        subaction: "status",
+        response_format: "json"
+      }) as { content: Array<{ type: string; text: string }> };
+
+      expect(result.content).toBeDefined();
+      // JSON format should be parseable
+      expect(() => JSON.parse(result.content[0].text)).not.toThrow();
+    });
+  });
+
+  describe("schema validation", () => {
+    it("should reject unknown action", async () => {
+      await expect(toolHandler({
+        action: "unknown",
+        subaction: "list"
+      })).rejects.toThrow();
+    });
+
+    it("should reject missing action", async () => {
+      await expect(toolHandler({
+        subaction: "list"
+      })).rejects.toThrow();
+    });
+
+    it("should reject missing subaction", async () => {
+      await expect(toolHandler({
+        action: "container"
+      })).rejects.toThrow();
+    });
+  });
+});
+```
+
+**Step 2: Run tests to see failures (verify test setup)**
+
+Run: `pnpm test src/tools/unified.integration.test.ts`
+Expected: Tests run (may have some failures if services unavailable - that's OK)
+
+**Step 3: Build the project**
 
 Run: `pnpm build`
-Expected: Build successful
+Expected: Build successful with no TypeScript errors
 
-**Step 2: Run all tests**
+**Step 4: Run full test suite**
 
 Run: `pnpm test`
 Expected: All tests PASS
 
-**Step 3: Manual MCP testing**
+**Step 5: Verify test coverage report**
 
-After reconnecting the MCP server, test key operations:
-```
-homelab container list
-homelab container logs plex
-homelab compose list tootie
-homelab host resources
-homelab docker info
-homelab image list
-```
+Run: `pnpm test --coverage`
+Expected: Coverage report shows unified tool is tested
 
-**Step 4: Commit any fixes**
+**Step 6: Commit**
 
 ```bash
-git add -A
-git commit -m "fix: integration test fixes"
+git add src/tools/unified.integration.test.ts
+git commit -m "$(cat <<'EOF'
+test: add integration tests for unified homelab tool
+
+Tests cover:
+- All action/subaction combinations
+- Schema validation errors
+- Response format handling
+- Required parameter enforcement
+EOF
+)"
 ```
 
 ---
 
 ## Summary
 
-| Task | Description | Files |
-|------|-------------|-------|
-| 1 | Create unified Zod schema | `schemas/unified.ts` |
-| 2 | Add container pull/recreate services | `services/docker.ts` |
-| 3 | Add compose build/pull/recreate services | `services/compose.ts` |
-| 4 | Create unified tool handler | `tools/unified.ts` |
-| 5 | Extract formatters to module | `formatters/index.ts` |
-| 6 | Cleanup legacy schemas | `schemas/index.ts` |
-| 7 | Integration testing | - |
+| Task | Description | Files | TDD Pattern |
+|------|-------------|-------|-------------|
+| 1 | Create unified Zod schema | `schemas/unified.ts`, `schemas/unified.test.ts` | RED-GREEN-REFACTOR |
+| 2 | Add container pull/recreate services | `services/docker.ts`, `services/docker.test.ts` | RED-GREEN-REFACTOR |
+| 3 | Add compose build/pull/recreate services | `services/compose.ts`, `services/compose.test.ts` | RED-GREEN-REFACTOR |
+| 4 | Create unified tool handler | `tools/unified.ts`, `tools/unified.test.ts` | RED-GREEN-REFACTOR |
+| 5 | Extract formatters to module | `formatters/index.ts`, `formatters/formatters.test.ts` | RED-GREEN-REFACTOR |
+| 6 | Cleanup legacy schemas | `schemas/index.ts`, `schemas/unified.test.ts` | RED-GREEN-REFACTOR |
+| 7 | Integration testing | `tools/unified.integration.test.ts` | Automated tests |
 
 **Token Savings:** 15 tool schemas (~3000 tokens) → 1 unified schema (~500 tokens) = ~2500 token reduction per conversation.
+
+**TDD Compliance:** All tasks follow Red-Green-Refactor cycle with tests written before implementation.
