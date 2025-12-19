@@ -137,9 +137,38 @@ const containerListSchema = z.object({
   response_format: responseFormatSchema
 });
 
-const containerActionSchema = z.object({
+// Individual container control schemas (for proper discrimination)
+const containerStartSchema = z.object({
   action: z.literal("container"),
-  subaction: z.enum(["start", "stop", "restart", "pause", "unpause"]),
+  subaction: z.literal("start"),
+  container_id: z.string().min(1),
+  host: z.string().optional()
+});
+
+const containerStopSchema = z.object({
+  action: z.literal("container"),
+  subaction: z.literal("stop"),
+  container_id: z.string().min(1),
+  host: z.string().optional()
+});
+
+const containerRestartSchema = z.object({
+  action: z.literal("container"),
+  subaction: z.literal("restart"),
+  container_id: z.string().min(1),
+  host: z.string().optional()
+});
+
+const containerPauseSchema = z.object({
+  action: z.literal("container"),
+  subaction: z.literal("pause"),
+  container_id: z.string().min(1),
+  host: z.string().optional()
+});
+
+const containerUnpauseSchema = z.object({
+  action: z.literal("container"),
+  subaction: z.literal("unpause"),
   container_id: z.string().min(1),
   host: z.string().optional()
 });
@@ -344,48 +373,45 @@ const imageRemoveSchema = z.object({
   force: z.boolean().default(false)
 });
 
-// ===== Unified discriminated union =====
-export const UnifiedHomelabSchema = z.discriminatedUnion("action", [
-  // Container actions - need custom discrimination
-  z.discriminatedUnion("subaction", [
-    containerListSchema,
-    containerLogsSchema,
-    containerStatsSchema,
-    containerInspectSchema,
-    containerSearchSchema,
-    containerPullSchema,
-    containerRecreateSchema
-  ]).or(containerActionSchema),
+// ===== Unified schema using z.union (flat structure for proper validation) =====
+// NOTE: z.discriminatedUnion requires all variants to share the same discriminator.
+// Since we have action + subaction pairs, we use z.union with refinement for clarity.
+export const UnifiedHomelabSchema = z.union([
+  // Container actions
+  containerListSchema,
+  containerStartSchema,
+  containerStopSchema,
+  containerRestartSchema,
+  containerPauseSchema,
+  containerUnpauseSchema,
+  containerLogsSchema,
+  containerStatsSchema,
+  containerInspectSchema,
+  containerSearchSchema,
+  containerPullSchema,
+  containerRecreateSchema,
   // Compose actions
-  z.discriminatedUnion("subaction", [
-    composeListSchema,
-    composeStatusSchema,
-    composeUpSchema,
-    composeDownSchema,
-    composeRestartSchema,
-    composeLogsSchema,
-    composeBuildSchema,
-    composeRecreateSchema,
-    composePullSchema
-  ]),
+  composeListSchema,
+  composeStatusSchema,
+  composeUpSchema,
+  composeDownSchema,
+  composeRestartSchema,
+  composeLogsSchema,
+  composeBuildSchema,
+  composeRecreateSchema,
+  composePullSchema,
   // Host actions
-  z.discriminatedUnion("subaction", [
-    hostStatusSchema,
-    hostResourcesSchema
-  ]),
+  hostStatusSchema,
+  hostResourcesSchema,
   // Docker actions
-  z.discriminatedUnion("subaction", [
-    dockerInfoSchema,
-    dockerDfSchema,
-    dockerPruneSchema
-  ]),
+  dockerInfoSchema,
+  dockerDfSchema,
+  dockerPruneSchema,
   // Image actions
-  z.discriminatedUnion("subaction", [
-    imageListSchema,
-    imagePullSchema,
-    imageBuildSchema,
-    imageRemoveSchema
-  ])
+  imageListSchema,
+  imagePullSchema,
+  imageBuildSchema,
+  imageRemoveSchema
 ]);
 
 export type UnifiedHomelabInput = z.infer<typeof UnifiedHomelabSchema>;
@@ -393,7 +419,11 @@ export type UnifiedHomelabInput = z.infer<typeof UnifiedHomelabSchema>;
 // Re-export individual schemas for type narrowing
 export {
   containerListSchema,
-  containerActionSchema,
+  containerStartSchema,
+  containerStopSchema,
+  containerRestartSchema,
+  containerPauseSchema,
+  containerUnpauseSchema,
   containerLogsSchema,
   containerStatsSchema,
   containerInspectSchema,
@@ -1209,6 +1239,12 @@ EOF
 - Create: `src/formatters/index.ts`
 - Create: `src/formatters/formatters.test.ts`
 - Modify: `src/tools/unified.ts` (import formatters)
+
+**Step 0: Create formatters directory**
+
+```bash
+mkdir -p src/formatters
+```
 
 **Step 1: Write tests for formatting functions BEFORE moving them**
 
