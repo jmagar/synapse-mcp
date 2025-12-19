@@ -26,6 +26,10 @@ npm-debug.log*
 # Cache
 .cache/
 *.tsbuildinfo
+.eslintcache
+
+# Test coverage
+coverage/
 
 # Config with secrets
 homelab.config.json

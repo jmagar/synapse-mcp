@@ -105,3 +105,13 @@ export interface ComposeProject {
   status: "running" | "partial" | "stopped";
   configPath?: string;
 }
+
+// Docker image info
+export interface ImageInfo {
+  id: string;
+  tags: string[];
+  size: number;
+  created: string;
+  containers: number;
+  hostName: string;
+}

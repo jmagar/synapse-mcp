@@ -2,42 +2,37 @@ import Docker from "dockerode";
 import { readFileSync, existsSync } from "fs";
 import { homedir, hostname } from "os";
 import { join } from "path";
-import {
-  HostConfig,
-  ContainerInfo,
-  ContainerStats,
-  HostStatus,
-  LogEntry
-} from "../types.js";
-import {
-  DEFAULT_DOCKER_SOCKET,
-  API_TIMEOUT,
-  STATS_TIMEOUT,
-  ENV_HOSTS_CONFIG
-} from "../constants.js";
+import { HostConfig, ContainerInfo, ContainerStats, HostStatus, LogEntry, ImageInfo } from "../types.js";
+import { DEFAULT_DOCKER_SOCKET, API_TIMEOUT, ENV_HOSTS_CONFIG } from "../constants.js";
 
 /**
  * Check if a string looks like a Unix socket path
  */
-function isSocketPath(value: string): boolean {
-  return value.startsWith("/") && (
-    value.endsWith(".sock") ||
-    value.includes("/docker") ||
-    value.includes("/run/")
+export function isSocketPath(value: string): boolean {
+  return (
+    value.startsWith("/") &&
+    (value.endsWith(".sock") || value.includes("/docker") || value.includes("/run/"))
   );
 }
 
-// Connection cache for Docker clients
-const dockerClients = new Map<string, Docker>();
+// Connection cache for Docker clients (exported for testing and cleanup)
+export const dockerClients = new Map<string, Docker>();
+
+/**
+ * Clear all cached Docker clients (for graceful shutdown)
+ */
+export function clearDockerClients(): void {
+  dockerClients.clear();
+}
 
 /**
  * Config file search paths (in order of priority)
  */
 const CONFIG_PATHS = [
-  process.env.HOMELAB_CONFIG_FILE,                          // Explicit path
-  join(process.cwd(), "homelab.config.json"),               // Current directory
+  process.env.HOMELAB_CONFIG_FILE, // Explicit path
+  join(process.cwd(), "homelab.config.json"), // Current directory
   join(homedir(), ".config", "homelab-mcp", "config.json"), // XDG style
-  join(homedir(), ".homelab-mcp.json"),                     // Dotfile style
+  join(homedir(), ".homelab-mcp.json") // Dotfile style
 ].filter(Boolean) as string[];
 
 /**
@@ -50,10 +45,11 @@ function ensureLocalSocket(hosts: HostConfig[]): HostConfig[] {
   }
 
   // Check if any host already uses the local socket
-  const hasLocalSocket = hosts.some(h =>
-    h.dockerSocketPath === DEFAULT_DOCKER_SOCKET ||
-    h.host === DEFAULT_DOCKER_SOCKET ||
-    (h.host === "localhost" && h.dockerSocketPath)
+  const hasLocalSocket = hosts.some(
+    (h) =>
+      h.dockerSocketPath === DEFAULT_DOCKER_SOCKET ||
+      h.host === DEFAULT_DOCKER_SOCKET ||
+      (h.host === "localhost" && h.dockerSocketPath)
   );
 
   if (hasLocalSocket) {
@@ -61,7 +57,10 @@ function ensureLocalSocket(hosts: HostConfig[]): HostConfig[] {
   }
 
   // Auto-add local socket entry
-  const localName = hostname().toLowerCase().replace(/[^a-z0-9-]/g, "-") || "local";
+  const localName =
+    hostname()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-") || "local";
   console.error(`Auto-adding local Docker socket as "${localName}"`);
 
   return [
@@ -115,12 +114,14 @@ export function loadHostConfigs(): HostConfig[] {
   // 3. If still no hosts, default to local socket only
   if (hosts.length === 0) {
     console.error("No config found, using local Docker socket");
-    return [{
-      name: "local",
-      host: "localhost",
-      protocol: "http",
-      dockerSocketPath: DEFAULT_DOCKER_SOCKET
-    }];
+    return [
+      {
+        name: "local",
+        host: "localhost",
+        protocol: "http",
+        dockerSocketPath: DEFAULT_DOCKER_SOCKET
+      }
+    ];
   }
 
   // 4. Auto-add local socket if exists and not configured
@@ -133,15 +134,15 @@ export function loadHostConfigs(): HostConfig[] {
 export function getDockerClient(config: HostConfig): Docker {
   const cacheKey = `${config.name}-${config.host}`;
 
-  if (dockerClients.has(cacheKey)) {
-    return dockerClients.get(cacheKey)!;
+  const cached = dockerClients.get(cacheKey);
+  if (cached) {
+    return cached;
   }
 
   let docker: Docker;
 
   // Check for explicit socket path OR socket path in host field
-  const socketPath = config.dockerSocketPath ||
-    (isSocketPath(config.host) ? config.host : null);
+  const socketPath = config.dockerSocketPath || (isSocketPath(config.host) ? config.host : null);
 
   if (socketPath) {
     // Local socket connection
@@ -173,12 +174,12 @@ export async function findContainerHost(
     try {
       const docker = getDockerClient(host);
       const containers = await docker.listContainers({ all: true });
-      
-      const found = containers.find(c => 
-        c.Id.startsWith(containerId) || 
-        c.Names.some(n => n.replace(/^\//, "") === containerId)
+
+      const found = containers.find(
+        (c) =>
+          c.Id.startsWith(containerId) || c.Names.some((n) => n.replace(/^\//, "") === containerId)
       );
-      
+
       if (found) {
         return { host, container: found };
       }
@@ -190,78 +191,105 @@ export async function findContainerHost(
 }
 
 /**
- * List containers across all hosts with filtering
+ * List options for filtering containers
+ */
+interface ListContainersOptions {
+  state?: "all" | "running" | "stopped" | "paused";
+  nameFilter?: string;
+  imageFilter?: string;
+  labelFilter?: string;
+}
+
+/**
+ * List containers on a single host (internal helper)
+ */
+async function listContainersOnHost(
+  host: HostConfig,
+  options: ListContainersOptions
+): Promise<ContainerInfo[]> {
+  const docker = getDockerClient(host);
+  const listOptions: Docker.ContainerListOptions = {
+    all: options.state !== "running"
+  };
+
+  // Add label filter if specified
+  if (options.labelFilter) {
+    listOptions.filters = { label: [options.labelFilter] };
+  }
+
+  const containers = await docker.listContainers(listOptions);
+  const results: ContainerInfo[] = [];
+
+  for (const c of containers) {
+    const containerState = c.State?.toLowerCase() as ContainerInfo["state"];
+
+    // Apply state filter
+    if (options.state && options.state !== "all") {
+      if (options.state === "stopped" && containerState !== "exited") continue;
+      if (options.state === "paused" && containerState !== "paused") continue;
+      if (options.state === "running" && containerState !== "running") continue;
+    }
+
+    const name = c.Names[0]?.replace(/^\//, "") || c.Id.slice(0, 12);
+
+    // Apply name filter
+    if (options.nameFilter && !name.toLowerCase().includes(options.nameFilter.toLowerCase())) {
+      continue;
+    }
+
+    // Apply image filter
+    if (
+      options.imageFilter &&
+      !c.Image.toLowerCase().includes(options.imageFilter.toLowerCase())
+    ) {
+      continue;
+    }
+
+    results.push({
+      id: c.Id,
+      name,
+      image: c.Image,
+      state: containerState,
+      status: c.Status,
+      created: new Date(c.Created * 1000).toISOString(),
+      ports: (c.Ports || []).map((p) => ({
+        containerPort: p.PrivatePort,
+        hostPort: p.PublicPort,
+        protocol: p.Type as "tcp" | "udp",
+        hostIp: p.IP
+      })),
+      labels: c.Labels || {},
+      hostName: host.name
+    });
+  }
+
+  return results;
+}
+
+/**
+ * List containers across all hosts with filtering (parallel execution)
  */
 export async function listContainers(
   hosts: HostConfig[],
-  options: {
-    state?: "all" | "running" | "stopped" | "paused";
-    nameFilter?: string;
-    imageFilter?: string;
-    labelFilter?: string;
-  } = {}
+  options: ListContainersOptions = {}
 ): Promise<ContainerInfo[]> {
-  const results: ContainerInfo[] = [];
-  
-  for (const host of hosts) {
-    try {
-      const docker = getDockerClient(host);
-      const listOptions: Docker.ContainerListOptions = {
-        all: options.state !== "running"
-      };
-      
-      // Add label filter if specified
-      if (options.labelFilter) {
-        listOptions.filters = { label: [options.labelFilter] };
-      }
-      
-      const containers = await docker.listContainers(listOptions);
-      
-      for (const c of containers) {
-        const containerState = c.State?.toLowerCase() as ContainerInfo["state"];
-        
-        // Apply state filter
-        if (options.state && options.state !== "all") {
-          if (options.state === "stopped" && containerState !== "exited") continue;
-          if (options.state === "paused" && containerState !== "paused") continue;
-          if (options.state === "running" && containerState !== "running") continue;
-        }
-        
-        const name = c.Names[0]?.replace(/^\//, "") || c.Id.slice(0, 12);
-        
-        // Apply name filter
-        if (options.nameFilter && !name.toLowerCase().includes(options.nameFilter.toLowerCase())) {
-          continue;
-        }
-        
-        // Apply image filter
-        if (options.imageFilter && !c.Image.toLowerCase().includes(options.imageFilter.toLowerCase())) {
-          continue;
-        }
-        
-        results.push({
-          id: c.Id,
-          name,
-          image: c.Image,
-          state: containerState,
-          status: c.Status,
-          created: new Date(c.Created * 1000).toISOString(),
-          ports: (c.Ports || []).map(p => ({
-            containerPort: p.PrivatePort,
-            hostPort: p.PublicPort,
-            protocol: p.Type as "tcp" | "udp",
-            hostIp: p.IP
-          })),
-          labels: c.Labels || {},
-          hostName: host.name
-        });
-      }
-    } catch (error) {
-      console.error(`Failed to list containers on ${host.name}:`, error);
+  // Query all hosts in parallel using Promise.allSettled
+  const results = await Promise.allSettled(
+    hosts.map((host) => listContainersOnHost(host, options))
+  );
+
+  // Collect results from successful queries, log failures
+  const containers: ContainerInfo[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === "fulfilled") {
+      containers.push(...result.value);
+    } else {
+      console.error(`Failed to list containers on ${hosts[i].name}:`, result.reason);
     }
   }
-  
-  return results;
+
+  return containers;
 }
 
 /**
@@ -284,7 +312,7 @@ export async function containerAction(
   host: HostConfig
 ): Promise<void> {
   const container = await getContainer(containerId, host);
-  
+
   switch (action) {
     case "start":
       await container.start();
@@ -318,7 +346,7 @@ export async function getContainerLogs(
   } = {}
 ): Promise<LogEntry[]> {
   const container = await getContainer(containerId, host);
-  
+
   const logOptions: {
     stdout: boolean;
     stderr: boolean;
@@ -334,14 +362,14 @@ export async function getContainerLogs(
     timestamps: true,
     follow: false
   };
-  
+
   if (options.since) {
     logOptions.since = parseTimeSpec(options.since);
   }
   if (options.until) {
     logOptions.until = parseTimeSpec(options.until);
   }
-  
+
   const logs = await container.logs(logOptions);
   return parseDockerLogs(logs.toString());
 }
@@ -350,9 +378,9 @@ export async function getContainerLogs(
  * Parse Docker log output into structured entries
  */
 function parseDockerLogs(raw: string): LogEntry[] {
-  const lines = raw.split("\n").filter(l => l.trim());
+  const lines = raw.split("\n").filter((l) => l.trim());
   const entries: LogEntry[] = [];
-  
+
   for (const line of lines) {
     // Docker log format: timestamp message
     const match = line.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(.*)$/);
@@ -370,7 +398,7 @@ function parseDockerLogs(raw: string): LogEntry[] {
       });
     }
   }
-  
+
   return entries;
 }
 
@@ -389,9 +417,9 @@ function parseTimeSpec(spec: string): number {
       h: 3600,
       d: 86400
     };
-    return Math.floor(Date.now() / 1000) - (value * multipliers[unit]);
+    return Math.floor(Date.now() / 1000) - value * multipliers[unit];
   }
-  
+
   // Absolute timestamp
   return Math.floor(new Date(spec).getTime() / 1000);
 }
@@ -405,42 +433,40 @@ export async function getContainerStats(
 ): Promise<ContainerStats> {
   const container = await getContainer(containerId, host);
   const stats = await container.stats({ stream: false });
-  
+
   // Calculate CPU percentage
-  const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - 
-                   stats.precpu_stats.cpu_usage.total_usage;
-  const systemDelta = stats.cpu_stats.system_cpu_usage - 
-                      stats.precpu_stats.system_cpu_usage;
+  const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
+  const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
   const cpuCount = stats.cpu_stats.online_cpus || 1;
-  const cpuPercent = systemDelta > 0 
-    ? (cpuDelta / systemDelta) * cpuCount * 100 
-    : 0;
-  
+  const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * cpuCount * 100 : 0;
+
   // Memory stats
   const memUsage = stats.memory_stats.usage || 0;
   const memLimit = stats.memory_stats.limit || 1;
   const memPercent = (memUsage / memLimit) * 100;
-  
+
   // Network stats
-  let netRx = 0, netTx = 0;
+  let netRx = 0,
+    netTx = 0;
   if (stats.networks) {
     for (const net of Object.values(stats.networks)) {
       netRx += (net as { rx_bytes: number }).rx_bytes || 0;
       netTx += (net as { tx_bytes: number }).tx_bytes || 0;
     }
   }
-  
+
   // Block I/O
-  let blockRead = 0, blockWrite = 0;
+  let blockRead = 0,
+    blockWrite = 0;
   if (stats.blkio_stats?.io_service_bytes_recursive) {
     for (const entry of stats.blkio_stats.io_service_bytes_recursive) {
       if (entry.op === "read") blockRead += entry.value;
       if (entry.op === "write") blockWrite += entry.value;
     }
   }
-  
+
   const info = await container.inspect();
-  
+
   return {
     containerId,
     containerName: info.Name.replace(/^\//, ""),
@@ -456,37 +482,79 @@ export async function getContainerStats(
 }
 
 /**
- * Get host status overview
+ * Get status for a single host (internal helper)
+ */
+async function getHostStatusSingle(host: HostConfig): Promise<HostStatus> {
+  try {
+    const docker = getDockerClient(host);
+    const containers = await docker.listContainers({ all: true });
+    const running = containers.filter((c) => c.State === "running").length;
+
+    return {
+      name: host.name,
+      host: host.host,
+      connected: true,
+      containerCount: containers.length,
+      runningCount: running
+    };
+  } catch (error) {
+    return {
+      name: host.name,
+      host: host.host,
+      connected: false,
+      containerCount: 0,
+      runningCount: 0,
+      error: error instanceof Error ? error.message : "Connection failed"
+    };
+  }
+}
+
+/**
+ * Get host status overview (parallel execution)
  */
 export async function getHostStatus(hosts: HostConfig[]): Promise<HostStatus[]> {
-  const results: HostStatus[] = [];
-  
-  for (const host of hosts) {
-    try {
-      const docker = getDockerClient(host);
-      const containers = await docker.listContainers({ all: true });
-      const running = containers.filter(c => c.State === "running").length;
-      
-      results.push({
-        name: host.name,
-        host: host.host,
-        connected: true,
-        containerCount: containers.length,
-        runningCount: running
-      });
-    } catch (error) {
-      results.push({
-        name: host.name,
-        host: host.host,
-        connected: false,
-        containerCount: 0,
-        runningCount: 0,
-        error: error instanceof Error ? error.message : "Connection failed"
-      });
-    }
-  }
-  
-  return results;
+  // Query all hosts in parallel - errors are handled in getHostStatusSingle
+  return Promise.all(hosts.map((host) => getHostStatusSingle(host)));
+}
+
+/**
+ * List images options
+ */
+export interface ListImagesOptions {
+  danglingOnly?: boolean;
+}
+
+/**
+ * List images from a single host (internal helper)
+ */
+async function listImagesOnHost(host: HostConfig, options: ListImagesOptions): Promise<ImageInfo[]> {
+  const docker = getDockerClient(host);
+  const images = await docker.listImages({
+    filters: options.danglingOnly ? { dangling: ["true"] } : undefined
+  });
+
+  return images.map((img) => ({
+    id: formatImageId(img.Id),
+    tags: img.RepoTags || ["<none>:<none>"],
+    size: img.Size,
+    created: new Date(img.Created * 1000).toISOString(),
+    containers: img.Containers || 0,
+    hostName: host.name
+  }));
+}
+
+/**
+ * List images across all hosts (parallel execution)
+ */
+export async function listImages(
+  hosts: HostConfig[],
+  options: ListImagesOptions = {}
+): Promise<ImageInfo[]> {
+  const results = await Promise.allSettled(hosts.map((host) => listImagesOnHost(host, options)));
+
+  return results
+    .filter((r): r is PromiseFulfilledResult<ImageInfo[]> => r.status === "fulfilled")
+    .flatMap((r) => r.value);
 }
 
 /**
@@ -523,6 +591,30 @@ export function formatUptime(created: string): string {
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+}
+
+/**
+ * Format Docker image ID (truncate sha256: prefix and limit to 12 chars)
+ */
+export function formatImageId(id: string): string {
+  const cleaned = id.replace(/^sha256:/, "");
+  return cleaned.slice(0, 12) || cleaned;
+}
+
+/**
+ * Check Docker connection health and clear stale clients
+ */
+export async function checkConnection(host: HostConfig): Promise<boolean> {
+  const cacheKey = `${host.name}-${host.host}`;
+  try {
+    const docker = getDockerClient(host);
+    await docker.ping();
+    return true;
+  } catch {
+    // Remove stale client from cache on failure
+    dockerClients.delete(cacheKey);
+    return false;
+  }
 }
 
 /**
@@ -629,20 +721,34 @@ export async function getDockerDiskUsage(host: HostConfig): Promise<DockerDiskUs
   // Calculate container stats
   type ContainerInfo = { SizeRw?: number; SizeRootFs?: number; State?: string };
   const containers: ContainerInfo[] = df.Containers || [];
-  const containerSize = containers.reduce((sum: number, c: ContainerInfo) => sum + (c.SizeRw || 0), 0);
-  const containerRootFs = containers.reduce((sum: number, c: ContainerInfo) => sum + (c.SizeRootFs || 0), 0);
+  const containerSize = containers.reduce(
+    (sum: number, c: ContainerInfo) => sum + (c.SizeRw || 0),
+    0
+  );
+  const containerRootFs = containers.reduce(
+    (sum: number, c: ContainerInfo) => sum + (c.SizeRootFs || 0),
+    0
+  );
   const runningContainers = containers.filter((c: ContainerInfo) => c.State === "running").length;
 
   // Calculate volume stats
   type VolumeInfo = { UsageData?: { Size?: number; RefCount?: number } };
   const volumes: VolumeInfo[] = df.Volumes || [];
-  const volumeSize = volumes.reduce((sum: number, v: VolumeInfo) => sum + (v.UsageData?.Size || 0), 0);
-  const activeVolumes = volumes.filter((v: VolumeInfo) => v.UsageData?.RefCount && v.UsageData.RefCount > 0).length;
+  const volumeSize = volumes.reduce(
+    (sum: number, v: VolumeInfo) => sum + (v.UsageData?.Size || 0),
+    0
+  );
+  const activeVolumes = volumes.filter(
+    (v: VolumeInfo) => v.UsageData?.RefCount && v.UsageData.RefCount > 0
+  ).length;
 
   // Build cache
   type BuildCacheInfo = { Size?: number; InUse?: boolean };
   const buildCache: BuildCacheInfo[] = df.BuildCache || [];
-  const buildCacheSize = buildCache.reduce((sum: number, b: BuildCacheInfo) => sum + (b.Size || 0), 0);
+  const buildCacheSize = buildCache.reduce(
+    (sum: number, b: BuildCacheInfo) => sum + (b.Size || 0),
+    0
+  );
   const buildCacheReclaimable = buildCache
     .filter((b: BuildCacheInfo) => !b.InUse)
     .reduce((sum: number, b: BuildCacheInfo) => sum + (b.Size || 0), 0);
@@ -652,7 +758,8 @@ export async function getDockerDiskUsage(host: HostConfig): Promise<DockerDiskUs
     .reduce((sum: number, v: VolumeInfo) => sum + (v.UsageData?.Size || 0), 0);
 
   const totalSize = imageSize + containerSize + volumeSize + buildCacheSize;
-  const totalReclaimable = (imageSize - imageShared) + containerSize + unusedVolumeSize + buildCacheReclaimable;
+  const totalReclaimable =
+    imageSize - imageShared + containerSize + unusedVolumeSize + buildCacheReclaimable;
 
   return {
     images: {
@@ -693,9 +800,10 @@ export async function pruneDocker(
   const docker = getDockerClient(host);
   const results: PruneResult[] = [];
 
-  const targets = target === "all"
-    ? ["containers", "images", "volumes", "networks", "buildcache"] as const
-    : [target] as const;
+  const targets =
+    target === "all"
+      ? (["containers", "images", "volumes", "networks", "buildcache"] as const)
+      : ([target] as const);
 
   for (const t of targets) {
     try {
@@ -716,7 +824,7 @@ export async function pruneDocker(
             type: "images",
             spaceReclaimed: res.SpaceReclaimed || 0,
             itemsDeleted: res.ImagesDeleted?.length || 0,
-            details: res.ImagesDeleted?.map(i => i.Deleted || i.Untagged || "")
+            details: res.ImagesDeleted?.map((i) => i.Deleted || i.Untagged || "")
           });
           break;
         }
@@ -741,7 +849,10 @@ export async function pruneDocker(
           break;
         }
         case "buildcache": {
-          const res = await docker.pruneBuilder() as { SpaceReclaimed?: number; CachesDeleted?: string[] };
+          const res = (await docker.pruneBuilder()) as {
+            SpaceReclaimed?: number;
+            CachesDeleted?: string[];
+          };
           results.push({
             type: "buildcache",
             spaceReclaimed: res.SpaceReclaimed || 0,

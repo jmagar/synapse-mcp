@@ -4,7 +4,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
+import rateLimit from "express-rate-limit";
 import { registerTools } from "./tools/index.js";
+import { clearDockerClients } from "./services/docker.js";
 
 // Server metadata
 const SERVER_NAME = "homelab-mcp-server";
@@ -31,12 +33,23 @@ function createServer(): McpServer {
 async function runStdio(): Promise<void> {
   const server = createServer();
   const transport = new StdioServerTransport();
-  
+
   await server.connect(transport);
-  
+
   // Log to stderr (stdout is reserved for MCP protocol)
   console.error(`${SERVER_NAME} v${SERVER_VERSION} running on stdio`);
 }
+
+/**
+ * Rate limiter for HTTP API
+ */
+const limiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // 100 requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later" }
+});
 
 /**
  * Run server with HTTP transport (for remote access, multiple clients)
@@ -44,16 +57,16 @@ async function runStdio(): Promise<void> {
 async function runHTTP(): Promise<void> {
   const server = createServer();
   const app = express();
-  
+
   app.use(express.json());
 
-  // Health check endpoint
+  // Health check endpoint (no rate limiting)
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", server: SERVER_NAME, version: SERVER_VERSION });
   });
 
-  // MCP endpoint - stateless JSON mode
-  app.post("/mcp", async (req, res) => {
+  // MCP endpoint - stateless JSON mode with rate limiting
+  app.post("/mcp", limiter, async (req, res) => {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true
@@ -127,6 +140,20 @@ CLAUDE CODE CONFIG (~/.claude/claude_code_config.json):
 `);
 }
 
+/**
+ * Graceful shutdown handler
+ */
+function shutdown(signal: string): void {
+  console.error(`\nReceived ${signal}, shutting down gracefully...`);
+  clearDockerClients();
+  console.error("Cleanup complete");
+  process.exit(0);
+}
+
+// Register signal handlers for graceful shutdown
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
 // Main entry point
 const args = process.argv.slice(2);
 
@@ -135,9 +162,9 @@ if (args.includes("--help") || args.includes("-h")) {
   process.exit(0);
 }
 
-const transport = args.includes("--http") ? "http" : "stdio";
+const transportMode = args.includes("--http") ? "http" : "stdio";
 
-if (transport === "http") {
+if (transportMode === "http") {
   runHTTP().catch((error) => {
     console.error("Server error:", error);
     process.exit(1);
