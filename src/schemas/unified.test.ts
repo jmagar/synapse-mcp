@@ -74,3 +74,22 @@ describe("UnifiedHomelabSchema", () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe("schema index re-exports", () => {
+  it("should export UnifiedHomelabSchema from index.ts", async () => {
+    const { UnifiedHomelabSchema: schema } = await import("./index.js");
+    expect(schema).toBeDefined();
+    expect(typeof schema.parse).toBe("function");
+  });
+
+  it("should export individual subaction schemas from index.ts", async () => {
+    const schemas = await import("./index.js");
+
+    // Verify key schema exports exist
+    expect(schemas.containerListSchema).toBeDefined();
+    expect(schemas.composeUpSchema).toBeDefined();
+    expect(schemas.hostStatusSchema).toBeDefined();
+    expect(schemas.dockerInfoSchema).toBeDefined();
+    expect(schemas.imageListSchema).toBeDefined();
+  });
+});
