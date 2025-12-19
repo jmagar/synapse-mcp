@@ -254,3 +254,67 @@ export async function composeLogs(
 
   return composeExec(host, project, "logs", args);
 }
+
+/**
+ * Build images for a compose project
+ */
+export async function composeBuild(
+  host: HostConfig,
+  project: string,
+  options: { service?: string; noCache?: boolean } = {}
+): Promise<string> {
+  const args: string[] = [];
+
+  if (options.noCache) {
+    args.push("--no-cache");
+  }
+
+  if (options.service) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
+      throw new Error(`Invalid service name: ${options.service}`);
+    }
+    args.push(options.service);
+  }
+
+  return composeExec(host, project, "build", args);
+}
+
+/**
+ * Pull images for a compose project
+ */
+export async function composePull(
+  host: HostConfig,
+  project: string,
+  options: { service?: string } = {}
+): Promise<string> {
+  const args: string[] = [];
+
+  if (options.service) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
+      throw new Error(`Invalid service name: ${options.service}`);
+    }
+    args.push(options.service);
+  }
+
+  return composeExec(host, project, "pull", args);
+}
+
+/**
+ * Recreate containers for a compose project (force recreate)
+ */
+export async function composeRecreate(
+  host: HostConfig,
+  project: string,
+  options: { service?: string } = {}
+): Promise<string> {
+  const args: string[] = ["-d", "--force-recreate"];
+
+  if (options.service) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
+      throw new Error(`Invalid service name: ${options.service}`);
+    }
+    args.push(options.service);
+  }
+
+  return composeExec(host, project, "up", args);
+}
