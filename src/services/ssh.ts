@@ -1,8 +1,5 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { HostConfig } from "../types.js";
-
-const execFileAsync = promisify(execFile);
+import { executeSSHCommand } from "./ssh-pool-exec.js";
 
 /**
  * Sanitize string for safe shell usage
@@ -63,52 +60,9 @@ export interface HostResources {
   }>;
 }
 
-/**
- * Build SSH command for a host (uses execFile-style array for safety)
- */
-function buildSshArgs(host: HostConfig): string[] {
-  // Validate all inputs first
-  validateHostForSsh(host);
-
-  const args = [
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "ConnectTimeout=5",
-    "-o",
-    "StrictHostKeyChecking=accept-new"
-  ];
-
-  if (host.sshKeyPath) {
-    args.push("-i", sanitizeForShell(host.sshKeyPath));
-  }
-
-  // Use host.name for SSH target to leverage ~/.ssh/config (port, key, user settings)
-  const target = host.host.includes("/") ? "localhost" : sanitizeForShell(host.name);
-
-  args.push(target);
-
-  return args;
-}
 
 /**
- * Execute SSH command on a host using execFile for safety
- */
-async function sshExec(host: HostConfig, command: string): Promise<string> {
-  const args = buildSshArgs(host);
-  // Command is passed as final argument - it's a static script, not user input
-  args.push(command);
-
-  try {
-    const { stdout } = await execFileAsync("ssh", args, { timeout: 15000 });
-    return stdout.trim();
-  } catch (error) {
-    throw new Error(`SSH failed: ${error instanceof Error ? error.message : "Unknown error"}`);
-  }
-}
-
-/**
- * Get host resource usage via SSH
+ * Get host resource usage via SSH using connection pool
  */
 export async function getHostResources(host: HostConfig): Promise<HostResources> {
   // Run all commands in one SSH session for efficiency
@@ -130,7 +84,7 @@ export async function getHostResources(host: HostConfig): Promise<HostResources>
     .trim()
     .replace(/\n/g, "; ");
 
-  const output = await sshExec(host, script);
+  const output = await executeSSHCommand(host, script);
   const sections = output.split("---").map((s) => s.trim());
 
   // Parse hostname
