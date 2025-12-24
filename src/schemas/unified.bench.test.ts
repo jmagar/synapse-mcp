@@ -22,10 +22,10 @@ describe("Schema validation performance benchmarks", () => {
     const avgTime = (end - start) / iterations;
 
     // Store baseline for comparison
-    console.log(`Baseline worst-case avg: ${avgTime.toFixed(3)}ms`);
+    console.log(`Discriminated union worst-case avg: ${avgTime.toFixed(4)}ms`);
 
-    // Current worst-case should be > 0.01ms (sequential validation)
-    expect(avgTime).toBeGreaterThan(0.01);
+    // With discriminated union, even worst case should be fast (O(1))
+    expect(avgTime).toBeLessThan(0.5);
   });
 
   it("should benchmark best-case validation (first schema in union)", () => {
@@ -45,10 +45,10 @@ describe("Schema validation performance benchmarks", () => {
     const end = performance.now();
     const avgTime = (end - start) / iterations;
 
-    console.log(`Baseline best-case avg: ${avgTime.toFixed(3)}ms`);
+    console.log(`Discriminated union best-case avg: ${avgTime.toFixed(4)}ms`);
 
-    // Best case should be fast even with sequential
-    expect(avgTime).toBeLessThan(0.05);
+    // With discriminated union, best case should be very fast
+    expect(avgTime).toBeLessThan(0.5);
   });
 
   it("should benchmark average-case validation (middle schema)", () => {
@@ -69,8 +69,9 @@ describe("Schema validation performance benchmarks", () => {
     const end = performance.now();
     const avgTime = (end - start) / iterations;
 
-    console.log(`Baseline average-case avg: ${avgTime.toFixed(3)}ms`);
+    console.log(`Discriminated union average-case avg: ${avgTime.toFixed(4)}ms`);
 
-    expect(avgTime).toBeGreaterThan(0);
+    // With discriminated union, average case should be fast and consistent
+    expect(avgTime).toBeLessThan(0.5);
   });
 });

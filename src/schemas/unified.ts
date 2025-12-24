@@ -298,11 +298,11 @@ const imageRemoveSchema = z.object({
   force: z.boolean().default(false)
 });
 
-// ===== Unified schema using z.union (flat structure for proper validation) =====
-// NOTE: z.discriminatedUnion requires all variants to share the same discriminator.
-// Since we have action + subaction pairs, we use z.union with refinement for clarity.
-const UnifiedHomelabUnion = z.union([
-  // Container actions
+// ===== Unified schema using z.discriminatedUnion for O(1) lookup =====
+// Uses action_subaction composite key as discriminator for constant-time schema lookup
+// instead of O(n) sequential validation with z.union()
+const UnifiedHomelabUnion = z.discriminatedUnion("action_subaction", [
+  // Container actions (12 schemas)
   containerListSchema,
   containerStartSchema,
   containerStopSchema,
@@ -315,7 +315,7 @@ const UnifiedHomelabUnion = z.union([
   containerSearchSchema,
   containerPullSchema,
   containerRecreateSchema,
-  // Compose actions
+  // Compose actions (9 schemas)
   composeListSchema,
   composeStatusSchema,
   composeUpSchema,
@@ -325,14 +325,14 @@ const UnifiedHomelabUnion = z.union([
   composeBuildSchema,
   composeRecreateSchema,
   composePullSchema,
-  // Host actions
+  // Host actions (2 schemas)
   hostStatusSchema,
   hostResourcesSchema,
-  // Docker actions
+  // Docker actions (3 schemas)
   dockerInfoSchema,
   dockerDfSchema,
   dockerPruneSchema,
-  // Image actions
+  // Image actions (4 schemas)
   imageListSchema,
   imagePullSchema,
   imageBuildSchema,
