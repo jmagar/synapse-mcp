@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ResponseFormat } from "../types.js";
 import { DEFAULT_LIMIT, MAX_LIMIT, DEFAULT_LOG_LINES, MAX_LOG_LINES } from "../constants.js";
+import { preprocessWithDiscriminator } from "./discriminator.js";
 
 // ===== Base schemas =====
 const responseFormatSchema = z
@@ -15,6 +16,7 @@ const paginationSchema = {
 
 // ===== Container subactions =====
 const containerListSchema = z.object({
+  action_subaction: z.literal("container:list"),
   action: z.literal("container"),
   subaction: z.literal("list"),
   host: z.string().optional(),
@@ -28,6 +30,7 @@ const containerListSchema = z.object({
 
 // Individual container control schemas (for proper discrimination)
 const containerStartSchema = z.object({
+  action_subaction: z.literal("container:start"),
   action: z.literal("container"),
   subaction: z.literal("start"),
   container_id: z.string().min(1),
@@ -35,6 +38,7 @@ const containerStartSchema = z.object({
 });
 
 const containerStopSchema = z.object({
+  action_subaction: z.literal("container:stop"),
   action: z.literal("container"),
   subaction: z.literal("stop"),
   container_id: z.string().min(1),
@@ -42,6 +46,7 @@ const containerStopSchema = z.object({
 });
 
 const containerRestartSchema = z.object({
+  action_subaction: z.literal("container:restart"),
   action: z.literal("container"),
   subaction: z.literal("restart"),
   container_id: z.string().min(1),
@@ -49,6 +54,7 @@ const containerRestartSchema = z.object({
 });
 
 const containerPauseSchema = z.object({
+  action_subaction: z.literal("container:pause"),
   action: z.literal("container"),
   subaction: z.literal("pause"),
   container_id: z.string().min(1),
@@ -56,6 +62,7 @@ const containerPauseSchema = z.object({
 });
 
 const containerUnpauseSchema = z.object({
+  action_subaction: z.literal("container:unpause"),
   action: z.literal("container"),
   subaction: z.literal("unpause"),
   container_id: z.string().min(1),
@@ -63,6 +70,7 @@ const containerUnpauseSchema = z.object({
 });
 
 const containerLogsSchema = z.object({
+  action_subaction: z.literal("container:logs"),
   action: z.literal("container"),
   subaction: z.literal("logs"),
   container_id: z.string().min(1),
@@ -76,6 +84,7 @@ const containerLogsSchema = z.object({
 });
 
 const containerStatsSchema = z.object({
+  action_subaction: z.literal("container:stats"),
   action: z.literal("container"),
   subaction: z.literal("stats"),
   container_id: z.string().optional(),
@@ -84,6 +93,7 @@ const containerStatsSchema = z.object({
 });
 
 const containerInspectSchema = z.object({
+  action_subaction: z.literal("container:inspect"),
   action: z.literal("container"),
   subaction: z.literal("inspect"),
   container_id: z.string().min(1),
@@ -93,6 +103,7 @@ const containerInspectSchema = z.object({
 });
 
 const containerSearchSchema = z.object({
+  action_subaction: z.literal("container:search"),
   action: z.literal("container"),
   subaction: z.literal("search"),
   query: z.string().min(1),
@@ -102,6 +113,7 @@ const containerSearchSchema = z.object({
 });
 
 const containerPullSchema = z.object({
+  action_subaction: z.literal("container:pull"),
   action: z.literal("container"),
   subaction: z.literal("pull"),
   container_id: z.string().min(1),
@@ -109,6 +121,7 @@ const containerPullSchema = z.object({
 });
 
 const containerRecreateSchema = z.object({
+  action_subaction: z.literal("container:recreate"),
   action: z.literal("container"),
   subaction: z.literal("recreate"),
   container_id: z.string().min(1),
@@ -118,6 +131,7 @@ const containerRecreateSchema = z.object({
 
 // ===== Compose subactions =====
 const composeListSchema = z.object({
+  action_subaction: z.literal("compose:list"),
   action: z.literal("compose"),
   subaction: z.literal("list"),
   host: z.string().min(1),
@@ -127,6 +141,7 @@ const composeListSchema = z.object({
 });
 
 const composeStatusSchema = z.object({
+  action_subaction: z.literal("compose:status"),
   action: z.literal("compose"),
   subaction: z.literal("status"),
   host: z.string().min(1),
@@ -137,6 +152,7 @@ const composeStatusSchema = z.object({
 });
 
 const composeUpSchema = z.object({
+  action_subaction: z.literal("compose:up"),
   action: z.literal("compose"),
   subaction: z.literal("up"),
   host: z.string().min(1),
@@ -145,6 +161,7 @@ const composeUpSchema = z.object({
 });
 
 const composeDownSchema = z.object({
+  action_subaction: z.literal("compose:down"),
   action: z.literal("compose"),
   subaction: z.literal("down"),
   host: z.string().min(1),
@@ -153,6 +170,7 @@ const composeDownSchema = z.object({
 });
 
 const composeRestartSchema = z.object({
+  action_subaction: z.literal("compose:restart"),
   action: z.literal("compose"),
   subaction: z.literal("restart"),
   host: z.string().min(1),
@@ -160,6 +178,7 @@ const composeRestartSchema = z.object({
 });
 
 const composeLogsSchema = z.object({
+  action_subaction: z.literal("compose:logs"),
   action: z.literal("compose"),
   subaction: z.literal("logs"),
   host: z.string().min(1),
@@ -170,6 +189,7 @@ const composeLogsSchema = z.object({
 });
 
 const composeBuildSchema = z.object({
+  action_subaction: z.literal("compose:build"),
   action: z.literal("compose"),
   subaction: z.literal("build"),
   host: z.string().min(1),
@@ -179,6 +199,7 @@ const composeBuildSchema = z.object({
 });
 
 const composeRecreateSchema = z.object({
+  action_subaction: z.literal("compose:recreate"),
   action: z.literal("compose"),
   subaction: z.literal("recreate"),
   host: z.string().min(1),
@@ -187,6 +208,7 @@ const composeRecreateSchema = z.object({
 });
 
 const composePullSchema = z.object({
+  action_subaction: z.literal("compose:pull"),
   action: z.literal("compose"),
   subaction: z.literal("pull"),
   host: z.string().min(1),
@@ -196,6 +218,7 @@ const composePullSchema = z.object({
 
 // ===== Host subactions =====
 const hostStatusSchema = z.object({
+  action_subaction: z.literal("host:status"),
   action: z.literal("host"),
   subaction: z.literal("status"),
   host: z.string().optional(),
@@ -203,6 +226,7 @@ const hostStatusSchema = z.object({
 });
 
 const hostResourcesSchema = z.object({
+  action_subaction: z.literal("host:resources"),
   action: z.literal("host"),
   subaction: z.literal("resources"),
   host: z.string().optional(),
@@ -211,6 +235,7 @@ const hostResourcesSchema = z.object({
 
 // ===== Docker subactions =====
 const dockerInfoSchema = z.object({
+  action_subaction: z.literal("docker:info"),
   action: z.literal("docker"),
   subaction: z.literal("info"),
   host: z.string().optional(),
@@ -218,6 +243,7 @@ const dockerInfoSchema = z.object({
 });
 
 const dockerDfSchema = z.object({
+  action_subaction: z.literal("docker:df"),
   action: z.literal("docker"),
   subaction: z.literal("df"),
   host: z.string().optional(),
@@ -225,6 +251,7 @@ const dockerDfSchema = z.object({
 });
 
 const dockerPruneSchema = z.object({
+  action_subaction: z.literal("docker:prune"),
   action: z.literal("docker"),
   subaction: z.literal("prune"),
   host: z.string().optional(),
@@ -234,6 +261,7 @@ const dockerPruneSchema = z.object({
 
 // ===== Image subactions =====
 const imageListSchema = z.object({
+  action_subaction: z.literal("image:list"),
   action: z.literal("image"),
   subaction: z.literal("list"),
   host: z.string().optional(),
@@ -243,6 +271,7 @@ const imageListSchema = z.object({
 });
 
 const imagePullSchema = z.object({
+  action_subaction: z.literal("image:pull"),
   action: z.literal("image"),
   subaction: z.literal("pull"),
   host: z.string().min(1),
@@ -250,6 +279,7 @@ const imagePullSchema = z.object({
 });
 
 const imageBuildSchema = z.object({
+  action_subaction: z.literal("image:build"),
   action: z.literal("image"),
   subaction: z.literal("build"),
   host: z.string().min(1),
@@ -260,6 +290,7 @@ const imageBuildSchema = z.object({
 });
 
 const imageRemoveSchema = z.object({
+  action_subaction: z.literal("image:remove"),
   action: z.literal("image"),
   subaction: z.literal("remove"),
   host: z.string().min(1),
@@ -270,7 +301,7 @@ const imageRemoveSchema = z.object({
 // ===== Unified schema using z.union (flat structure for proper validation) =====
 // NOTE: z.discriminatedUnion requires all variants to share the same discriminator.
 // Since we have action + subaction pairs, we use z.union with refinement for clarity.
-export const UnifiedHomelabSchema = z.union([
+const UnifiedHomelabUnion = z.union([
   // Container actions
   containerListSchema,
   containerStartSchema,
@@ -307,6 +338,12 @@ export const UnifiedHomelabSchema = z.union([
   imageBuildSchema,
   imageRemoveSchema
 ]);
+
+// Export with preprocess wrapper to automatically inject discriminator
+export const UnifiedHomelabSchema = z.preprocess(
+  preprocessWithDiscriminator,
+  UnifiedHomelabUnion
+);
 
 export type UnifiedHomelabInput = z.infer<typeof UnifiedHomelabSchema>;
 

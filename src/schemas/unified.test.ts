@@ -153,3 +153,65 @@ describe("Discriminated union optimization", () => {
     }
   });
 });
+
+describe("Individual schema discriminators", () => {
+  it("should have action_subaction discriminator in container schemas", () => {
+    const testCases = [
+      {
+        input: { action: "container", subaction: "list" },
+        expected: "container:list"
+      },
+      {
+        input: { action: "container", subaction: "start", container_id: "test" },
+        expected: "container:start"
+      },
+      {
+        input: { action: "container", subaction: "restart", container_id: "test" },
+        expected: "container:restart"
+      }
+    ];
+
+    for (const { input, expected } of testCases) {
+      const result = UnifiedHomelabSchema.parse(input);
+      expect(result.action_subaction).toBe(expected);
+    }
+  });
+
+  it("should have action_subaction discriminator in compose schemas", () => {
+    const result = UnifiedHomelabSchema.parse({
+      action: "compose",
+      subaction: "up",
+      host: "test",
+      project: "plex"
+    });
+
+    expect(result.action_subaction).toBe("compose:up");
+  });
+
+  it("should have action_subaction discriminator in host schemas", () => {
+    const result = UnifiedHomelabSchema.parse({
+      action: "host",
+      subaction: "status"
+    });
+
+    expect(result.action_subaction).toBe("host:status");
+  });
+
+  it("should have action_subaction discriminator in docker schemas", () => {
+    const result = UnifiedHomelabSchema.parse({
+      action: "docker",
+      subaction: "info"
+    });
+
+    expect(result.action_subaction).toBe("docker:info");
+  });
+
+  it("should have action_subaction discriminator in image schemas", () => {
+    const result = UnifiedHomelabSchema.parse({
+      action: "image",
+      subaction: "list"
+    });
+
+    expect(result.action_subaction).toBe("image:list");
+  });
+});
