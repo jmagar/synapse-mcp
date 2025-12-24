@@ -1,3 +1,20 @@
+/**
+ * Path Security Utilities
+ *
+ * SECURITY: Path Traversal Protection (CWE-22)
+ *
+ * This module provides utilities to prevent directory traversal attacks
+ * in file path parameters. Used by docker.ts buildImage() to validate
+ * build context and Dockerfile paths.
+ *
+ * CVSS 7.4 (HIGH) - Prevents attackers from using paths like:
+ * - ../../../etc/passwd
+ * - /valid/../../../etc/passwd
+ * - /path/./to/../../sensitive
+ *
+ * @see https://cwe.mitre.org/data/definitions/22.html
+ */
+
 import { resolve } from "node:path";
 
 /**

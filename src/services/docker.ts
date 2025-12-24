@@ -974,6 +974,16 @@ export async function removeImage(
 
 /**
  * Build an image from a Dockerfile (SSH-based for remote hosts)
+ *
+ * SECURITY: Implements path traversal protection (CWE-22)
+ * - Requires absolute paths for context and dockerfile
+ * - Rejects any path containing .. or . components
+ * - Validates character set to prevent injection
+ *
+ * @param host - Docker host configuration
+ * @param options - Build options (context, tag, dockerfile, noCache)
+ * @returns Promise resolving to build status
+ * @throws Error if paths contain directory traversal or invalid characters
  */
 export async function buildImage(
   host: HostConfig,
