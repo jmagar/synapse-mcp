@@ -152,7 +152,7 @@ export function getDockerClient(config: HostConfig): Docker {
   const socketPath = config.dockerSocketPath || (isSocketPath(config.host) ? config.host : null);
 
   if (socketPath) {
-    // Local socket connection
+    // Unix socket connection
     docker = new Docker({ socketPath });
   } else if (config.protocol === "http" || config.protocol === "https") {
     // Remote TCP connection
@@ -993,8 +993,13 @@ export async function buildImage(
   if (!/^[a-zA-Z0-9._\-/:]+$/.test(tag)) {
     throw new Error(`Invalid image tag: ${tag}`);
   }
-  if (!/^[a-zA-Z0-9._\-/]+$/.test(context)) {
-    throw new Error(`Invalid build context: ${context}`);
+
+  // Use secure path validation (prevents directory traversal)
+  const { validateSecurePath } = await import("../utils/path-security.js");
+  validateSecurePath(context, "context");
+
+  if (dockerfile) {
+    validateSecurePath(dockerfile, "dockerfile");
   }
 
   const args: string[] = ["build", "-t", tag];
@@ -1004,9 +1009,6 @@ export async function buildImage(
   }
 
   if (dockerfile) {
-    if (!/^[a-zA-Z0-9._\-/]+$/.test(dockerfile)) {
-      throw new Error(`Invalid dockerfile path: ${dockerfile}`);
-    }
     args.push("-f", dockerfile);
   }
 

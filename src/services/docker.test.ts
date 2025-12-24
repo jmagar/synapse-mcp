@@ -265,6 +265,93 @@ describe("buildImage", () => {
         context: "path with spaces",
         tag: "valid:tag"
       })
-    ).rejects.toThrow("Invalid build context");
+    ).rejects.toThrow(/context.*invalid characters/i);
+  });
+
+  // Security tests for path traversal (CWE-22)
+  it("should reject context path with .. directory traversal", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(
+      buildImage(host, {
+        context: "../../../etc/passwd",
+        tag: "valid:tag"
+      })
+    ).rejects.toThrow(/path traversal|invalid.*path|\.\..*not allowed/i);
+  });
+
+  it("should reject context path with hidden traversal (/./..)", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(
+      buildImage(host, {
+        context: "/valid/./path/../../etc/passwd",
+        tag: "valid:tag"
+      })
+    ).rejects.toThrow(/path traversal|invalid.*path|\.\..*not allowed/i);
+  });
+
+  it("should reject context path starting with ./ (relative)", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(
+      buildImage(host, {
+        context: "./relative/path",
+        tag: "valid:tag"
+      })
+    ).rejects.toThrow(/absolute path required|relative path|invalid.*path/i);
+  });
+
+  it("should reject dockerfile path with .. directory traversal", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+    await expect(
+      buildImage(host, {
+        context: "/valid/context",
+        tag: "valid:tag",
+        dockerfile: "../../etc/passwd"
+      })
+    ).rejects.toThrow(/path traversal|invalid.*path|\.\..*not allowed/i);
+  });
+
+  it("should accept valid absolute path without traversal", async () => {
+    const host = {
+      name: "test",
+      host: "nonexistent.local", // Will fail connection, but validation should pass
+      protocol: "http" as const,
+      port: 9999
+    };
+
+    // This should pass validation but fail on connection
+    await expect(
+      buildImage(host, {
+        context: "/home/user/docker/build",
+        tag: "valid:tag"
+      })
+    ).rejects.toThrow(/ENOTFOUND|ECONNREFUSED|connection|Failed/i);
+
+    // Should NOT throw validation error
+    await expect(
+      buildImage(host, {
+        context: "/home/user/docker/build",
+        tag: "valid:tag"
+      })
+    ).rejects.not.toThrow(/invalid.*path|path traversal/i);
   });
 });
