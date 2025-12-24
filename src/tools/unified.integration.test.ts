@@ -1083,6 +1083,17 @@ describe("unified tool integration", () => {
         expect(result.content[0].text).toContain("Containers");
         expect(result.content[0].text).toContain("Volumes");
       });
+
+      it("should return error for unknown host in df", async () => {
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "df",
+          host: "nonexistent-host"
+        })) as { content: Array<{ text: string }> };
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Host 'nonexistent-host' not found");
+      });
     });
 
     describe("docker action: prune", () => {
@@ -1231,6 +1242,49 @@ describe("unified tool integration", () => {
         expect(result.content).toBeDefined();
         expect(result.content[0].text).toContain("all");
       });
+
+      it("should return error for unknown host in prune", async () => {
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "prune",
+          prune_target: "images",
+          force: true,
+          host: "nonexistent-host"
+        })) as { content: Array<{ text: string }> };
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Host 'nonexistent-host' not found");
+      });
+
+      it("should handle errors during prune operation", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockRejectedValue(new Error("Docker daemon not available"));
+
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "prune",
+          prune_target: "images",
+          force: true,
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(result.content).toBeDefined();
+        // Error is handled gracefully with 0 items deleted
+        expect(result.content[0].text).toContain("0 items deleted");
+        expect(result.content[0].text).toContain("testhost");
+      });
+    });
+
+    describe("docker action: unknown subaction", () => {
+      it("should return error for unknown docker subaction", async () => {
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "invalid_action" as any
+        })) as { isError: boolean; content: Array<{ text: string }> };
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Invalid discriminator value");
+      });
     });
   });
 
@@ -1342,6 +1396,18 @@ describe("unified tool integration", () => {
         expect(result.content[0].text).toContain("pulled image");
         expect(result.content[0].text).toContain("nginx:alpine");
       });
+
+      it("should return error for unknown host in pull", async () => {
+        const result = (await toolHandler({
+          action: "image",
+          subaction: "pull",
+          image: "nginx:alpine",
+          host: "nonexistent-host"
+        })) as { content: Array<{ text: string }> };
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Host 'nonexistent-host' not found");
+      });
     });
 
     describe("image action: build", () => {
@@ -1367,6 +1433,19 @@ describe("unified tool integration", () => {
         expect(result.content[0].text).toContain("built image");
         expect(result.content[0].text).toContain("myapp:v1");
       });
+
+      it("should return error for unknown host in build", async () => {
+        const result = (await toolHandler({
+          action: "image",
+          subaction: "build",
+          context: "/app",
+          tag: "myapp:v1",
+          host: "nonexistent-host"
+        })) as { content: Array<{ text: string }> };
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Host 'nonexistent-host' not found");
+      });
     });
 
     describe("image action: remove", () => {
@@ -1388,6 +1467,31 @@ describe("unified tool integration", () => {
         expect(result.content).toBeDefined();
         expect(result.content[0].text).toContain("removed image");
         expect(result.content[0].text).toContain("sha256:abc123");
+      });
+
+      it("should return error for unknown host in remove", async () => {
+        const result = (await toolHandler({
+          action: "image",
+          subaction: "remove",
+          image: "sha256:abc123",
+          host: "nonexistent-host"
+        })) as { content: Array<{ text: string }> };
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Host 'nonexistent-host' not found");
+      });
+    });
+
+    describe("image action: unknown subaction", () => {
+      it("should return error for unknown image subaction", async () => {
+        const result = (await toolHandler({
+          action: "image",
+          subaction: "invalid_action" as any,
+          host: "testhost"
+        })) as { isError: boolean; content: Array<{ text: string }> };
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Invalid discriminator value");
       });
     });
   });
