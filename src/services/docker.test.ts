@@ -354,4 +354,62 @@ describe("buildImage", () => {
       })
     ).rejects.not.toThrow(/invalid.*path|path traversal/i);
   });
+
+  it("should accept dockerfile with valid absolute path", async () => {
+    const host = {
+      name: "test",
+      host: "nonexistent.local",
+      protocol: "http" as const,
+      port: 9999
+    };
+
+    await expect(
+      buildImage(host, {
+        context: "/app/build",
+        tag: "myapp:latest",
+        dockerfile: "/app/build/Dockerfile.prod"
+      })
+    ).rejects.toThrow(/ENOTFOUND|ECONNREFUSED|connection|Failed/i);
+
+    await expect(
+      buildImage(host, {
+        context: "/app/build",
+        tag: "myapp:latest",
+        dockerfile: "/app/build/Dockerfile.prod"
+      })
+    ).rejects.not.toThrow(/invalid.*path|path traversal/i);
+  });
+
+  it("should reject sophisticated traversal attacks", async () => {
+    const host = {
+      name: "test",
+      host: "localhost",
+      protocol: "http" as const,
+      port: 2375
+    };
+
+    // Attack: absolute path with traversal in middle
+    await expect(
+      buildImage(host, {
+        context: "/home/user/builds/../../etc/passwd",
+        tag: "attack:v1"
+      })
+    ).rejects.toThrow(/directory traversal.*not allowed/i);
+
+    // Attack: hidden current dir with parent dir
+    await expect(
+      buildImage(host, {
+        context: "/app/./build/../../../etc",
+        tag: "attack:v2"
+      })
+    ).rejects.toThrow(/directory traversal.*not allowed/i);
+
+    // Attack: path ending with traversal
+    await expect(
+      buildImage(host, {
+        context: "/secure/path/..",
+        tag: "attack:v3"
+      })
+    ).rejects.toThrow(/directory traversal.*not allowed/i);
+  });
 });
