@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   validateProjectName,
   composeBuild,
@@ -6,6 +6,67 @@ import {
   composeRecreate,
   composeExec
 } from "./compose.js";
+
+// Mock ssh-pool-exec module using vi.hoisted
+const { mockExecuteSSHCommand } = vi.hoisted(() => {
+  return {
+    mockExecuteSSHCommand: vi.fn()
+  };
+});
+
+vi.mock("./ssh-pool-exec.js", () => {
+  return {
+    executeSSHCommand: mockExecuteSSHCommand
+  };
+});
+
+/**
+ * Mock helper: Simulate successful SSH command execution
+ */
+const mockSSHSuccess = (stdout: string): void => {
+  mockExecuteSSHCommand.mockResolvedValue(stdout);
+};
+
+/**
+ * Mock helper: Simulate failed SSH command execution
+ */
+const mockSSHError = (errorMessage: string): void => {
+  mockExecuteSSHCommand.mockRejectedValue(new Error(errorMessage));
+};
+
+/**
+ * Mock helper: Simulate SSH command timeout
+ */
+const mockSSHTimeout = (): void => {
+  const timeoutError = new Error("SSH command timed out");
+  (timeoutError as never)["code"] = "ETIMEDOUT";
+  mockExecuteSSHCommand.mockRejectedValue(timeoutError);
+};
+
+describe("mock setup", () => {
+  it("should successfully mock executeSSHCommand", () => {
+    expect(mockExecuteSSHCommand).toBeDefined();
+    expect(vi.isMockFunction(mockExecuteSSHCommand)).toBe(true);
+  });
+});
+
+describe("mock helpers", () => {
+  it("should mock successful SSH call", async () => {
+    mockSSHSuccess("test output");
+    const result = await mockExecuteSSHCommand({}, "test", []);
+    expect(result).toBe("test output");
+  });
+
+  it("should mock failed SSH call", async () => {
+    mockSSHError("Connection failed");
+    await expect(mockExecuteSSHCommand({}, "test", [])).rejects.toThrow("Connection failed");
+  });
+
+  it("should mock timeout SSH call", async () => {
+    mockSSHTimeout();
+    await expect(mockExecuteSSHCommand({}, "test", [])).rejects.toThrow("SSH command timed out");
+  });
+});
 
 describe("validateProjectName", () => {
   it("should accept alphanumeric names", () => {
