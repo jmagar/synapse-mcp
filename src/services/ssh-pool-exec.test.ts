@@ -5,13 +5,13 @@ import type { HostConfig } from "../types.js";
 // Mock node-ssh module
 vi.mock("node-ssh", () => {
   class MockNodeSSH {
-    async connect() {
+    async connect(): Promise<void> {
       return Promise.resolve();
     }
-    async dispose() {
+    async dispose(): Promise<void> {
       return Promise.resolve();
     }
-    async execCommand(cmd: string) {
+    async execCommand(cmd: string): Promise<{ code: number; stdout: string; stderr: string }> {
       // Simulate various commands
       if (cmd.includes("false")) {
         return Promise.resolve({ code: 1, stdout: "", stderr: "Command failed" });
@@ -64,7 +64,7 @@ vi.mock("node-ssh", () => {
       // Default success
       return Promise.resolve({ code: 0, stdout: cmd, stderr: "" });
     }
-    isConnected() {
+    isConnected(): boolean {
       return true;
     }
   }

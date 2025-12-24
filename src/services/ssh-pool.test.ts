@@ -1,20 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { SSHPoolConfig, SSHConnectionPool } from "./ssh-pool.js";
+import type { SSHPoolConfig } from "./ssh-pool.js";
 import { generatePoolKey, SSHConnectionPoolImpl } from "./ssh-pool.js";
 
 // Mock node-ssh module
 vi.mock("node-ssh", () => {
   class MockNodeSSH {
-    async connect() {
+    async connect(): Promise<void> {
       return Promise.resolve();
     }
-    async dispose() {
+    async dispose(): Promise<void> {
       return Promise.resolve();
     }
-    async execCommand() {
+    async execCommand(): Promise<{ code: number; stdout: string; stderr: string }> {
       return Promise.resolve({ code: 0, stdout: "", stderr: "" });
     }
-    isConnected() {
+    isConnected(): boolean {
       return true;
     }
   }
@@ -158,7 +158,7 @@ describe("SSHConnectionPoolImpl - connection management", () => {
     };
 
     const conn1 = await limitedPool.getConnection(host);
-    const conn2 = await limitedPool.getConnection(host);
+    await limitedPool.getConnection(host); // conn2 - exhaust the pool
 
     // Third connection should fail
     await expect(limitedPool.getConnection(host)).rejects.toThrow("Connection pool exhausted");

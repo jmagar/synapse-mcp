@@ -139,7 +139,7 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
         // Command failed
         throw new Error("Health check command failed");
       }
-    } catch (error) {
+    } catch {
       // Health check failed - remove unhealthy connection
       metadata.healthChecksFailed++;
       this.stats.healthCheckFailures++;
@@ -266,7 +266,7 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
     if (index !== -1) {
       try {
         await metadata.connection.dispose();
-      } catch (error) {
+      } catch {
         // Ignore disposal errors
       }
 
@@ -310,10 +310,10 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
 
     const closePromises: Promise<void>[] = [];
 
-    for (const [poolKey, connections] of this.pool.entries()) {
+    for (const connections of this.pool.values()) {
       for (const metadata of connections) {
         closePromises.push(
-          (async () => {
+          (async (): Promise<void> => {
             try {
               await metadata.connection.dispose();
             } catch {

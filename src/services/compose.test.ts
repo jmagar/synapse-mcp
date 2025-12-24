@@ -4,9 +4,7 @@ import {
   composeBuild,
   composePull,
   composeRecreate,
-  composeExec,
-  listComposeProjects,
-  getComposeStatus
+  composeExec
 } from "./compose.js";
 
 describe("validateProjectName", () => {

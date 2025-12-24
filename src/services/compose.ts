@@ -22,7 +22,7 @@ export function validateProjectName(name: string): void {
  * @throws {Error} If argument contains shell metacharacters or exceeds 500 chars
  */
 function validateComposeArgs(args: string[]): void {
-  const SHELL_METACHARACTERS = /[;&|`$()<>{}[\]\\"\'\n\r\t]/;
+  const SHELL_METACHARACTERS = /[;&|`$()<>{}[\]\\"\n\r\t]/;
 
   for (const arg of args) {
     if (SHELL_METACHARACTERS.test(arg)) {
