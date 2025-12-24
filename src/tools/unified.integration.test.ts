@@ -3,6 +3,40 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerUnifiedTool } from "./unified.js";
 import type { HostConfig } from "../types.js";
 
+// Mock the compose service
+vi.mock("../services/compose.js", () => ({
+  listComposeProjects: vi.fn().mockResolvedValue([
+    {
+      name: "myapp",
+      status: "running",
+      configFiles: ["/opt/myapp/docker-compose.yaml"],
+      services: ["web", "db"]
+    },
+    {
+      name: "webapp",
+      status: "partial",
+      configFiles: ["/opt/webapp/docker-compose.yaml"],
+      services: ["frontend"]
+    }
+  ]),
+  getComposeStatus: vi.fn().mockResolvedValue({
+    name: "myapp",
+    status: "running",
+    configFiles: ["/opt/myapp/docker-compose.yaml"],
+    services: [
+      { name: "web", status: "running", health: "healthy", publishers: [{ publishedPort: 8080, targetPort: 80, protocol: "tcp" }] },
+      { name: "db", status: "running", publishers: [{ publishedPort: 5432, targetPort: 5432, protocol: "tcp" }] }
+    ]
+  }),
+  composeUp: vi.fn().mockResolvedValue("Started project"),
+  composeDown: vi.fn().mockResolvedValue("Stopped project"),
+  composeRestart: vi.fn().mockResolvedValue("Restarted project"),
+  composeLogs: vi.fn().mockResolvedValue("log line 1\nlog line 2\nerror log line 3"),
+  composeBuild: vi.fn().mockResolvedValue("Built images"),
+  composePull: vi.fn().mockResolvedValue("Pulled images"),
+  composeRecreate: vi.fn().mockResolvedValue("Recreated containers")
+}));
+
 // Mock the docker service
 vi.mock("../services/docker.js", async () => {
   const actual = await vi.importActual<typeof import("../services/docker.js")>(
@@ -545,13 +579,10 @@ describe("unified tool integration", () => {
   });
 
   describe("compose actions", () => {
-    it("should handle compose list with host param", async () => {
-      const result = await toolHandler({
-        action: "compose",
-        subaction: "list",
-        host: "tootie"
-      });
-      expect(result).toBeDefined();
+    let composeService: typeof import("../services/compose.js");
+
+    beforeEach(async () => {
+      composeService = await import("../services/compose.js");
     });
 
     it("should return error for compose action without host", async () => {
@@ -562,6 +593,375 @@ describe("unified tool integration", () => {
       })) as { isError: boolean };
 
       expect(result.isError).toBe(true);
+    });
+
+    describe("compose action: list", () => {
+      it("should list all compose projects", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "list",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.listComposeProjects).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("myapp");
+        expect(result.content[0].text).toContain("webapp");
+      });
+
+      it("should list compose projects with pagination", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "list",
+          host: "testhost",
+          offset: 1,
+          limit: 1,
+          response_format: "json"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.listComposeProjects).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+
+        const output = JSON.parse(result.content[0].text);
+        expect(output.offset).toBe(1);
+        expect(output.count).toBe(1);
+        expect(output.projects).toHaveLength(1);
+        expect(output.projects[0].name).toBe("webapp");
+      });
+
+      it("should filter compose projects by name", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "list",
+          host: "testhost",
+          name_filter: "webapp"
+        })) as { content: Array<{ text: string }> };
+
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("webapp");
+        expect(result.content[0].text).not.toContain("myapp");
+      });
+    });
+
+    describe("compose action: status", () => {
+      it("should get compose project status", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "status",
+          project: "myapp",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.getComposeStatus).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp"
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("web");
+        expect(result.content[0].text).toContain("running");
+        expect(result.content[0].text).toContain("db");
+      });
+
+      it("should get compose status with service filter", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "status",
+          project: "myapp",
+          host: "testhost",
+          service_filter: "web"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.getComposeStatus).toHaveBeenCalled();
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("web");
+        // Should filter out db service
+      });
+
+      it("should get compose status with pagination", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "status",
+          project: "myapp",
+          host: "testhost",
+          offset: 1,
+          limit: 1,
+          response_format: "json"
+        })) as { content: Array<{ text: string }> };
+
+        expect(result.content).toBeDefined();
+        const output = JSON.parse(result.content[0].text);
+        expect(output.offset).toBe(1);
+        expect(output.count).toBe(1);
+      });
+    });
+
+    describe("compose action: lifecycle operations", () => {
+      it("should start compose project with up", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "up",
+          project: "myapp",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeUp).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          true // detach default
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Started project");
+        expect(result.content[0].text).toContain("myapp");
+      });
+
+      it("should start compose project without detach", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "up",
+          project: "myapp",
+          host: "testhost",
+          detach: false
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeUp).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          false
+        );
+        expect(result.content).toBeDefined();
+      });
+
+      it("should stop compose project with down", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "down",
+          project: "myapp",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeDown).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          false // remove_volumes default
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Stopped project");
+        expect(result.content[0].text).toContain("myapp");
+      });
+
+      it("should stop compose project and remove volumes", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "down",
+          project: "myapp",
+          host: "testhost",
+          remove_volumes: true
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeDown).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          true
+        );
+        expect(result.content).toBeDefined();
+      });
+
+      it("should restart compose project", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "restart",
+          project: "myapp",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeRestart).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp"
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Restarted project");
+        expect(result.content[0].text).toContain("myapp");
+      });
+    });
+
+    describe("compose action: utility operations", () => {
+      it("should get compose logs", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "logs",
+          project: "myapp",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeLogs).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          expect.objectContaining({})
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("log line 1");
+        expect(result.content[0].text).toContain("log line 2");
+      });
+
+      it("should get compose logs for specific service", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "logs",
+          project: "myapp",
+          host: "testhost",
+          service: "web"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeLogs).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          expect.objectContaining({ service: "web" })
+        );
+        expect(result.content).toBeDefined();
+      });
+
+      it("should get compose logs with line limit", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "logs",
+          project: "myapp",
+          host: "testhost",
+          lines: 100
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeLogs).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          expect.objectContaining({ lines: 100 })
+        );
+        expect(result.content).toBeDefined();
+      });
+
+      it("should build compose project", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "build",
+          project: "myapp",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeBuild).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          expect.objectContaining({})
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Built images");
+        expect(result.content[0].text).toContain("myapp");
+      });
+
+      it("should build compose project with no-cache", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "build",
+          project: "myapp",
+          host: "testhost",
+          no_cache: true
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeBuild).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          expect.objectContaining({ noCache: true })
+        );
+        expect(result.content).toBeDefined();
+      });
+
+      it("should build specific service in compose project", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "build",
+          project: "myapp",
+          host: "testhost",
+          service: "web"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeBuild).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          expect.objectContaining({ service: "web" })
+        );
+        expect(result.content[0].text).toContain("web");
+      });
+
+      it("should pull compose images", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "pull",
+          project: "myapp",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composePull).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          expect.objectContaining({})
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Pulled images");
+        expect(result.content[0].text).toContain("myapp");
+      });
+
+      it("should pull images for specific service", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "pull",
+          project: "myapp",
+          host: "testhost",
+          service: "web"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composePull).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          expect.objectContaining({ service: "web" })
+        );
+        expect(result.content[0].text).toContain("web");
+      });
+
+      it("should recreate compose containers", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "recreate",
+          project: "myapp",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeRecreate).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          expect.objectContaining({})
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Recreated project");
+        expect(result.content[0].text).toContain("myapp");
+      });
+
+      it("should recreate specific service in compose project", async () => {
+        const result = (await toolHandler({
+          action: "compose",
+          subaction: "recreate",
+          project: "myapp",
+          host: "testhost",
+          service: "web"
+        })) as { content: Array<{ text: string }> };
+
+        expect(composeService.composeRecreate).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "myapp",
+          expect.objectContaining({ service: "web" })
+        );
+        expect(result.content[0].text).toContain("web");
+      });
     });
   });
 
