@@ -32,6 +32,7 @@ export interface PoolStats {
   activeConnections: number;  // Currently active
   idleConnections: number;    // Currently idle
   totalConnections: number;   // Total in pool
+  healthChecksPassed: number; // Successful health checks
   healthCheckFailures: number; // Failed health checks
 }
 
@@ -86,6 +87,7 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
       activeConnections: 0,
       idleConnections: 0,
       totalConnections: 0,
+      healthChecksPassed: 0,
       healthCheckFailures: 0
     };
 
@@ -99,7 +101,50 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
   }
 
   private startHealthChecks(): void {
-    // Placeholder for health check implementation
+    this.healthCheckTimer = setInterval(() => {
+      void this.performHealthChecks();
+    }, this.config.healthCheckIntervalMs);
+  }
+
+  private async performHealthChecks(): Promise<void> {
+    const healthCheckPromises: Promise<void>[] = [];
+
+    for (const [poolKey, connections] of this.pool.entries()) {
+      for (const metadata of connections) {
+        // Only check idle connections
+        if (!metadata.isActive) {
+          healthCheckPromises.push(
+            this.checkConnectionHealth(poolKey, metadata)
+          );
+        }
+      }
+    }
+
+    await Promise.allSettled(healthCheckPromises);
+  }
+
+  private async checkConnectionHealth(
+    poolKey: string,
+    metadata: ConnectionMetadata
+  ): Promise<void> {
+    try {
+      // Verify connection using echo command
+      const result = await metadata.connection.execCommand("echo ok");
+
+      if (result.code === 0) {
+        // Health check passed (exit code 0 indicates success)
+        metadata.healthChecksPassed++;
+        this.stats.healthChecksPassed++;
+      } else {
+        // Command failed
+        throw new Error("Health check command failed");
+      }
+    } catch (error) {
+      // Health check failed - remove unhealthy connection
+      metadata.healthChecksFailed++;
+      this.stats.healthCheckFailures++;
+      await this.removeConnection(poolKey, metadata);
+    }
   }
 
   async getConnection(host: HostConfig): Promise<NodeSSH> {

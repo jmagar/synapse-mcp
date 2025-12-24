@@ -223,3 +223,69 @@ describe("SSHConnectionPoolImpl - connection management", () => {
     expect(stats.idleConnections).toBe(0);
   });
 });
+
+describe("SSHConnectionPoolImpl - health checks", () => {
+  it("should perform health checks on idle connections", async () => {
+    vi.useFakeTimers();
+
+    const pool = new SSHConnectionPoolImpl({
+      enableHealthChecks: true,
+      healthCheckIntervalMs: 10000,
+      idleTimeoutMs: 300000 // Long timeout to prevent cleanup during test
+    });
+
+    const host = {
+      name: "testhost",
+      host: "localhost",
+      protocol: "ssh" as const
+    };
+
+    const connection = await pool.getConnection(host);
+    await pool.releaseConnection(host, connection);
+
+    // Fast-forward to trigger health check
+    await vi.advanceTimersByTimeAsync(10000);
+
+    const stats = pool.getStats();
+    expect(stats.healthChecksPassed).toBeGreaterThan(0);
+
+    await pool.closeAll();
+    vi.useRealTimers();
+  });
+
+  it("should remove failed connections on health check failure", async () => {
+    vi.useFakeTimers();
+
+    const pool = new SSHConnectionPoolImpl({
+      enableHealthChecks: true,
+      healthCheckIntervalMs: 10000
+    });
+
+    const host = {
+      name: "testhost",
+      host: "localhost",
+      protocol: "ssh" as const
+    };
+
+    const connection = await pool.getConnection(host);
+
+    // Mock the execCommand to fail on health check
+    connection.execCommand = vi.fn().mockRejectedValue(new Error("Connection failed"));
+    connection.isConnected = vi.fn().mockReturnValue(false);
+
+    await pool.releaseConnection(host, connection);
+
+    const statsBefore = pool.getStats();
+    expect(statsBefore.totalConnections).toBe(1);
+
+    // Fast-forward to trigger health check
+    await vi.advanceTimersByTimeAsync(10000);
+
+    const statsAfter = pool.getStats();
+    expect(statsAfter.healthCheckFailures).toBeGreaterThan(0);
+    expect(statsAfter.totalConnections).toBe(0); // Connection removed
+
+    await pool.closeAll();
+    vi.useRealTimers();
+  });
+});
