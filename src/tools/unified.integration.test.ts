@@ -173,3 +173,89 @@ describe("unified tool integration", () => {
     });
   });
 });
+
+describe("Container stats collection performance", () => {
+  beforeEach(async () => {
+    // Mock getContainerStats to simulate 500ms delay
+    const dockerService = await import("../services/docker.js");
+    vi.spyOn(dockerService, "getContainerStats").mockImplementation(
+      async (id, host) => {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return {
+          containerId: id,
+          containerName: `container-${id}`,
+          cpuPercent: 10.5,
+          memoryUsage: 1024 * 1024 * 100,
+          memoryLimit: 1024 * 1024 * 500,
+          memoryPercent: 20.0,
+          networkRx: 1024,
+          networkTx: 2048,
+          blockRead: 512,
+          blockWrite: 256
+        };
+      }
+    );
+
+    // Mock listContainers to return 5 containers (reduced for faster testing)
+    vi.spyOn(dockerService, "listContainers").mockResolvedValue(
+      Array.from({ length: 5 }, (_, i) => ({
+        id: `container-${i}`,
+        name: `test-${i}`,
+        image: "test:latest",
+        state: "running" as const,
+        status: "Up 1 hour",
+        created: new Date().toISOString(),
+        ports: [],
+        labels: {},
+        hostName: "test-host"
+      }))
+    );
+
+    // Mock loadHostConfigs to return 2 test hosts
+    vi.spyOn(dockerService, "loadHostConfigs").mockReturnValue([
+      {
+        name: "host1",
+        host: "192.168.1.10",
+        protocol: "http" as const,
+        port: 2375
+      },
+      {
+        name: "host2",
+        host: "192.168.1.11",
+        protocol: "http" as const,
+        port: 2375
+      }
+    ]);
+  });
+
+  it("should measure sequential stats collection baseline performance", async () => {
+    const { registerUnifiedTool } = await import("./unified.js");
+    const mockServer = {
+      registerTool: vi.fn()
+    } as unknown as McpServer;
+
+    registerUnifiedTool(mockServer);
+
+    const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
+
+    const startTime = Date.now();
+
+    const result = (await handler({
+      action: "container",
+      subaction: "stats",
+      response_format: "json"
+    })) as { content: Array<{ text: string }> };
+
+    const duration = Date.now() - startTime;
+
+    expect(result.content).toBeDefined();
+    expect(result.content[0].text).toContain("stats");
+
+    // 2 hosts × 5 containers × 500ms = 5000ms sequential
+    // Allow some overhead
+    expect(duration).toBeGreaterThan(4500);
+    expect(duration).toBeLessThan(6000);
+
+    console.log(`Sequential baseline: ${duration}ms`);
+  }, 10000);
+});
