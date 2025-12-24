@@ -179,7 +179,7 @@ describe("Container stats collection performance", () => {
     // Mock getContainerStats to simulate 500ms delay
     const dockerService = await import("../services/docker.js");
     vi.spyOn(dockerService, "getContainerStats").mockImplementation(
-      async (id, host) => {
+      async (id, _host) => {
         await new Promise((resolve) => setTimeout(resolve, 500));
         return {
           containerId: id,
@@ -228,7 +228,7 @@ describe("Container stats collection performance", () => {
     ]);
   });
 
-  it("should measure sequential stats collection baseline performance", async () => {
+  it("should measure baseline performance (was sequential, now parallel)", async () => {
     const { registerUnifiedTool } = await import("./unified.js");
     const mockServer = {
       registerTool: vi.fn()
@@ -251,11 +251,89 @@ describe("Container stats collection performance", () => {
     expect(result.content).toBeDefined();
     expect(result.content[0].text).toContain("stats");
 
-    // 2 hosts × 5 containers × 500ms = 5000ms sequential
-    // Allow some overhead
-    expect(duration).toBeGreaterThan(4500);
-    expect(duration).toBeLessThan(6000);
+    // Before optimization: 2 hosts × 5 containers × 500ms = 5000ms sequential
+    // After optimization: Parallel execution ~500ms
+    expect(duration).toBeLessThan(1000);
 
-    console.log(`Sequential baseline: ${duration}ms`);
+    console.log(`Baseline performance: ${duration}ms (parallel optimized)`);
   }, 10000);
+
+  it("should collect stats in parallel across hosts and containers", async () => {
+    const { registerUnifiedTool } = await import("./unified.js");
+    const mockServer = {
+      registerTool: vi.fn()
+    } as unknown as McpServer;
+
+    registerUnifiedTool(mockServer);
+
+    const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
+
+    const startTime = Date.now();
+
+    const result = (await handler({
+      action: "container",
+      subaction: "stats",
+      response_format: "json"
+    })) as { content: Array<{ text: string }> };
+
+    const duration = Date.now() - startTime;
+
+    expect(result.content).toBeDefined();
+
+    const output = JSON.parse(result.content[0].text);
+    expect(output.stats).toHaveLength(10); // 2 hosts × 5 containers
+
+    // Parallel: max(500ms) + overhead ≈ 600-800ms
+    expect(duration).toBeLessThan(1000);
+
+    console.log(`Parallel optimized: ${duration}ms`);
+    console.log(`Speedup: ${(5000 / duration).toFixed(1)}x`);
+  }, 10000);
+
+  it("should handle partial failures gracefully", async () => {
+    const dockerService = await import("../services/docker.js");
+
+    // Mock some stats calls to fail
+    vi.spyOn(dockerService, "getContainerStats").mockImplementation(async (id, _host) => {
+      if (id === "container-2") {
+        throw new Error("Container not responding");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return {
+        containerId: id,
+        containerName: `container-${id}`,
+        cpuPercent: 10.5,
+        memoryUsage: 1024 * 1024 * 100,
+        memoryLimit: 1024 * 1024 * 500,
+        memoryPercent: 20.0,
+        networkRx: 1024,
+        networkTx: 2048,
+        blockRead: 512,
+        blockWrite: 256
+      };
+    });
+
+    const { registerUnifiedTool } = await import("./unified.js");
+    const mockServer = {
+      registerTool: vi.fn()
+    } as unknown as McpServer;
+
+    registerUnifiedTool(mockServer);
+
+    const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
+
+    const result = (await handler({
+      action: "container",
+      subaction: "stats",
+      response_format: "json"
+    })) as { content: Array<{ text: string }> };
+
+    expect(result.content).toBeDefined();
+
+    const output = JSON.parse(result.content[0].text);
+
+    // Should have stats for 8 containers (10 total - 2 that failed)
+    expect(output.stats.length).toBeGreaterThan(0);
+    expect(output.stats.length).toBeLessThan(10);
+  });
 });

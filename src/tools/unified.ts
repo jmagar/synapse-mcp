@@ -51,6 +51,68 @@ import {
 } from "../formatters/index.js";
 
 /**
+ * Collect container stats in parallel across hosts and containers
+ *
+ * @param targetHosts - Hosts to collect stats from
+ * @param maxContainersPerHost - Maximum containers to query per host (default: 20)
+ * @returns Array of stats with host information
+ */
+async function collectStatsParallel(
+  targetHosts: HostConfig[],
+  maxContainersPerHost: number = 20
+): Promise<Array<{ stats: Awaited<ReturnType<typeof getContainerStats>>; host: string }>> {
+  // Parallel collection across hosts
+  const hostResults = await Promise.allSettled(
+    targetHosts.map(async (host) => {
+      try {
+        // Get running containers for this host
+        const containers = await listContainers([host], { state: "running" });
+
+        // Limit to maxContainersPerHost
+        const limitedContainers = containers.slice(0, maxContainersPerHost);
+
+        // Parallel collection across containers for this host
+        const containerResults = await Promise.allSettled(
+          limitedContainers.map(async (container) => {
+            const stats = await getContainerStats(container.id, host);
+            return { stats, host: host.name };
+          })
+        );
+
+        // Filter successful container stat collections
+        return containerResults
+          .filter(
+            (
+              result
+            ): result is PromiseFulfilledResult<{
+              stats: Awaited<ReturnType<typeof getContainerStats>>;
+              host: string;
+            }> => result.status === "fulfilled"
+          )
+          .map((result) => result.value);
+      } catch (error) {
+        console.error(`Failed to collect stats from host ${host.name}:`, error);
+        return [];
+      }
+    })
+  );
+
+  // Flatten results from all hosts
+  const allStats: Array<{ stats: Awaited<ReturnType<typeof getContainerStats>>; host: string }> =
+    [];
+
+  for (const result of hostResults) {
+    if (result.status === "fulfilled") {
+      allStats.push(...result.value);
+    } else {
+      console.error("Host stats collection failed:", result.reason);
+    }
+  }
+
+  return allStats;
+}
+
+/**
  * Register the unified homelab tool
  */
 export function registerUnifiedTool(server: McpServer): void {
@@ -277,26 +339,9 @@ async function handleContainerAction(
         return successResponse(text, output);
       } else {
         const targetHosts = params.host ? hosts.filter((h) => h.name === params.host) : hosts;
-        const allStats: Array<{
-          stats: Awaited<ReturnType<typeof getContainerStats>>;
-          host: string;
-        }> = [];
 
-        for (const host of targetHosts) {
-          try {
-            const containers = await listContainers([host], { state: "running" });
-            for (const c of containers.slice(0, 20)) {
-              try {
-                const stats = await getContainerStats(c.id, host);
-                allStats.push({ stats, host: host.name });
-              } catch {
-                /* skip */
-              }
-            }
-          } catch {
-            /* skip */
-          }
-        }
+        // Collect stats in parallel across all hosts and containers
+        const allStats = await collectStatsParallel(targetHosts, 20);
 
         const output = { stats: allStats.map((s) => ({ ...s.stats, host: s.host })) };
         const text =
