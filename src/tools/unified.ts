@@ -9,7 +9,6 @@ import {
   getHostStatus,
   inspectContainer,
   findContainerHost,
-  formatBytes,
   getDockerInfo,
   getDockerDiskUsage,
   pruneDocker,
@@ -29,10 +28,9 @@ import {
   composeLogs,
   composeBuild,
   composePull,
-  composeRecreate,
-  type ComposeProject
+  composeRecreate
 } from "../services/compose.js";
-import { ResponseFormat, HostConfig, ContainerInfo, ImageInfo } from "../types.js";
+import { ResponseFormat, HostConfig } from "../types.js";
 import {
   truncateIfNeeded,
   formatContainersMarkdown,
@@ -40,6 +38,7 @@ import {
   formatStatsMarkdown,
   formatMultiStatsMarkdown,
   formatInspectMarkdown,
+  formatInspectSummaryMarkdown,
   formatHostStatusMarkdown,
   formatSearchResultsMarkdown,
   formatDockerInfoMarkdown,
@@ -116,16 +115,20 @@ EXAMPLES:
         openWorldHint: true
       }
     },
-    async (params: UnifiedHomelabInput) => {
+    async (params: unknown) => {
       try {
-        return await routeAction(params, hosts);
+        // Validate and parse input with Zod
+        const validated = UnifiedHomelabSchema.parse(params);
+        return await routeAction(validated, hosts);
       } catch (error) {
         return {
           isError: true,
-          content: [{
-            type: "text" as const,
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }]
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
+            }
+          ]
         };
       }
     }
@@ -135,7 +138,14 @@ EXAMPLES:
 /**
  * Route action to appropriate handler
  */
-async function routeAction(params: UnifiedHomelabInput, hosts: HostConfig[]) {
+async function routeAction(
+  params: UnifiedHomelabInput,
+  hosts: HostConfig[]
+): Promise<{
+  isError?: boolean;
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+}> {
   const { action } = params;
 
   switch (action) {
@@ -156,7 +166,14 @@ async function routeAction(params: UnifiedHomelabInput, hosts: HostConfig[]) {
 
 // ===== Container Action Handlers =====
 
-async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostConfig[]) {
+async function handleContainerAction(
+  params: UnifiedHomelabInput,
+  hosts: HostConfig[]
+): Promise<{
+  isError?: boolean;
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+}> {
   if (params.action !== "container") throw new Error("Invalid action");
   const { subaction } = params;
 
@@ -164,7 +181,9 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
     case "list": {
       const targetHosts = params.host ? hosts.filter((h) => h.name === params.host) : hosts;
       if (params.host && targetHosts.length === 0) {
-        return errorResponse(`Host '${params.host}' not found. Available: ${hosts.map((h) => h.name).join(", ")}`);
+        return errorResponse(
+          `Host '${params.host}' not found. Available: ${hosts.map((h) => h.name).join(", ")}`
+        );
       }
 
       const containers = await listContainers(targetHosts, {
@@ -178,10 +197,17 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
       const paginated = containers.slice(params.offset, params.offset + params.limit);
       const hasMore = total > params.offset + params.limit;
 
-      const output = { total, count: paginated.length, offset: params.offset, containers: paginated, has_more: hasMore };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatContainersMarkdown(paginated, total, params.offset, hasMore);
+      const output = {
+        total,
+        count: paginated.length,
+        offset: params.offset,
+        containers: paginated,
+        has_more: hasMore
+      };
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatContainersMarkdown(paginated, total, params.offset, hasMore);
 
       return successResponse(text, output);
     }
@@ -197,7 +223,9 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
       }
 
       await containerAction(params.container_id, subaction, targetHost);
-      return successResponse(`✓ Successfully performed '${subaction}' on container '${params.container_id}' (host: ${targetHost.name})`);
+      return successResponse(
+        `✓ Successfully performed '${subaction}' on container '${params.container_id}' (host: ${targetHost.name})`
+      );
     }
 
     case "logs": {
@@ -218,10 +246,16 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
         logs = logs.filter((l) => l.message.toLowerCase().includes(grepLower));
       }
 
-      const output = { container: params.container_id, host: targetHost.name, count: logs.length, logs };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatLogsMarkdown(logs, params.container_id, targetHost.name);
+      const output = {
+        container: params.container_id,
+        host: targetHost.name,
+        count: logs.length,
+        logs
+      };
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatLogsMarkdown(logs, params.container_id, targetHost.name);
 
       return successResponse(text, output);
     }
@@ -235,14 +269,18 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
 
         const stats = await getContainerStats(params.container_id, targetHost);
         const output = { ...stats, host: targetHost.name };
-        const text = params.response_format === ResponseFormat.JSON
-          ? JSON.stringify(output, null, 2)
-          : formatStatsMarkdown([stats], targetHost.name);
+        const text =
+          params.response_format === ResponseFormat.JSON
+            ? JSON.stringify(output, null, 2)
+            : formatStatsMarkdown([stats], targetHost.name);
 
         return successResponse(text, output);
       } else {
         const targetHosts = params.host ? hosts.filter((h) => h.name === params.host) : hosts;
-        const allStats: Array<{ stats: Awaited<ReturnType<typeof getContainerStats>>; host: string }> = [];
+        const allStats: Array<{
+          stats: Awaited<ReturnType<typeof getContainerStats>>;
+          host: string;
+        }> = [];
 
         for (const host of targetHosts) {
           try {
@@ -251,15 +289,20 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
               try {
                 const stats = await getContainerStats(c.id, host);
                 allStats.push({ stats, host: host.name });
-              } catch { /* skip */ }
+              } catch {
+                /* skip */
+              }
             }
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
 
         const output = { stats: allStats.map((s) => ({ ...s.stats, host: s.host })) };
-        const text = params.response_format === ResponseFormat.JSON
-          ? JSON.stringify(output, null, 2)
-          : formatMultiStatsMarkdown(allStats);
+        const text =
+          params.response_format === ResponseFormat.JSON
+            ? JSON.stringify(output, null, 2)
+            : formatMultiStatsMarkdown(allStats);
 
         return successResponse(text, output);
       }
@@ -272,10 +315,44 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
       }
 
       const info = await inspectContainer(params.container_id, targetHost);
+
+      // Summary mode returns condensed output to save tokens
+      if (params.summary) {
+        const summary = {
+          id: info.Id?.slice(0, 12),
+          name: info.Name?.replace(/^\//, ""),
+          image: info.Config?.Image,
+          state: info.State?.Status,
+          created: info.Created,
+          started: info.State?.StartedAt,
+          restartCount: info.RestartCount,
+          ports: Object.keys(info.NetworkSettings?.Ports || {}).filter(
+            (p) => info.NetworkSettings?.Ports?.[p]
+          ),
+          mounts: (info.Mounts || []).map((m: { Source?: string; Destination?: string; Type?: string }) => ({
+            src: m.Source,
+            dst: m.Destination,
+            type: m.Type
+          })),
+          networks: Object.keys(info.NetworkSettings?.Networks || {}),
+          env_count: (info.Config?.Env || []).length,
+          labels_count: Object.keys(info.Config?.Labels || {}).length,
+          host: targetHost.name
+        };
+        const text =
+          params.response_format === ResponseFormat.JSON
+            ? JSON.stringify(summary, null, 2)
+            : formatInspectSummaryMarkdown(summary);
+
+        return successResponse(text, summary);
+      }
+
+      // Full mode returns complete inspect output
       const output = { ...info, _host: targetHost.name };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatInspectMarkdown(info, targetHost.name);
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatInspectMarkdown(info, targetHost.name);
 
       return successResponse(text, output);
     }
@@ -286,7 +363,9 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
       const query = params.query.toLowerCase();
 
       const matches = allContainers.filter((c) => {
-        const searchText = [c.name, c.image, ...Object.keys(c.labels), ...Object.values(c.labels)].join(" ").toLowerCase();
+        const searchText = [c.name, c.image, ...Object.keys(c.labels), ...Object.values(c.labels)]
+          .join(" ")
+          .toLowerCase();
         return searchText.includes(query);
       });
 
@@ -294,10 +373,17 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
       const paginated = matches.slice(params.offset, params.offset + params.limit);
       const hasMore = total > params.offset + params.limit;
 
-      const output = { query: params.query, total, count: paginated.length, containers: paginated, has_more: hasMore };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatSearchResultsMarkdown(paginated, params.query, total);
+      const output = {
+        query: params.query,
+        total,
+        count: paginated.length,
+        containers: paginated,
+        has_more: hasMore
+      };
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatSearchResultsMarkdown(paginated, params.query, total);
 
       return successResponse(text, output);
     }
@@ -312,7 +398,9 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
       const imageName = info.Config.Image;
       await pullImage(imageName, targetHost);
 
-      return successResponse(`✓ Successfully pulled latest image '${imageName}' for container '${params.container_id}'`);
+      return successResponse(
+        `✓ Successfully pulled latest image '${imageName}' for container '${params.container_id}'`
+      );
     }
 
     case "recreate": {
@@ -321,8 +409,12 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
         return errorResponse(`Container '${params.container_id}' not found.`);
       }
 
-      const result = await recreateContainer(params.container_id, targetHost, { pull: params.pull });
-      return successResponse(`✓ ${result.status}. New container ID: ${result.containerId.slice(0, 12)}`);
+      const result = await recreateContainer(params.container_id, targetHost, {
+        pull: params.pull
+      });
+      return successResponse(
+        `✓ ${result.status}. New container ID: ${result.containerId.slice(0, 12)}`
+      );
     }
 
     default:
@@ -332,7 +424,14 @@ async function handleContainerAction(params: UnifiedHomelabInput, hosts: HostCon
 
 // ===== Compose Action Handlers =====
 
-async function handleComposeAction(params: UnifiedHomelabInput, hosts: HostConfig[]) {
+async function handleComposeAction(
+  params: UnifiedHomelabInput,
+  hosts: HostConfig[]
+): Promise<{
+  isError?: boolean;
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+}> {
   if (params.action !== "compose") throw new Error("Invalid action");
   const { subaction } = params;
 
@@ -343,21 +442,64 @@ async function handleComposeAction(params: UnifiedHomelabInput, hosts: HostConfi
 
   switch (subaction) {
     case "list": {
-      const projects = await listComposeProjects(targetHost);
-      const output = { host: params.host, projects };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatComposeListMarkdown(projects, params.host);
+      let projects = await listComposeProjects(targetHost);
+
+      // Apply name filter if provided
+      if (params.name_filter) {
+        const filter = params.name_filter.toLowerCase();
+        projects = projects.filter((p) => p.name.toLowerCase().includes(filter));
+      }
+
+      const total = projects.length;
+      const paginated = projects.slice(params.offset, params.offset + params.limit);
+      const hasMore = total > params.offset + params.limit;
+
+      const output = {
+        host: params.host,
+        total,
+        count: paginated.length,
+        offset: params.offset,
+        projects: paginated,
+        has_more: hasMore
+      };
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatComposeListMarkdown(paginated, params.host, total, params.offset, hasMore);
 
       return successResponse(text, output);
     }
 
     case "status": {
-      const status = await getComposeStatus(targetHost, params.project);
-      const output = { project: params.project, host: params.host, status };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatComposeStatusMarkdown(status);
+      let status = await getComposeStatus(targetHost, params.project);
+
+      // Apply service filter if provided
+      if (params.service_filter) {
+        const filter = params.service_filter.toLowerCase();
+        status = {
+          ...status,
+          services: status.services.filter((s) => s.name.toLowerCase().includes(filter))
+        };
+      }
+
+      const totalServices = status.services.length;
+      const paginatedServices = status.services.slice(params.offset, params.offset + params.limit);
+      const hasMore = totalServices > params.offset + params.limit;
+
+      const paginatedStatus = { ...status, services: paginatedServices };
+      const output = {
+        project: params.project,
+        host: params.host,
+        total_services: totalServices,
+        count: paginatedServices.length,
+        offset: params.offset,
+        has_more: hasMore,
+        status: paginatedStatus
+      };
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatComposeStatusMarkdown(paginatedStatus, totalServices, params.offset, hasMore);
 
       return successResponse(text, output);
     }
@@ -393,10 +535,16 @@ async function handleComposeAction(params: UnifiedHomelabInput, hosts: HostConfi
         ? `## Logs: ${params.project}/${params.service}`
         : `## Logs: ${params.project}`;
 
-      const output = { project: params.project, host: params.host, service: params.service || "all", logs };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : `${title}\n\n\`\`\`\n${logs}\n\`\`\``;
+      const output = {
+        project: params.project,
+        host: params.host,
+        service: params.service || "all",
+        logs
+      };
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : `${title}\n\n\`\`\`\n${logs}\n\`\`\``;
 
       return successResponse(text, output);
     }
@@ -406,12 +554,16 @@ async function handleComposeAction(params: UnifiedHomelabInput, hosts: HostConfi
         service: params.service,
         noCache: params.no_cache
       });
-      return successResponse(`✓ Built images for project '${params.project}'${params.service ? ` (service: ${params.service})` : ""}`);
+      return successResponse(
+        `✓ Built images for project '${params.project}'${params.service ? ` (service: ${params.service})` : ""}`
+      );
     }
 
     case "pull": {
       await composePull(targetHost, params.project, { service: params.service });
-      return successResponse(`✓ Pulled images for project '${params.project}'${params.service ? ` (service: ${params.service})` : ""}`);
+      return successResponse(
+        `✓ Pulled images for project '${params.project}'${params.service ? ` (service: ${params.service})` : ""}`
+      );
     }
 
     case "recreate": {
@@ -429,7 +581,14 @@ async function handleComposeAction(params: UnifiedHomelabInput, hosts: HostConfi
 
 // ===== Host Action Handlers =====
 
-async function handleHostAction(params: UnifiedHomelabInput, hosts: HostConfig[]) {
+async function handleHostAction(
+  params: UnifiedHomelabInput,
+  hosts: HostConfig[]
+): Promise<{
+  isError?: boolean;
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+}> {
   if (params.action !== "host") throw new Error("Invalid action");
   const { subaction } = params;
 
@@ -442,9 +601,10 @@ async function handleHostAction(params: UnifiedHomelabInput, hosts: HostConfig[]
 
       const status = await getHostStatus(targetHosts);
       const output = { hosts: status };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatHostStatusMarkdown(status);
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatHostStatusMarkdown(status);
 
       return successResponse(text, output);
     }
@@ -464,15 +624,20 @@ async function handleHostAction(params: UnifiedHomelabInput, hosts: HostConfig[]
             const resources = await getHostResources(host);
             return { host: host.name, resources };
           } catch (error) {
-            return { host: host.name, resources: null, error: error instanceof Error ? error.message : "SSH failed" };
+            return {
+              host: host.name,
+              resources: null,
+              error: error instanceof Error ? error.message : "SSH failed"
+            };
           }
         })
       );
 
       const output = { hosts: results };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatHostResourcesMarkdown(results);
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatHostResourcesMarkdown(results);
 
       return successResponse(text, output);
     }
@@ -484,7 +649,14 @@ async function handleHostAction(params: UnifiedHomelabInput, hosts: HostConfig[]
 
 // ===== Docker Action Handlers =====
 
-async function handleDockerAction(params: UnifiedHomelabInput, hosts: HostConfig[]) {
+async function handleDockerAction(
+  params: UnifiedHomelabInput,
+  hosts: HostConfig[]
+): Promise<{
+  isError?: boolean;
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+}> {
   if (params.action !== "docker") throw new Error("Invalid action");
   const { subaction } = params;
 
@@ -507,8 +679,17 @@ async function handleDockerAction(params: UnifiedHomelabInput, hosts: HostConfig
                 dockerVersion: "error",
                 apiVersion: "error",
                 os: error instanceof Error ? error.message : "Connection failed",
-                arch: "", kernelVersion: "", cpus: 0, memoryBytes: 0, storageDriver: "", rootDir: "",
-                containersTotal: 0, containersRunning: 0, containersPaused: 0, containersStopped: 0, images: 0
+                arch: "",
+                kernelVersion: "",
+                cpus: 0,
+                memoryBytes: 0,
+                storageDriver: "",
+                rootDir: "",
+                containersTotal: 0,
+                containersRunning: 0,
+                containersPaused: 0,
+                containersStopped: 0,
+                images: 0
               }
             };
           }
@@ -516,9 +697,10 @@ async function handleDockerAction(params: UnifiedHomelabInput, hosts: HostConfig
       );
 
       const output = { hosts: results };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatDockerInfoMarkdown(results);
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatDockerInfoMarkdown(results);
 
       return successResponse(text, output);
     }
@@ -537,15 +719,21 @@ async function handleDockerAction(params: UnifiedHomelabInput, hosts: HostConfig
       );
 
       const results = settled
-        .filter((r): r is PromiseFulfilledResult<{ host: string; usage: Awaited<ReturnType<typeof getDockerDiskUsage>> }> =>
-          r.status === "fulfilled"
+        .filter(
+          (
+            r
+          ): r is PromiseFulfilledResult<{
+            host: string;
+            usage: Awaited<ReturnType<typeof getDockerDiskUsage>>;
+          }> => r.status === "fulfilled"
         )
         .map((r) => r.value);
 
       const output = { hosts: results };
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatDockerDfMarkdown(results);
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatDockerDfMarkdown(results);
 
       return successResponse(text, output);
     }
@@ -560,7 +748,8 @@ async function handleDockerAction(params: UnifiedHomelabInput, hosts: HostConfig
         return errorResponse(`Host '${params.host}' not found.`);
       }
 
-      const allResults: Array<{ host: string; results: Awaited<ReturnType<typeof pruneDocker>> }> = [];
+      const allResults: Array<{ host: string; results: Awaited<ReturnType<typeof pruneDocker>> }> =
+        [];
 
       for (const host of targetHosts) {
         try {
@@ -569,12 +758,14 @@ async function handleDockerAction(params: UnifiedHomelabInput, hosts: HostConfig
         } catch (error) {
           allResults.push({
             host: host.name,
-            results: [{
-              type: params.prune_target,
-              spaceReclaimed: 0,
-              itemsDeleted: 0,
-              details: [`Error: ${error instanceof Error ? error.message : "Unknown error"}`]
-            }]
+            results: [
+              {
+                type: params.prune_target,
+                spaceReclaimed: 0,
+                itemsDeleted: 0,
+                details: [`Error: ${error instanceof Error ? error.message : "Unknown error"}`]
+              }
+            ]
           });
         }
       }
@@ -592,7 +783,14 @@ async function handleDockerAction(params: UnifiedHomelabInput, hosts: HostConfig
 
 // ===== Image Action Handlers =====
 
-async function handleImageAction(params: UnifiedHomelabInput, hosts: HostConfig[]) {
+async function handleImageAction(
+  params: UnifiedHomelabInput,
+  hosts: HostConfig[]
+): Promise<{
+  isError?: boolean;
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+}> {
   if (params.action !== "image") throw new Error("Invalid action");
   const { subaction } = params;
 
@@ -616,9 +814,10 @@ async function handleImageAction(params: UnifiedHomelabInput, hosts: HostConfig[
         }
       };
 
-      const text = params.response_format === ResponseFormat.JSON
-        ? JSON.stringify(output, null, 2)
-        : formatImagesMarkdown(paginated, images.length, params.offset);
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatImagesMarkdown(paginated, images.length, params.offset);
 
       return successResponse(text, output);
     }
@@ -679,17 +878,25 @@ async function resolveContainerHost(
   return result?.host || null;
 }
 
-function successResponse(text: string, structuredContent?: Record<string, unknown>) {
+function successResponse(
+  text: string,
+  structuredContent?: Record<string, unknown>
+): {
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+} {
   return {
     content: [{ type: "text" as const, text: truncateIfNeeded(text) }],
     ...(structuredContent ? { structuredContent } : {})
   };
 }
 
-function errorResponse(message: string) {
+function errorResponse(message: string): {
+  isError: true;
+  content: Array<{ type: "text"; text: string }>;
+} {
   return {
     isError: true,
     content: [{ type: "text" as const, text: message }]
   };
 }
-

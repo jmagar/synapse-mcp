@@ -17,7 +17,10 @@ export { formatBytes };
  */
 export function truncateIfNeeded(text: string): string {
   if (text.length <= CHARACTER_LIMIT) return text;
-  return text.slice(0, CHARACTER_LIMIT - 100) + "\n\n... [Output truncated. Use pagination or filters to reduce results.]";
+  return (
+    text.slice(0, CHARACTER_LIMIT - 100) +
+    "\n\n... [Output truncated. Use pagination or filters to reduce results.]"
+  );
 }
 
 /**
@@ -37,7 +40,10 @@ export function formatContainersMarkdown(
 
   for (const c of containers) {
     const stateEmoji = c.state === "running" ? "🟢" : c.state === "paused" ? "🟡" : "🔴";
-    const ports = c.ports.filter((p) => p.hostPort).map((p) => `${p.hostPort}→${p.containerPort}`).join(", ");
+    const ports = c.ports
+      .filter((p) => p.hostPort)
+      .map((p) => `${p.hostPort}→${p.containerPort}`)
+      .join(", ");
 
     lines.push(`${stateEmoji} **${c.name}** (${c.hostName})`);
     lines.push(`   Image: ${c.image} | Status: ${c.status}`);
@@ -46,7 +52,9 @@ export function formatContainersMarkdown(
   }
 
   if (hasMore) {
-    lines.push(`*More results available. Use offset=${offset + containers.length} to see next page.*`);
+    lines.push(
+      `*More results available. Use offset=${offset + containers.length} to see next page.*`
+    );
   }
 
   return lines.join("\n");
@@ -114,10 +122,17 @@ export function formatMultiStatsMarkdown(
 ): string {
   if (allStats.length === 0) return "No running containers found.";
 
-  const lines = ["## Container Resource Usage", "", "| Container | Host | CPU% | Memory | Mem% |", "|-----------|------|------|--------|------|"];
+  const lines = [
+    "## Container Resource Usage",
+    "",
+    "| Container | Host | CPU% | Memory | Mem% |",
+    "|-----------|------|------|--------|------|"
+  ];
 
   for (const { stats, host } of allStats) {
-    lines.push(`| ${stats.containerName} | ${host} | ${stats.cpuPercent.toFixed(1)}% | ${formatBytes(stats.memoryUsage)} | ${stats.memoryPercent.toFixed(1)}% |`);
+    lines.push(
+      `| ${stats.containerName} | ${host} | ${stats.cpuPercent.toFixed(1)}% | ${formatBytes(stats.memoryUsage)} | ${stats.memoryPercent.toFixed(1)}% |`
+    );
   }
 
   return lines.join("\n");
@@ -160,16 +175,19 @@ export function formatInspectMarkdown(info: ContainerInspectInfo, host: string):
   const network = info.NetworkSettings;
 
   const lines = [
-    `## Container: ${info.Name.replace(/^\//, "")} (${host})`, "",
+    `## Container: ${info.Name.replace(/^\//, "")} (${host})`,
+    "",
     "### State",
     `- Status: ${state.Status}`,
     `- Running: ${state.Running}`,
     `- Started: ${state.StartedAt}`,
-    `- Restart Count: ${info.RestartCount}`, "",
+    `- Restart Count: ${info.RestartCount}`,
+    "",
     "### Configuration",
     `- Image: ${config.Image}`,
     `- Command: ${(config.Cmd || []).join(" ")}`,
-    `- Working Dir: ${config.WorkingDir || "/"}`, ""
+    `- Working Dir: ${config.WorkingDir || "/"}`,
+    ""
   ];
 
   if (config.Env && config.Env.length > 0) {
@@ -220,12 +238,19 @@ export interface HostStatusEntry {
  * Format host status as markdown table
  */
 export function formatHostStatusMarkdown(status: HostStatusEntry[]): string {
-  const lines = ["## Homelab Host Status", "", "| Host | Status | Containers | Running |", "|------|--------|------------|---------|"];
+  const lines = [
+    "## Homelab Host Status",
+    "",
+    "| Host | Status | Containers | Running |",
+    "|------|--------|------------|---------|"
+  ];
 
   for (const h of status) {
     const statusEmoji = h.connected ? "🟢" : "🔴";
     const statusText = h.connected ? "Online" : `Offline (${h.error || "Unknown"})`;
-    lines.push(`| ${h.name} | ${statusEmoji} ${statusText} | ${h.containerCount} | ${h.runningCount} |`);
+    lines.push(
+      `| ${h.name} | ${statusEmoji} ${statusText} | ${h.containerCount} | ${h.runningCount} |`
+    );
   }
 
   return lines.join("\n");
@@ -319,12 +344,27 @@ export function formatDockerDfMarkdown(
   const lines = ["## Docker Disk Usage", ""];
 
   for (const { host, usage } of results) {
-    lines.push(`### ${host}`, "", "| Type | Count | Size | Reclaimable |", "|------|-------|------|-------------|");
-    lines.push(`| Images | ${usage.images.total} (${usage.images.active} active) | ${formatBytes(usage.images.size)} | ${formatBytes(usage.images.reclaimable)} |`);
-    lines.push(`| Containers | ${usage.containers.total} (${usage.containers.running} running) | ${formatBytes(usage.containers.size)} | ${formatBytes(usage.containers.reclaimable)} |`);
-    lines.push(`| Volumes | ${usage.volumes.total} (${usage.volumes.active} active) | ${formatBytes(usage.volumes.size)} | ${formatBytes(usage.volumes.reclaimable)} |`);
-    lines.push(`| Build Cache | ${usage.buildCache.total} | ${formatBytes(usage.buildCache.size)} | ${formatBytes(usage.buildCache.reclaimable)} |`);
-    lines.push(`| **Total** | | **${formatBytes(usage.totalSize)}** | **${formatBytes(usage.totalReclaimable)}** |`);
+    lines.push(
+      `### ${host}`,
+      "",
+      "| Type | Count | Size | Reclaimable |",
+      "|------|-------|------|-------------|"
+    );
+    lines.push(
+      `| Images | ${usage.images.total} (${usage.images.active} active) | ${formatBytes(usage.images.size)} | ${formatBytes(usage.images.reclaimable)} |`
+    );
+    lines.push(
+      `| Containers | ${usage.containers.total} (${usage.containers.running} running) | ${formatBytes(usage.containers.size)} | ${formatBytes(usage.containers.reclaimable)} |`
+    );
+    lines.push(
+      `| Volumes | ${usage.volumes.total} (${usage.volumes.active} active) | ${formatBytes(usage.volumes.size)} | ${formatBytes(usage.volumes.reclaimable)} |`
+    );
+    lines.push(
+      `| Build Cache | ${usage.buildCache.total} | ${formatBytes(usage.buildCache.size)} | ${formatBytes(usage.buildCache.reclaimable)} |`
+    );
+    lines.push(
+      `| **Total** | | **${formatBytes(usage.totalSize)}** | **${formatBytes(usage.totalReclaimable)}** |`
+    );
     lines.push("");
   }
 
@@ -352,7 +392,12 @@ export function formatPruneMarkdown(
   let totalDeleted = 0;
 
   for (const { host, results } of allResults) {
-    lines.push(`### ${host}`, "", "| Type | Items Deleted | Space Reclaimed |", "|------|---------------|-----------------|");
+    lines.push(
+      `### ${host}`,
+      "",
+      "| Type | Items Deleted | Space Reclaimed |",
+      "|------|---------------|-----------------|"
+    );
 
     for (const r of results) {
       lines.push(`| ${r.type} | ${r.itemsDeleted} | ${formatBytes(r.spaceReclaimed)} |`);
@@ -412,7 +457,9 @@ export function formatHostResourcesMarkdown(
     lines.push(`- **Uptime:** ${resources.uptime}`);
     lines.push(`- **Load:** ${resources.loadAverage.join(", ")}`);
     lines.push(`- **CPU:** ${resources.cpu.cores} cores @ ${resources.cpu.usagePercent}%`);
-    lines.push(`- **Memory:** ${resources.memory.usedMB} MB / ${resources.memory.totalMB} MB (${resources.memory.usagePercent}%)`);
+    lines.push(
+      `- **Memory:** ${resources.memory.usedMB} MB / ${resources.memory.totalMB} MB (${resources.memory.usagePercent}%)`
+    );
 
     if (resources.disk.length > 0) {
       lines.push("", "**Disks:**");
@@ -429,18 +476,23 @@ export function formatHostResourcesMarkdown(
 /**
  * Format images list as markdown table
  */
-export function formatImagesMarkdown(
-  images: ImageInfo[],
-  total: number,
-  offset: number
-): string {
+export function formatImagesMarkdown(images: ImageInfo[], total: number, offset: number): string {
   if (images.length === 0) return "No images found.";
 
-  const lines = ["## Docker Images", "", `Showing ${images.length} of ${total} images (offset: ${offset})`, "", "| ID | Tags | Size | Host | Containers |", "|-----|------|------|------|------------|"];
+  const lines = [
+    "## Docker Images",
+    "",
+    `Showing ${images.length} of ${total} images (offset: ${offset})`,
+    "",
+    "| ID | Tags | Size | Host | Containers |",
+    "|-----|------|------|------|------------|"
+  ];
 
   for (const img of images) {
     const tags = img.tags.slice(0, 2).join(", ") + (img.tags.length > 2 ? "..." : "");
-    lines.push(`| ${img.id} | ${tags} | ${formatBytes(img.size)} | ${img.hostName} | ${img.containers} |`);
+    lines.push(
+      `| ${img.id} | ${tags} | ${formatBytes(img.size)} | ${img.hostName} | ${img.containers} |`
+    );
   }
 
   return lines.join("\n");
@@ -451,15 +503,28 @@ export function formatImagesMarkdown(
  */
 export function formatComposeListMarkdown(
   projects: ComposeProject[],
-  host: string
+  host: string,
+  total?: number,
+  offset?: number,
+  hasMore?: boolean
 ): string {
   if (projects.length === 0) return `No compose projects found on ${host}.`;
 
-  const lines = [`## Compose Projects on ${host}`, "", "| Project | Status | Services |", "|---------|--------|----------|"];
+  const header =
+    total !== undefined
+      ? `## Compose Projects on ${host} (${(offset || 0) + 1}-${(offset || 0) + projects.length} of ${total})`
+      : `## Compose Projects on ${host}`;
+
+  const lines = [header, "", "| Project | Status | Services |", "|---------|--------|----------|"];
 
   for (const p of projects) {
     const statusEmoji = p.status === "running" ? "🟢" : p.status === "partial" ? "🟡" : "🔴";
     lines.push(`| ${p.name} | ${statusEmoji} ${p.status} | ${p.services.length || "-"} |`);
+  }
+
+  if (hasMore) {
+    lines.push("");
+    lines.push(`*More results available. Use offset=${(offset || 0) + projects.length} to see next page.*`);
   }
 
   return lines.join("\n");
@@ -468,21 +533,90 @@ export function formatComposeListMarkdown(
 /**
  * Format compose project status as markdown
  */
-export function formatComposeStatusMarkdown(project: ComposeProject): string {
-  const statusEmoji = project.status === "running" ? "🟢" : project.status === "partial" ? "🟡" : "🔴";
+export function formatComposeStatusMarkdown(
+  project: ComposeProject,
+  totalServices?: number,
+  offset?: number,
+  hasMore?: boolean
+): string {
+  const statusEmoji =
+    project.status === "running" ? "🟢" : project.status === "partial" ? "🟡" : "🔴";
 
-  const lines = [`## ${project.name} (${statusEmoji} ${project.status})`, ""];
+  const serviceInfo =
+    totalServices !== undefined
+      ? ` - Services ${(offset || 0) + 1}-${(offset || 0) + project.services.length} of ${totalServices}`
+      : "";
+
+  const lines = [`## ${project.name} (${statusEmoji} ${project.status})${serviceInfo}`, ""];
 
   if (project.services.length === 0) {
-    lines.push("No services running.");
+    lines.push("No services found.");
   } else {
     lines.push("| Service | Status | Health | Ports |", "|---------|--------|--------|-------|");
 
     for (const svc of project.services) {
       const health = svc.health || "-";
-      const ports = svc.publishers?.map((p) => `${p.publishedPort}→${p.targetPort}`).join(", ") || "-";
+      const ports =
+        svc.publishers?.map((p) => `${p.publishedPort}→${p.targetPort}`).join(", ") || "-";
       const svcEmoji = svc.status === "running" ? "🟢" : "🔴";
       lines.push(`| ${svc.name} | ${svcEmoji} ${svc.status} | ${health} | ${ports} |`);
+    }
+  }
+
+  if (hasMore) {
+    lines.push("");
+    lines.push(
+      `*More services available. Use offset=${(offset || 0) + project.services.length} to see next page.*`
+    );
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Container inspect summary type
+ */
+export interface ContainerInspectSummary {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  created: string;
+  started: string;
+  restartCount: number;
+  ports: string[];
+  mounts: Array<{ src?: string; dst?: string; type?: string }>;
+  networks: string[];
+  env_count: number;
+  labels_count: number;
+  host: string;
+}
+
+/**
+ * Format container inspect summary as markdown (condensed version)
+ */
+export function formatInspectSummaryMarkdown(summary: ContainerInspectSummary): string {
+  const lines = [
+    `## ${summary.name} (${summary.host})`,
+    "",
+    "| Field | Value |",
+    "|-------|-------|",
+    `| ID | ${summary.id} |`,
+    `| Image | ${summary.image} |`,
+    `| State | ${summary.state} |`,
+    `| Started | ${summary.started?.slice(0, 19) || "-"} |`,
+    `| Restarts | ${summary.restartCount} |`,
+    `| Networks | ${summary.networks.join(", ") || "-"} |`,
+    `| Ports | ${summary.ports.join(", ") || "-"} |`,
+    `| Mounts | ${summary.mounts.length} |`,
+    `| Env Vars | ${summary.env_count} |`,
+    `| Labels | ${summary.labels_count} |`
+  ];
+
+  if (summary.mounts.length > 0 && summary.mounts.length <= 5) {
+    lines.push("", "**Mounts:**");
+    for (const m of summary.mounts) {
+      lines.push(`- ${m.src} → ${m.dst} (${m.type})`);
     }
   }
 

@@ -1,13 +1,13 @@
-// Character limit for responses to prevent context overflow
-export const CHARACTER_LIMIT = 50000;
+// Character limit for responses to prevent context overflow (~12.5k tokens)
+export const CHARACTER_LIMIT = 40000;
 
 // Default pagination settings
 export const DEFAULT_LIMIT = 20;
 export const MAX_LIMIT = 100;
 
 // Log retrieval defaults
-export const DEFAULT_LOG_LINES = 100;
-export const MAX_LOG_LINES = 1000;
+export const DEFAULT_LOG_LINES = 50;
+export const MAX_LOG_LINES = 500;
 
 // Timeout settings (ms)
 export const API_TIMEOUT = 30000;

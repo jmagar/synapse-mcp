@@ -15,7 +15,9 @@ describe("unified tool integration", () => {
     } as unknown as McpServer;
 
     registerUnifiedTool(mockServer);
-    toolHandler = registeredTools.get("homelab")!;
+    const handler = registeredTools.get("homelab");
+    if (!handler) throw new Error("Tool handler not registered");
+    toolHandler = handler;
   });
 
   describe("container actions", () => {
@@ -30,13 +32,14 @@ describe("unified tool integration", () => {
     });
 
     it("should return error for invalid container subaction", async () => {
-      const result = await toolHandler({
+      const result = (await toolHandler({
         action: "container",
         subaction: "invalid_action"
-      }) as { isError: boolean; content: Array<{ text: string }> };
+      })) as { isError: boolean; content: Array<{ text: string }> };
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain("Unknown");
+      // Zod validation now catches invalid subactions before reaching handler
+      expect(result.content[0].text).toContain("Error");
     });
 
     it.skip("should handle container stats request (slow - requires Docker)", async () => {
@@ -68,11 +71,11 @@ describe("unified tool integration", () => {
     });
 
     it("should return error for compose action without host", async () => {
-      const result = await toolHandler({
+      const result = (await toolHandler({
         action: "compose",
         subaction: "list"
         // missing host param
-      }) as { isError: boolean };
+      })) as { isError: boolean };
 
       expect(result.isError).toBe(true);
     });
@@ -114,12 +117,12 @@ describe("unified tool integration", () => {
     }, 15000);
 
     it("should require force flag for prune", async () => {
-      const result = await toolHandler({
+      const result = (await toolHandler({
         action: "docker",
         subaction: "prune",
         prune_target: "images"
         // missing force: true
-      }) as { isError: boolean };
+      })) as { isError: boolean };
 
       expect(result.isError).toBe(true);
     });
@@ -137,21 +140,21 @@ describe("unified tool integration", () => {
 
   describe("response format", () => {
     it("should return markdown by default", async () => {
-      const result = await toolHandler({
+      const result = (await toolHandler({
         action: "host",
         subaction: "status"
-      }) as { content: Array<{ type: string; text: string }> };
+      })) as { content: Array<{ type: string; text: string }> };
 
       expect(result.content).toBeDefined();
       expect(result.content[0].type).toBe("text");
     });
 
     it("should return JSON when response_format is json", async () => {
-      const result = await toolHandler({
+      const result = (await toolHandler({
         action: "host",
         subaction: "status",
         response_format: "json"
-      }) as { content: Array<{ type: string; text: string }> };
+      })) as { content: Array<{ type: string; text: string }> };
 
       expect(result.content).toBeDefined();
       // JSON format should be parseable
@@ -161,10 +164,10 @@ describe("unified tool integration", () => {
 
   describe("schema validation", () => {
     it("should reject unknown action", async () => {
-      const result = await toolHandler({
+      const result = (await toolHandler({
         action: "unknown",
         subaction: "list"
-      }) as { isError: boolean };
+      })) as { isError: boolean };
 
       expect(result.isError).toBe(true);
     });

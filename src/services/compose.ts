@@ -46,7 +46,14 @@ export interface ComposeService {
 function buildComposeArgs(host: HostConfig): string[] {
   validateHostForSsh(host);
 
-  const args = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=accept-new"];
+  const args = [
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=5",
+    "-o",
+    "StrictHostKeyChecking=accept-new"
+  ];
 
   if (host.sshKeyPath) {
     args.push("-i", sanitizeForShell(host.sshKeyPath));
@@ -81,7 +88,9 @@ export async function composeExec(
     const { stdout } = await execFileAsync("ssh", sshArgs, { timeout: 30000 });
     return stdout.trim();
   } catch (error) {
-    throw new Error(`Compose command failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    throw new Error(
+      `Compose command failed: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
   }
 }
 
@@ -112,7 +121,9 @@ export async function listComposeProjects(host: HostConfig): Promise<ComposeProj
       services: []
     }));
   } catch (error) {
-    throw new Error(`Failed to list compose projects: ${error instanceof Error ? error.message : "Unknown error"}`);
+    throw new Error(
+      `Failed to list compose projects: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
   }
 }
 
@@ -203,7 +214,9 @@ export async function getComposeStatus(host: HostConfig, project: string): Promi
       services
     };
   } catch (error) {
-    throw new Error(`Failed to get compose status: ${error instanceof Error ? error.message : "Unknown error"}`);
+    throw new Error(
+      `Failed to get compose status: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
   }
 }
 
@@ -218,7 +231,11 @@ export async function composeUp(host: HostConfig, project: string, detach = true
 /**
  * Stop a compose project
  */
-export async function composeDown(host: HostConfig, project: string, removeVolumes = false): Promise<string> {
+export async function composeDown(
+  host: HostConfig,
+  project: string,
+  removeVolumes = false
+): Promise<string> {
   const args = removeVolumes ? ["-v"] : [];
   return composeExec(host, project, "down", args);
 }

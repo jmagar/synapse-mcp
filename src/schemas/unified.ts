@@ -88,6 +88,7 @@ const containerInspectSchema = z.object({
   subaction: z.literal("inspect"),
   container_id: z.string().min(1),
   host: z.string().optional(),
+  summary: z.boolean().default(true).describe("Return summary instead of full inspect (reduces output size)"),
   response_format: responseFormatSchema
 });
 
@@ -120,6 +121,8 @@ const composeListSchema = z.object({
   action: z.literal("compose"),
   subaction: z.literal("list"),
   host: z.string().min(1),
+  name_filter: z.string().optional().describe("Filter projects by name (case-insensitive substring match)"),
+  ...paginationSchema,
   response_format: responseFormatSchema
 });
 
@@ -128,6 +131,8 @@ const composeStatusSchema = z.object({
   subaction: z.literal("status"),
   host: z.string().min(1),
   project: z.string().min(1),
+  service_filter: z.string().optional().describe("Filter services by name"),
+  ...paginationSchema,
   response_format: responseFormatSchema
 });
 

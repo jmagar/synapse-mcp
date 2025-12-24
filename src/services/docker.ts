@@ -2,7 +2,14 @@ import Docker from "dockerode";
 import { readFileSync, existsSync } from "fs";
 import { homedir, hostname } from "os";
 import { join } from "path";
-import { HostConfig, ContainerInfo, ContainerStats, HostStatus, LogEntry, ImageInfo } from "../types.js";
+import {
+  HostConfig,
+  ContainerInfo,
+  ContainerStats,
+  HostStatus,
+  LogEntry,
+  ImageInfo
+} from "../types.js";
 import { DEFAULT_DOCKER_SOCKET, API_TIMEOUT, ENV_HOSTS_CONFIG } from "../constants.js";
 
 /**
@@ -238,10 +245,7 @@ async function listContainersOnHost(
     }
 
     // Apply image filter
-    if (
-      options.imageFilter &&
-      !c.Image.toLowerCase().includes(options.imageFilter.toLowerCase())
-    ) {
+    if (options.imageFilter && !c.Image.toLowerCase().includes(options.imageFilter.toLowerCase())) {
       continue;
     }
 
@@ -527,7 +531,10 @@ export interface ListImagesOptions {
 /**
  * List images from a single host (internal helper)
  */
-async function listImagesOnHost(host: HostConfig, options: ListImagesOptions): Promise<ImageInfo[]> {
+async function listImagesOnHost(
+  host: HostConfig,
+  options: ListImagesOptions
+): Promise<ImageInfo[]> {
   const docker = getDockerClient(host);
   const images = await docker.listImages({
     filters: options.danglingOnly ? { dangling: ["true"] } : undefined
@@ -878,10 +885,7 @@ export async function pruneDocker(
 /**
  * Pull an image on a host
  */
-export async function pullImage(
-  imageName: string,
-  host: HostConfig
-): Promise<{ status: string }> {
+export async function pullImage(imageName: string, host: HostConfig): Promise<{ status: string }> {
   if (!imageName || imageName.trim() === "") {
     throw new Error("Image name is required");
   }
@@ -1026,9 +1030,12 @@ export async function buildImage(
     validateHostForSsh(host);
 
     const sshArgs = [
-      "-o", "BatchMode=yes",
-      "-o", "ConnectTimeout=5",
-      "-o", "StrictHostKeyChecking=accept-new",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "ConnectTimeout=5",
+      "-o",
+      "StrictHostKeyChecking=accept-new",
       sanitizeForShell(host.name),
       `docker ${args.join(" ")}`
     ];

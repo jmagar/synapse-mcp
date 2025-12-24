@@ -64,8 +64,12 @@ describe("validateHostForSsh", () => {
   });
 
   it("should reject invalid SSH user", () => {
-    expect(() => validateHostForSsh({ ...baseHost, sshUser: "user;hack" })).toThrow("Invalid SSH user");
-    expect(() => validateHostForSsh({ ...baseHost, sshUser: "user name" })).toThrow("Invalid SSH user");
+    expect(() => validateHostForSsh({ ...baseHost, sshUser: "user;hack" })).toThrow(
+      "Invalid SSH user"
+    );
+    expect(() => validateHostForSsh({ ...baseHost, sshUser: "user name" })).toThrow(
+      "Invalid SSH user"
+    );
   });
 
   it("should accept valid SSH key path", () => {
@@ -78,9 +82,9 @@ describe("validateHostForSsh", () => {
   });
 
   it("should reject invalid SSH key path", () => {
-    expect(() =>
-      validateHostForSsh({ ...baseHost, sshKeyPath: "/path/with spaces/key" })
-    ).toThrow("Invalid SSH key path");
+    expect(() => validateHostForSsh({ ...baseHost, sshKeyPath: "/path/with spaces/key" })).toThrow(
+      "Invalid SSH key path"
+    );
     expect(() => validateHostForSsh({ ...baseHost, sshKeyPath: "key;rm" })).toThrow(
       "Invalid SSH key path"
     );

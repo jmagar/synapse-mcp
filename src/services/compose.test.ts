@@ -40,9 +40,11 @@ describe("composeBuild", () => {
       protocol: "http" as const,
       port: 2375
     };
-    await expect(composeBuild(host, "myproject", {
-      service: "invalid service name with spaces"
-    })).rejects.toThrow("Invalid service name");
+    await expect(
+      composeBuild(host, "myproject", {
+        service: "invalid service name with spaces"
+      })
+    ).rejects.toThrow("Invalid service name");
   });
 });
 
@@ -59,9 +61,11 @@ describe("composePull", () => {
       protocol: "http" as const,
       port: 2375
     };
-    await expect(composePull(host, "myproject", {
-      service: "invalid!service"
-    })).rejects.toThrow("Invalid service name");
+    await expect(
+      composePull(host, "myproject", {
+        service: "invalid!service"
+      })
+    ).rejects.toThrow("Invalid service name");
   });
 });
 
@@ -78,8 +82,10 @@ describe("composeRecreate", () => {
       protocol: "http" as const,
       port: 2375
     };
-    await expect(composeRecreate(host, "myproject", {
-      service: "bad@service"
-    })).rejects.toThrow("Invalid service name");
+    await expect(
+      composeRecreate(host, "myproject", {
+        service: "bad@service"
+      })
+    ).rejects.toThrow("Invalid service name");
   });
 });

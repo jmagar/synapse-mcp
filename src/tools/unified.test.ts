@@ -26,7 +26,9 @@ describe("registerUnifiedTool", () => {
     const { registerUnifiedTool } = await import("./unified.js");
     registerUnifiedTool(mockServer);
 
-    const tool = registeredTools.get("homelab") as { config: { title: string; description: string } };
+    const tool = registeredTools.get("homelab") as {
+      config: { title: string; description: string };
+    };
     expect(tool.config.title).toBe("Homelab Manager");
     expect(tool.config.description).toContain("container");
     expect(tool.config.description).toContain("compose");
@@ -57,6 +59,7 @@ describe("routeAction", () => {
     const result = await handler({ action: "invalid", subaction: "list" });
 
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("Unknown action");
+    // Zod validation now catches invalid actions before reaching routeAction
+    expect(result.content[0].text).toContain("Error");
   });
 });
