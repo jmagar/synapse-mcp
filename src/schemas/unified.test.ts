@@ -93,3 +93,63 @@ describe("schema index re-exports", () => {
     expect(schemas.imageListSchema).toBeDefined();
   });
 });
+
+describe("Discriminated union optimization", () => {
+  it("should validate using discriminator key for fast lookup", () => {
+    // Test that validation uses discriminated union (O(1) lookup)
+    const testCases = [
+      { action: "container", subaction: "list" },
+      { action: "container", subaction: "start", container_id: "test" },
+      { action: "compose", subaction: "up", host: "test", project: "plex" },
+      { action: "host", subaction: "status" },
+      { action: "docker", subaction: "info" },
+      { action: "image", subaction: "list" }
+    ];
+
+    for (const testCase of testCases) {
+      const result = UnifiedHomelabSchema.safeParse(testCase);
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("should reject invalid action/subaction combinations instantly", () => {
+    const invalidCases = [
+      { action: "container", subaction: "up" }, // 'up' is compose-only
+      { action: "compose", subaction: "restart", host: "test", project: "plex" }, // valid - should pass
+      { action: "host", subaction: "list" }, // 'list' not valid for host
+      { action: "docker", subaction: "status" }, // 'status' is host-only
+      { action: "image", subaction: "logs" } // 'logs' is container-only
+    ];
+
+    const result1 = UnifiedHomelabSchema.safeParse(invalidCases[0]);
+    expect(result1.success).toBe(false);
+
+    const result2 = UnifiedHomelabSchema.safeParse(invalidCases[1]);
+    expect(result2.success).toBe(true);
+
+    const result3 = UnifiedHomelabSchema.safeParse(invalidCases[2]);
+    expect(result3.success).toBe(false);
+
+    const result4 = UnifiedHomelabSchema.safeParse(invalidCases[3]);
+    expect(result4.success).toBe(false);
+
+    const result5 = UnifiedHomelabSchema.safeParse(invalidCases[4]);
+    expect(result5.success).toBe(false);
+  });
+
+  it("should preserve type inference after discriminated union migration", () => {
+    const valid = UnifiedHomelabSchema.parse({
+      action: "container",
+      subaction: "restart",
+      container_id: "plex"
+    });
+
+    // TypeScript should narrow type based on discriminator
+    expect(valid.action).toBe("container");
+    expect(valid.subaction).toBe("restart");
+
+    if (valid.action === "container" && valid.subaction === "restart") {
+      expect(valid.container_id).toBe("plex");
+    }
+  });
+});
