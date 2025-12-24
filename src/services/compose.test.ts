@@ -4,7 +4,8 @@ import {
   composeBuild,
   composePull,
   composeRecreate,
-  composeExec
+  composeExec,
+  listComposeProjects
 } from "./compose.js";
 
 // Mock ssh-pool-exec module using vi.hoisted
@@ -516,6 +517,274 @@ describe("composeExec", () => {
       const calledCommand = mockExecuteSSHCommand.mock.calls[0][1];
       expect(calledCommand).toContain("-p myapp");
       expect(calledCommand).toBe("docker compose -p myapp version");
+    });
+  });
+});
+
+/**
+ * PHASE 3: Comprehensive tests for listComposeProjects()
+ *
+ * Tests verify the function that discovers all Docker Compose projects on a host.
+ * Function location: compose.ts lines 126-155
+ *
+ * Following TDD methodology:
+ * - RED: Write failing test first
+ * - GREEN: Verify test passes (function already implemented)
+ * - REFACTOR: Improve test clarity if needed
+ */
+describe("listComposeProjects", () => {
+  const mockHostConfig = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("success paths", () => {
+    // Step 25: listComposeProjects should parse JSON and return project names
+    it("should parse JSON and return project details", async () => {
+      // Mock single running project output
+      const singleProjectJSON = JSON.stringify([
+        {
+          Name: "myapp",
+          Status: "running(3)",
+          ConfigFiles: "/home/user/myapp/docker-compose.yml"
+        }
+      ]);
+
+      mockSSHSuccess(singleProjectJSON);
+
+      const result = await listComposeProjects(mockHostConfig);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        name: "myapp",
+        status: "running",
+        configFiles: ["/home/user/myapp/docker-compose.yml"]
+      });
+      expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
+        mockHostConfig,
+        "docker compose ls --format json",
+        [],
+        { timeoutMs: 15000 }
+      );
+    });
+
+    // Step 28: listComposeProjects with multiple projects should return all names
+    it("should return all projects when multiple exist", async () => {
+      const multipleProjectsJSON = JSON.stringify([
+        {
+          Name: "frontend",
+          Status: "running(2)",
+          ConfigFiles: "/apps/frontend/docker-compose.yml"
+        },
+        {
+          Name: "backend",
+          Status: "running(1)",
+          ConfigFiles: "/apps/backend/docker-compose.yml"
+        },
+        {
+          Name: "database",
+          Status: "running(1)",
+          ConfigFiles: "/apps/db/docker-compose.yml"
+        }
+      ]);
+
+      mockSSHSuccess(multipleProjectsJSON);
+
+      const result = await listComposeProjects(mockHostConfig);
+
+      expect(result).toHaveLength(3);
+      expect(result.map((p) => p.name)).toEqual(["frontend", "backend", "database"]);
+      expect(result[0].status).toBe("running");
+      expect(result[1].status).toBe("running");
+      expect(result[2].status).toBe("running");
+    });
+
+    // Step 29: listComposeProjects with no projects should return empty array
+    it("should return empty array when no projects exist", async () => {
+      const emptyJSON = "[]";
+
+      mockSSHSuccess(emptyJSON);
+
+      const result = await listComposeProjects(mockHostConfig);
+
+      expect(result).toEqual([]);
+      expect(result).toHaveLength(0);
+    });
+  });
+
+  describe("error handling", () => {
+    // Step 30-32: listComposeProjects with invalid JSON should throw error
+    it("should throw error for invalid JSON", async () => {
+      const invalidJSON = "not valid json at all";
+
+      mockSSHSuccess(invalidJSON);
+
+      await expect(
+        listComposeProjects(mockHostConfig)
+      ).rejects.toThrow(/Failed to list compose projects/);
+    });
+
+    // Step 33: listComposeProjects with SSH error should propagate error
+    it("should propagate SSH errors with descriptive message", async () => {
+      mockSSHError("Connection timeout");
+
+      await expect(
+        listComposeProjects(mockHostConfig)
+      ).rejects.toThrow(/Failed to list compose projects.*Connection timeout/);
+    });
+  });
+
+  describe("edge cases", () => {
+    // Step 34: listComposeProjects should include all projects with correct status parsing
+    it("should include all projects regardless of status", async () => {
+      // Note: Based on implementation, listComposeProjects does NOT filter by status
+      // It returns all projects and maps their status using parseComposeStatus
+      const mixedStatusJSON = JSON.stringify([
+        {
+          Name: "running-app",
+          Status: "running(2)",
+          ConfigFiles: "/apps/running/docker-compose.yml"
+        },
+        {
+          Name: "stopped-app",
+          Status: "exited(0)",
+          ConfigFiles: "/apps/stopped/docker-compose.yml"
+        },
+        {
+          Name: "partial-app",
+          Status: "running, exited(1)",
+          ConfigFiles: "/apps/partial/docker-compose.yml"
+        }
+      ]);
+
+      mockSSHSuccess(mixedStatusJSON);
+
+      const result = await listComposeProjects(mockHostConfig);
+
+      expect(result).toHaveLength(3);
+      expect(result[0]).toMatchObject({ name: "running-app", status: "running" });
+      expect(result[1]).toMatchObject({ name: "stopped-app", status: "stopped" });
+      // "running, exited(1)" contains "running" and "(" but not "running(" -> partial
+      expect(result[2]).toMatchObject({ name: "partial-app", status: "partial" });
+    });
+
+    // Step 35: listComposeProjects should handle projects with special names
+    it("should handle projects with hyphens, underscores, and numbers", async () => {
+      const specialNamesJSON = JSON.stringify([
+        {
+          Name: "my-app_v2",
+          Status: "running(1)",
+          ConfigFiles: "/apps/my-app/docker-compose.yml"
+        },
+        {
+          Name: "test_service-123",
+          Status: "running(2)",
+          ConfigFiles: "/apps/test/docker-compose.yml"
+        },
+        {
+          Name: "UPPERCASE-project_01",
+          Status: "running(1)",
+          ConfigFiles: "/apps/upper/docker-compose.yml"
+        }
+      ]);
+
+      mockSSHSuccess(specialNamesJSON);
+
+      const result = await listComposeProjects(mockHostConfig);
+
+      expect(result).toHaveLength(3);
+      expect(result.map((p) => p.name)).toEqual([
+        "my-app_v2",
+        "test_service-123",
+        "UPPERCASE-project_01"
+      ]);
+    });
+
+    // Additional edge case: Empty stdout (whitespace only)
+    it("should return empty array for whitespace-only output", async () => {
+      mockSSHSuccess("   \n  \t  ");
+
+      const result = await listComposeProjects(mockHostConfig);
+
+      expect(result).toEqual([]);
+    });
+
+    // Additional edge case: Multiple config files
+    it("should parse multiple comma-separated config files", async () => {
+      const multiConfigJSON = JSON.stringify([
+        {
+          Name: "multi-config",
+          Status: "running(2)",
+          ConfigFiles: "/app/docker-compose.yml, /app/docker-compose.override.yml"
+        }
+      ]);
+
+      mockSSHSuccess(multiConfigJSON);
+
+      const result = await listComposeProjects(mockHostConfig);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].configFiles).toEqual([
+        "/app/docker-compose.yml",
+        "/app/docker-compose.override.yml"
+      ]);
+    });
+
+    // Additional edge case: Verify services array is empty
+    it("should return projects with empty services array", async () => {
+      const projectJSON = JSON.stringify([
+        {
+          Name: "simple",
+          Status: "running(1)",
+          ConfigFiles: "/app/docker-compose.yml"
+        }
+      ]);
+
+      mockSSHSuccess(projectJSON);
+
+      const result = await listComposeProjects(mockHostConfig);
+
+      expect(result[0].services).toEqual([]);
+    });
+
+    // Additional edge case: Different status formats
+    it("should correctly parse various status formats", async () => {
+      const statusFormatsJSON = JSON.stringify([
+        { Name: "p1", Status: "running(5)", ConfigFiles: "/a/c.yml" },
+        { Name: "p2", Status: "exited(0)", ConfigFiles: "/b/c.yml" },
+        { Name: "p3", Status: "stopped", ConfigFiles: "/c/c.yml" },
+        { Name: "p4", Status: "unknown-status", ConfigFiles: "/d/c.yml" }
+      ]);
+
+      mockSSHSuccess(statusFormatsJSON);
+
+      const result = await listComposeProjects(mockHostConfig);
+
+      expect(result).toHaveLength(4);
+      expect(result[0].status).toBe("running");
+      expect(result[1].status).toBe("stopped"); // "exited" maps to "stopped"
+      expect(result[2].status).toBe("stopped");
+      expect(result[3].status).toBe("unknown");
+    });
+
+    // Additional edge case: Timeout configuration
+    it("should use 15 second timeout for SSH command", async () => {
+      mockSSHSuccess("[]");
+
+      await listComposeProjects(mockHostConfig);
+
+      expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        { timeoutMs: 15000 }
+      );
     });
   });
 });
