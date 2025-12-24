@@ -1,9 +1,6 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { HostConfig } from "../types.js";
-import { sanitizeForShell, validateHostForSsh } from "./ssh.js";
-
-const execFileAsync = promisify(execFile);
+import { validateHostForSsh } from "./ssh.js";
+import { executeSSHCommand } from "./ssh-pool-exec.js";
 
 /**
  * Validate Docker Compose project name
@@ -65,37 +62,35 @@ export interface ComposeService {
 }
 
 /**
- * Build SSH command args for remote compose execution
+ * Build docker compose command string for remote execution
+ *
+ * @param project - Project name (optional, for commands that need -p flag)
+ * @param action - Compose action (up, down, ps, ls, etc.)
+ * @param extraArgs - Additional arguments
+ * @returns Command string
  */
-function buildComposeArgs(host: HostConfig): string[] {
-  validateHostForSsh(host);
+function buildComposeCommand(
+  project: string | null,
+  action: string,
+  extraArgs: string[] = []
+): string {
+  const parts = ["docker", "compose"];
 
-  const args = [
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "ConnectTimeout=5",
-    "-o",
-    "StrictHostKeyChecking=accept-new"
-  ];
-
-  if (host.sshKeyPath) {
-    args.push("-i", sanitizeForShell(host.sshKeyPath));
+  if (project) {
+    parts.push("-p", project);
   }
 
-  // Use host.name for SSH target to leverage ~/.ssh/config (port, key, user settings)
-  const target = host.host.includes("/") ? "localhost" : sanitizeForShell(host.name);
+  parts.push(action);
+  parts.push(...extraArgs);
 
-  args.push(target);
-
-  return args;
+  return parts.join(" ");
 }
 
 /**
- * Execute docker compose command on remote host
+ * Execute docker compose command on remote host using connection pool
  *
- * SECURITY: Uses execFile with argument arrays (not shell strings) to prevent
- * command injection. All extraArgs are validated before execution.
+ * SECURITY: Arguments are validated before execution to prevent command injection.
+ * Uses SSH connection pool for better performance.
  *
  * @param host - Host configuration with SSH details
  * @param project - Docker Compose project name (validated, alphanumeric only)
@@ -110,19 +105,14 @@ export async function composeExec(
   action: string,
   extraArgs: string[] = []
 ): Promise<string> {
+  validateHostForSsh(host);
   validateProjectName(project);
   validateComposeArgs(extraArgs);
 
-  // Build SSH connection arguments
-  const sshArgs = buildComposeArgs(host);
-
-  // Build docker compose command as separate arguments (NOT concatenated string)
-  // SSH will receive: ssh [options] host docker compose -p project action arg1 arg2 ...
-  sshArgs.push("docker", "compose", "-p", project, action, ...extraArgs);
+  const command = buildComposeCommand(project, action, extraArgs);
 
   try {
-    const { stdout } = await execFileAsync("ssh", sshArgs, { timeout: 30000 });
-    return stdout.trim();
+    return await executeSSHCommand(host, command, [], { timeoutMs: 30000 });
   } catch (error) {
     throw new Error(
       `Compose command failed: ${error instanceof Error ? error.message : "Unknown error"}`
@@ -131,14 +121,15 @@ export async function composeExec(
 }
 
 /**
- * List all compose projects on a host
+ * List all compose projects on a host using connection pool
  */
 export async function listComposeProjects(host: HostConfig): Promise<ComposeProject[]> {
-  const sshArgs = buildComposeArgs(host);
-  sshArgs.push("docker", "compose", "ls", "--format", "json");
+  validateHostForSsh(host);
+
+  const command = buildComposeCommand(null, "ls", ["--format", "json"]);
 
   try {
-    const { stdout } = await execFileAsync("ssh", sshArgs, { timeout: 15000 });
+    const stdout = await executeSSHCommand(host, command, [], { timeoutMs: 15000 });
 
     if (!stdout.trim()) {
       return [];
@@ -181,16 +172,16 @@ function parseComposeStatus(status: string): ComposeProject["status"] {
 }
 
 /**
- * Get detailed status of a compose project
+ * Get detailed status of a compose project using connection pool
  */
 export async function getComposeStatus(host: HostConfig, project: string): Promise<ComposeProject> {
+  validateHostForSsh(host);
   validateProjectName(project);
 
-  const sshArgs = buildComposeArgs(host);
-  sshArgs.push("docker", "compose", "-p", project, "ps", "--format", "json");
+  const command = buildComposeCommand(project, "ps", ["--format", "json"]);
 
   try {
-    const { stdout } = await execFileAsync("ssh", sshArgs, { timeout: 15000 });
+    const stdout = await executeSSHCommand(host, command, [], { timeoutMs: 15000 });
 
     const services: ComposeService[] = [];
 

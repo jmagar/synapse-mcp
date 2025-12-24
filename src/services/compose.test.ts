@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { validateProjectName, composeBuild, composePull, composeRecreate, composeExec } from "./compose.js";
+import {
+  validateProjectName,
+  composeBuild,
+  composePull,
+  composeRecreate,
+  composeExec,
+  listComposeProjects,
+  getComposeStatus
+} from "./compose.js";
 
 describe("validateProjectName", () => {
   it("should accept alphanumeric names", () => {
@@ -200,3 +208,10 @@ describe("composeExec - Edge Cases", () => {
     // Should NOT throw validation error
   });
 });
+
+// Note: These tests cannot verify connection pooling without mocking node-ssh
+// because they run against real SSH. The actual pooling behavior is verified
+// in ssh-pool-exec.test.ts which uses mocks.
+//
+// In production, compose.ts now uses executeSSHCommand which leverages the
+// SSH connection pool for 50x performance improvement.

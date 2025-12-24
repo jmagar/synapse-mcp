@@ -288,11 +288,13 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
       return;
     }
 
-    const closePromises = connections.map(metadata =>
-      metadata.connection.dispose().catch(() => {
+    const closePromises = connections.map(async (metadata) => {
+      try {
+        await metadata.connection.dispose();
+      } catch {
         // Ignore disposal errors
-      })
-    );
+      }
+    });
 
     await Promise.allSettled(closePromises);
 
@@ -311,9 +313,13 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
     for (const [poolKey, connections] of this.pool.entries()) {
       for (const metadata of connections) {
         closePromises.push(
-          metadata.connection.dispose().catch(() => {
-            // Ignore disposal errors
-          })
+          (async () => {
+            try {
+              await metadata.connection.dispose();
+            } catch {
+              // Ignore disposal errors
+            }
+          })()
         );
       }
     }
