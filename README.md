@@ -337,6 +337,39 @@ Digest: sha256:abc123...
 Size: 142 MB
 ```
 
+## Security
+
+### Path Traversal Protection (CWE-22)
+
+The `image_build` tool implements strict path validation to prevent directory traversal attacks:
+
+- **Absolute paths required**: All paths (context, dockerfile) must start with `/`
+- **Traversal blocked**: Paths containing `..` or `.` components are rejected
+- **Character validation**: Only alphanumeric, dots (in filenames), hyphens, underscores, and forward slashes allowed
+- **Pre-execution validation**: Paths validated before SSH commands are executed
+
+Example of rejected paths:
+```bash
+# Rejected: Directory traversal
+../../../etc/passwd
+/app/../../../etc/passwd
+
+# Rejected: Relative paths
+./build
+relative/path
+
+# Accepted: Absolute paths without traversal
+/home/user/docker/build
+/opt/myapp/Dockerfile.prod
+```
+
+### General Security Notes
+
+- Docker API on port 2375 is insecure without TLS
+- Always use execFile for shell commands (prevents injection)
+- Validate host config fields with regex
+- Require force=true for destructive operations
+
 ## Development
 
 ```bash
