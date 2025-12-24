@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addDiscriminator, type DiscriminatedInput } from "./discriminator.js";
+import { addDiscriminator } from "./discriminator.js";
 
 describe("Discriminator transform", () => {
   it("should add composite discriminator key to schema object", () => {
