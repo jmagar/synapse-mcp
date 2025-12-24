@@ -1591,3 +1591,267 @@ describe("Container stats collection performance", () => {
     expect(output.stats.length).toBeLessThan(10);
   });
 });
+
+describe("Error handling: unknown subactions", () => {
+  let mockServer: McpServer;
+  let toolHandler: (params: unknown) => Promise<unknown>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    const registeredTools = new Map<string, (params: unknown) => Promise<unknown>>();
+    mockServer = {
+      registerTool: vi.fn((name, _config, handler) => {
+        registeredTools.set(name, handler);
+      })
+    } as unknown as McpServer;
+
+    registerUnifiedTool(mockServer);
+    const handler = registeredTools.get("homelab");
+    if (!handler) throw new Error("Tool handler not registered");
+    toolHandler = handler;
+  });
+
+  it("should handle unknown container subaction", async () => {
+    const result = (await toolHandler({
+      action: "container",
+      subaction: "invalid_action",
+      container_id: "test",
+      host: "testhost"
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Error");
+  });
+
+  it("should handle unknown image subaction", async () => {
+    const result = (await toolHandler({
+      action: "image",
+      subaction: "invalid_action",
+      host: "testhost"
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Error");
+  });
+
+  it("should handle unknown compose subaction", async () => {
+    const result = (await toolHandler({
+      action: "compose",
+      subaction: "invalid_action",
+      project: "myapp",
+      host: "testhost"
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Error");
+  });
+
+  it("should handle unknown docker subaction", async () => {
+    const result = (await toolHandler({
+      action: "docker",
+      subaction: "invalid_action",
+      host: "testhost"
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Error");
+  });
+
+  it("should handle unknown host subaction", async () => {
+    const result = (await toolHandler({
+      action: "host",
+      subaction: "invalid_action",
+      host: "testhost"
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Error");
+  });
+});
+
+describe("Error handling: invalid hosts", () => {
+  let mockServer: McpServer;
+  let toolHandler: (params: unknown) => Promise<unknown>;
+  let dockerService: typeof import("../services/docker.js");
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    dockerService = await import("../services/docker.js");
+
+    const registeredTools = new Map<string, (params: unknown) => Promise<unknown>>();
+    mockServer = {
+      registerTool: vi.fn((name, _config, handler) => {
+        registeredTools.set(name, handler);
+      })
+    } as unknown as McpServer;
+
+    registerUnifiedTool(mockServer);
+    const handler = registeredTools.get("homelab");
+    if (!handler) throw new Error("Tool handler not registered");
+    toolHandler = handler;
+
+    // Mock loadHostConfigs to return empty array (no hosts found)
+    vi.spyOn(dockerService, "loadHostConfigs").mockReturnValue([]);
+  });
+
+  it("should handle container action with invalid host", async () => {
+    const result = (await toolHandler({
+      action: "container",
+      subaction: "list",
+      host: "nonexistent"
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Host");
+  });
+
+  it("should handle image action with invalid host", async () => {
+    const result = (await toolHandler({
+      action: "image",
+      subaction: "list",
+      host: "nonexistent"
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Host");
+  });
+
+  it("should handle compose action with invalid host", async () => {
+    const result = (await toolHandler({
+      action: "compose",
+      subaction: "list",
+      host: "nonexistent"
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Host");
+  });
+
+  it("should handle docker action with invalid host", async () => {
+    const result = (await toolHandler({
+      action: "docker",
+      subaction: "info",
+      host: "nonexistent"
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Host");
+  });
+
+  it("should handle host action with invalid host", async () => {
+    const result = (await toolHandler({
+      action: "host",
+      subaction: "resources",
+      host: "nonexistent"
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Host");
+  });
+});
+
+describe("Edge cases: empty results", () => {
+  let mockServer: McpServer;
+  let toolHandler: (params: unknown) => Promise<unknown>;
+  let dockerService: typeof import("../services/docker.js");
+  let composeService: typeof import("../services/compose.js");
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    dockerService = await import("../services/docker.js");
+    composeService = await import("../services/compose.js");
+
+    const registeredTools = new Map<string, (params: unknown) => Promise<unknown>>();
+    mockServer = {
+      registerTool: vi.fn((name, _config, handler) => {
+        registeredTools.set(name, handler);
+      })
+    } as unknown as McpServer;
+
+    registerUnifiedTool(mockServer);
+    const handler = registeredTools.get("homelab");
+    if (!handler) throw new Error("Tool handler not registered");
+    toolHandler = handler;
+
+    // Restore default host config
+    vi.spyOn(dockerService, "loadHostConfigs").mockReturnValue([
+      { name: "testhost", host: "localhost", port: 2375, protocol: "http" }
+    ]);
+  });
+
+  it("should handle container search with no results", async () => {
+    // Mock findContainerHost to return null (container not found on any host)
+    vi.spyOn(dockerService, "findContainerHost").mockResolvedValue(null);
+
+    const result = (await toolHandler({
+      action: "container",
+      subaction: "stats",
+      container_id: "nonexistent"
+      // No host specified - triggers multi-host search
+    })) as { isError: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("not found");
+  });
+
+  it("should handle empty compose project list", async () => {
+    vi.spyOn(composeService, "listComposeProjects").mockResolvedValue([]);
+
+    const result = (await toolHandler({
+      action: "compose",
+      subaction: "list",
+      host: "testhost"
+    })) as { content: Array<{ text: string }> };
+
+    expect(result.content).toBeDefined();
+    expect(result.content[0].text).toContain("No compose projects");
+  });
+
+  it("should handle pagination with offset beyond results", async () => {
+    vi.spyOn(dockerService, "listContainers").mockResolvedValue([
+      {
+        id: "abc123",
+        name: "test-container",
+        image: "nginx:latest",
+        state: "running",
+        status: "Up 1 hour",
+        created: "2024-01-01T10:00:00Z",
+        ports: [],
+        labels: {},
+        hostName: "testhost"
+      }
+    ]);
+
+    const result = (await toolHandler({
+      action: "container",
+      subaction: "list",
+      host: "testhost",
+      offset: 1000, // Far beyond actual results
+      limit: 10,
+      response_format: "json"
+    })) as { content: Array<{ text: string }> };
+
+    expect(result.content).toBeDefined();
+    const output = JSON.parse(result.content[0].text);
+    expect(output.offset).toBe(1000);
+    expect(output.count).toBe(0);
+    expect(output.containers).toHaveLength(0);
+  });
+
+  it("should handle empty logs output", async () => {
+    vi.spyOn(dockerService, "getContainerLogs").mockResolvedValue([]);
+
+    const result = (await toolHandler({
+      action: "container",
+      subaction: "logs",
+      container_id: "my-container",
+      host: "testhost"
+    })) as { content: Array<{ text: string }> };
+
+    expect(result.content).toBeDefined();
+    expect(result.content[0].text).toContain("No logs");
+  });
+});
