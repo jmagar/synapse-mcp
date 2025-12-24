@@ -162,6 +162,7 @@ export interface ContainerInspectInfo {
   }>;
   NetworkSettings: {
     Ports?: Record<string, Array<{ HostIp: string; HostPort: string }> | null>;
+    Networks?: Record<string, unknown>;
   };
 }
 
@@ -217,6 +218,14 @@ export function formatInspectMarkdown(info: ContainerInspectInfo, host: string):
           lines.push(`- ${b.HostIp || "0.0.0.0"}:${b.HostPort} → ${containerPort}`);
         }
       }
+    }
+    lines.push("");
+  }
+
+  if (network.Networks && Object.keys(network.Networks).length > 0) {
+    lines.push("### Networks");
+    for (const networkName of Object.keys(network.Networks)) {
+      lines.push(`- ${networkName}`);
     }
   }
 

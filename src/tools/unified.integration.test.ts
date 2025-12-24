@@ -39,6 +39,27 @@ vi.mock("../services/docker.js", async () => {
     }),
     pullImage: vi.fn().mockResolvedValue({ status: "Image pulled successfully" }),
     recreateContainer: vi.fn().mockResolvedValue({ status: "Container recreated", containerId: "new-abc123456789" }),
+    listImages: vi.fn().mockImplementation(async () => [
+      {
+        id: "sha256:abc123",
+        tags: ["nginx:latest"],
+        size: 142 * 1024 * 1024, // 142MB
+        created: "2024-01-01T10:00:00Z",
+        containers: 1,
+        hostName: "testhost"
+      },
+      {
+        id: "sha256:def456",
+        tags: ["<none>:<none>"],
+        size: 1.2 * 1024 * 1024 * 1024, // 1.2GB
+        created: "2024-01-02T10:00:00Z",
+        containers: 0,
+        hostName: "testhost"
+      }
+    ]),
+    buildImage: vi.fn().mockResolvedValue(undefined),
+    removeImage: vi.fn().mockResolvedValue(undefined),
+    listContainers: vi.fn().mockImplementation(async () => []),
     loadHostConfigs: vi.fn().mockReturnValue([
       { name: "testhost", host: "localhost", port: 2375, protocol: "http" }
     ] as HostConfig[]),
@@ -592,12 +613,160 @@ describe("unified tool integration", () => {
   });
 
   describe("image actions", () => {
-    it("should handle image list request", async () => {
-      const result = await toolHandler({
-        action: "image",
-        subaction: "list"
+    let dockerService: typeof import("../services/docker.js");
+
+    beforeEach(async () => {
+      dockerService = await import("../services/docker.js");
+    });
+
+    describe("image action: list", () => {
+      it("should list all images", async () => {
+        vi.spyOn(dockerService, "listImages").mockResolvedValue([
+          {
+            id: "sha256:abc123",
+            tags: ["nginx:latest"],
+            size: 142 * 1024 * 1024,
+            created: "2024-01-01T10:00:00Z",
+            containers: 1,
+            hostName: "testhost"
+          },
+          {
+            id: "sha256:def456",
+            tags: ["<none>:<none>"],
+            size: 1.2 * 1024 * 1024 * 1024,
+            created: "2024-01-02T10:00:00Z",
+            containers: 0,
+            hostName: "testhost"
+          }
+        ]);
+
+        const result = (await toolHandler({
+          action: "image",
+          subaction: "list",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.listImages).toHaveBeenCalledWith(
+          expect.any(Array),
+          expect.any(Object)
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("nginx");
+        expect(result.content[0].text).toContain("latest");
       });
-      expect(result).toBeDefined();
+
+      it("should list images with pagination", async () => {
+        vi.spyOn(dockerService, "listImages").mockResolvedValue([
+          { id: "sha256:abc123", tags: ["nginx:latest"], size: 142 * 1024 * 1024, created: "2024-01-01T10:00:00Z", containers: 1, hostName: "testhost" },
+          { id: "sha256:def456", tags: ["<none>:<none>"], size: 1.2 * 1024 * 1024 * 1024, created: "2024-01-02T10:00:00Z", containers: 0, hostName: "testhost" }
+        ]);
+
+        const result = (await toolHandler({
+          action: "image",
+          subaction: "list",
+          host: "testhost",
+          offset: 1,
+          limit: 1,
+          response_format: "json"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.listImages).toHaveBeenCalledWith(
+          expect.any(Array),
+          expect.any(Object)
+        );
+        expect(result.content).toBeDefined();
+        // With offset=1, limit=1, should only show second image
+        const output = JSON.parse(result.content[0].text);
+        expect(output.pagination.offset).toBe(1);
+        expect(output.pagination.count).toBe(1);
+      });
+
+      it("should list only dangling images", async () => {
+        vi.spyOn(dockerService, "listImages").mockResolvedValue([
+          { id: "sha256:def456", tags: ["<none>:<none>"], size: 1.2 * 1024 * 1024 * 1024, created: "2024-01-02T10:00:00Z", containers: 0, hostName: "testhost" }
+        ]);
+
+        const result = (await toolHandler({
+          action: "image",
+          subaction: "list",
+          host: "testhost",
+          dangling_only: true
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.listImages).toHaveBeenCalledWith(
+          expect.any(Array),
+          expect.objectContaining({ danglingOnly: true })
+        );
+        expect(result.content).toBeDefined();
+      });
+    });
+
+    describe("image action: pull", () => {
+      it("should pull image by name", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "image",
+          subaction: "pull",
+          image: "nginx:alpine",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.pullImage).toHaveBeenCalledWith(
+          "nginx:alpine",
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("pulled image");
+        expect(result.content[0].text).toContain("nginx:alpine");
+      });
+    });
+
+    describe("image action: build", () => {
+      it("should build image from Dockerfile path", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "image",
+          subaction: "build",
+          context: "/app",
+          tag: "myapp:v1",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.buildImage).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          expect.objectContaining({
+            context: "/app",
+            tag: "myapp:v1"
+          })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("built image");
+        expect(result.content[0].text).toContain("myapp:v1");
+      });
+    });
+
+    describe("image action: remove", () => {
+      it("should remove image by ID", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "image",
+          subaction: "remove",
+          image: "sha256:abc123",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.removeImage).toHaveBeenCalledWith(
+          "sha256:abc123",
+          expect.objectContaining({ name: "testhost" }),
+          expect.any(Object)
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("removed image");
+        expect(result.content[0].text).toContain("sha256:abc123");
+      });
     });
   });
 
