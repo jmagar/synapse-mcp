@@ -5,7 +5,8 @@ import {
   composePull,
   composeRecreate,
   composeExec,
-  listComposeProjects
+  listComposeProjects,
+  getComposeStatus
 } from "./compose.js";
 
 // Mock ssh-pool-exec module using vi.hoisted
@@ -785,6 +786,379 @@ describe("listComposeProjects", () => {
         expect.anything(),
         { timeoutMs: 15000 }
       );
+    });
+  });
+});
+
+/**
+ * PHASE 5: Comprehensive tests for getComposeStatus()
+ *
+ * Tests verify the function that retrieves detailed status of a Docker Compose project.
+ * Function location: compose.ts lines 177-248
+ *
+ * Following TDD methodology:
+ * - RED: Write failing test first
+ * - GREEN: Verify test passes (function already implemented)
+ * - REFACTOR: Improve test clarity if needed
+ */
+describe("getComposeStatus", () => {
+  const mockHostConfig = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("success paths", () => {
+    // Step 39: getComposeStatus should parse JSON and return containers
+    it("should parse JSON and return container status", async () => {
+      const singleContainerJSON = JSON.stringify({
+        Name: "myapp-web-1",
+        State: "running",
+        Health: "healthy",
+        ExitCode: 0
+      });
+
+      mockSSHSuccess(singleContainerJSON);
+
+      const result = await getComposeStatus(mockHostConfig, "myapp");
+
+      expect(result.name).toBe("myapp");
+      expect(result.services).toHaveLength(1);
+      expect(result.services[0]).toMatchObject({
+        name: "myapp-web-1",
+        status: "running",
+        health: "healthy",
+        exitCode: 0
+      });
+      expect(result.status).toBe("running");
+    });
+
+    // Step 42: getComposeStatus with multiple containers should return all
+    it("should return all containers when multiple exist", async () => {
+      const multipleContainersJSON = [
+        JSON.stringify({
+          Name: "myapp-web-1",
+          State: "running",
+          Health: "healthy"
+        }),
+        JSON.stringify({
+          Name: "myapp-worker-1",
+          State: "running"
+        }),
+        JSON.stringify({
+          Name: "myapp-db-1",
+          State: "running",
+          Health: "healthy"
+        })
+      ].join("\n");
+
+      mockSSHSuccess(multipleContainersJSON);
+
+      const result = await getComposeStatus(mockHostConfig, "myapp");
+
+      expect(result.services).toHaveLength(3);
+      expect(result.services.map((s) => s.name)).toEqual([
+        "myapp-web-1",
+        "myapp-worker-1",
+        "myapp-db-1"
+      ]);
+      expect(result.status).toBe("running"); // All running -> overall running
+    });
+
+    // Step 43: getComposeStatus with no containers should return empty array
+    it("should return empty services array when no containers exist", async () => {
+      mockSSHSuccess(""); // Empty output
+
+      const result = await getComposeStatus(mockHostConfig, "myapp");
+
+      expect(result.services).toEqual([]);
+      expect(result.services).toHaveLength(0);
+      expect(result.status).toBe("stopped"); // No services -> stopped
+      expect(result.name).toBe("myapp");
+    });
+
+    // Step 44: getComposeStatus should pass correct project name to docker compose ps
+    it("should pass correct project name in command", async () => {
+      mockSSHSuccess("");
+
+      await getComposeStatus(mockHostConfig, "test-project");
+
+      expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
+        mockHostConfig,
+        "docker compose -p test-project ps --format json",
+        [],
+        { timeoutMs: 15000 }
+      );
+    });
+  });
+
+  describe("error handling", () => {
+    // Step 45-47: getComposeStatus with invalid project name should throw validation error
+    it("should throw validation error for empty project name", async () => {
+      await expect(
+        getComposeStatus(mockHostConfig, "")
+      ).rejects.toThrow(/Invalid project name/);
+
+      expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+    });
+
+    // Step 48: getComposeStatus with SSH error should propagate error
+    it("should propagate SSH errors with descriptive message", async () => {
+      mockSSHError("Connection failed");
+
+      await expect(
+        getComposeStatus(mockHostConfig, "myapp")
+      ).rejects.toThrow(/Failed to get compose status.*Connection failed/);
+    });
+
+    // Step 49: getComposeStatus with invalid JSON should throw parse error
+    it("should skip malformed JSON lines gracefully", async () => {
+      // Based on implementation, malformed lines are caught and skipped
+      const mixedJSON = [
+        "not valid json",
+        JSON.stringify({ Name: "valid-1", State: "running" }),
+        "{ broken json",
+        JSON.stringify({ Name: "valid-2", State: "running" })
+      ].join("\n");
+
+      mockSSHSuccess(mixedJSON);
+
+      const result = await getComposeStatus(mockHostConfig, "myapp");
+
+      // Only valid JSON lines should be parsed
+      expect(result.services).toHaveLength(2);
+      expect(result.services.map((s) => s.name)).toEqual(["valid-1", "valid-2"]);
+    });
+
+    // Step 50: getComposeStatus with timeout should propagate timeout
+    it("should propagate SSH timeout errors", async () => {
+      mockSSHTimeout();
+
+      await expect(
+        getComposeStatus(mockHostConfig, "myapp")
+      ).rejects.toThrow(/Failed to get compose status.*timed out/);
+    });
+  });
+
+  describe("edge cases", () => {
+    // Step 51: getComposeStatus should handle mixed container states
+    it("should handle mixed container states and calculate overall status", async () => {
+      const mixedStatesJSON = [
+        JSON.stringify({
+          Name: "myapp-web-1",
+          State: "running",
+          Health: "healthy"
+        }),
+        JSON.stringify({
+          Name: "myapp-worker-1",
+          State: "exited",
+          ExitCode: 0
+        }),
+        JSON.stringify({
+          Name: "myapp-db-1",
+          State: "restarting"
+        })
+      ].join("\n");
+
+      mockSSHSuccess(mixedStatesJSON);
+
+      const result = await getComposeStatus(mockHostConfig, "myapp");
+
+      expect(result.services).toHaveLength(3);
+      expect(result.services[0].status).toBe("running");
+      expect(result.services[1].status).toBe("exited");
+      expect(result.services[2].status).toBe("restarting");
+      expect(result.status).toBe("partial"); // Mixed: 1 running, 2 not running
+    });
+
+    // Step 52: getComposeStatus should handle containers with special names
+    it("should handle containers with hyphens, underscores, and numbers", async () => {
+      const specialNamesJSON = [
+        JSON.stringify({
+          Name: "my-app_service-2024_1",
+          State: "running"
+        }),
+        JSON.stringify({
+          Name: "TEST_container-v2_3",
+          State: "running"
+        })
+      ].join("\n");
+
+      mockSSHSuccess(specialNamesJSON);
+
+      const result = await getComposeStatus(mockHostConfig, "my-project");
+
+      expect(result.services).toHaveLength(2);
+      expect(result.services[0].name).toBe("my-app_service-2024_1");
+      expect(result.services[1].name).toBe("TEST_container-v2_3");
+    });
+
+    // Step 53: getComposeStatus should include correct -p flag in command
+    it("should include -p flag with project name in command", async () => {
+      mockSSHSuccess("");
+
+      await getComposeStatus(mockHostConfig, "production-stack");
+
+      const calledCommand = mockExecuteSSHCommand.mock.calls[0][1];
+      expect(calledCommand).toContain("-p production-stack");
+    });
+
+    // Step 54: getComposeStatus should use correct --format json flag
+    it("should use --format json flag in command", async () => {
+      mockSSHSuccess("");
+
+      await getComposeStatus(mockHostConfig, "myapp");
+
+      const calledCommand = mockExecuteSSHCommand.mock.calls[0][1];
+      expect(calledCommand).toContain("--format json");
+    });
+
+    // Step 55: getComposeStatus should construct full command correctly
+    it("should construct complete docker compose ps command", async () => {
+      mockSSHSuccess("");
+
+      await getComposeStatus(mockHostConfig, "web-stack");
+
+      expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
+        mockHostConfig,
+        "docker compose -p web-stack ps --format json",
+        [],
+        { timeoutMs: 15000 }
+      );
+    });
+
+    // Additional edge case: Containers with port mappings
+    it("should parse containers with port publishers", async () => {
+      const containerWithPortsJSON = JSON.stringify({
+        Name: "web-1",
+        State: "running",
+        Publishers: [
+          {
+            PublishedPort: 8080,
+            TargetPort: 80,
+            Protocol: "tcp"
+          },
+          {
+            PublishedPort: 8443,
+            TargetPort: 443,
+            Protocol: "tcp"
+          }
+        ]
+      });
+
+      mockSSHSuccess(containerWithPortsJSON);
+
+      const result = await getComposeStatus(mockHostConfig, "webserver");
+
+      expect(result.services).toHaveLength(1);
+      expect(result.services[0].publishers).toHaveLength(2);
+      expect(result.services[0].publishers).toEqual([
+        { publishedPort: 8080, targetPort: 80, protocol: "tcp" },
+        { publishedPort: 8443, targetPort: 443, protocol: "tcp" }
+      ]);
+    });
+
+    // Additional edge case: All containers exited -> stopped status
+    it("should set status to stopped when all containers are exited", async () => {
+      const allExitedJSON = [
+        JSON.stringify({ Name: "app-1", State: "exited", ExitCode: 0 }),
+        JSON.stringify({ Name: "app-2", State: "exited", ExitCode: 1 })
+      ].join("\n");
+
+      mockSSHSuccess(allExitedJSON);
+
+      const result = await getComposeStatus(mockHostConfig, "myapp");
+
+      expect(result.status).toBe("stopped"); // No running containers -> stopped
+    });
+
+    // Additional edge case: Whitespace handling in output
+    it("should handle whitespace-only output gracefully", async () => {
+      mockSSHSuccess("   \n  \t  \n ");
+
+      const result = await getComposeStatus(mockHostConfig, "myapp");
+
+      expect(result.services).toEqual([]);
+      expect(result.status).toBe("stopped");
+    });
+
+    // Additional edge case: Empty lines in output
+    it("should skip empty lines in output", async () => {
+      const outputWithEmptyLines = [
+        "",
+        JSON.stringify({ Name: "web-1", State: "running" }),
+        "",
+        "",
+        JSON.stringify({ Name: "db-1", State: "running" }),
+        ""
+      ].join("\n");
+
+      mockSSHSuccess(outputWithEmptyLines);
+
+      const result = await getComposeStatus(mockHostConfig, "myapp");
+
+      expect(result.services).toHaveLength(2);
+      expect(result.services.map((s) => s.name)).toEqual(["web-1", "db-1"]);
+    });
+
+    // Additional edge case: ConfigFiles is empty (docker compose ps doesn't return config files)
+    it("should return empty configFiles array", async () => {
+      mockSSHSuccess(JSON.stringify({ Name: "web-1", State: "running" }));
+
+      const result = await getComposeStatus(mockHostConfig, "myapp");
+
+      expect(result.configFiles).toEqual([]);
+    });
+
+    // Additional edge case: Verify timeout is 15 seconds
+    it("should use 15 second timeout for SSH command", async () => {
+      mockSSHSuccess("");
+
+      await getComposeStatus(mockHostConfig, "myapp");
+
+      expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        { timeoutMs: 15000 }
+      );
+    });
+
+    // Additional edge case: Overall status calculation - partial
+    it("should set status to partial when some containers are running", async () => {
+      const partialRunningJSON = [
+        JSON.stringify({ Name: "web-1", State: "running" }),
+        JSON.stringify({ Name: "worker-1", State: "running" }),
+        JSON.stringify({ Name: "db-1", State: "exited", ExitCode: 1 })
+      ].join("\n");
+
+      mockSSHSuccess(partialRunningJSON);
+
+      const result = await getComposeStatus(mockHostConfig, "myapp");
+
+      expect(result.status).toBe("partial"); // 2 running, 1 exited -> partial
+    });
+
+    // Additional edge case: Project name validation with special chars
+    it("should throw validation error for project name with special characters", async () => {
+      await expect(
+        getComposeStatus(mockHostConfig, "project; rm -rf /")
+      ).rejects.toThrow(/Invalid project name/);
+
+      await expect(
+        getComposeStatus(mockHostConfig, "project name with spaces")
+      ).rejects.toThrow(/Invalid project name/);
+
+      await expect(
+        getComposeStatus(mockHostConfig, "project.with.dots")
+      ).rejects.toThrow(/Invalid project name/);
+
+      expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
     });
   });
 });
