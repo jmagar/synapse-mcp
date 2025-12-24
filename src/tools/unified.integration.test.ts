@@ -1,12 +1,61 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerUnifiedTool } from "./unified.js";
+import type { HostConfig } from "../types.js";
+
+// Mock the docker service
+vi.mock("../services/docker.js", async () => {
+  const actual = await vi.importActual<typeof import("../services/docker.js")>(
+    "../services/docker.js"
+  );
+  return {
+    ...actual,
+    containerAction: vi.fn().mockResolvedValue(undefined),
+    getContainerLogs: vi.fn().mockResolvedValue([
+      { timestamp: "2024-01-01T10:00:00Z", stream: "stdout", message: "log line 1" },
+      { timestamp: "2024-01-01T10:00:01Z", stream: "stdout", message: "error log line 2" },
+      { timestamp: "2024-01-01T10:00:02Z", stream: "stderr", message: "log line 3" }
+    ]),
+    inspectContainer: vi.fn().mockResolvedValue({
+      Id: "abc123456789",
+      Name: "/my-container",
+      Config: {
+        Image: "nginx:latest",
+        Env: [],
+        Labels: {}
+      },
+      State: {
+        Status: "running",
+        Running: true,
+        StartedAt: "2024-01-01T10:00:00Z"
+      },
+      Created: "2024-01-01T09:00:00Z",
+      RestartCount: 0,
+      NetworkSettings: {
+        Ports: {},
+        Networks: {}
+      },
+      Mounts: []
+    }),
+    pullImage: vi.fn().mockResolvedValue({ status: "Image pulled successfully" }),
+    recreateContainer: vi.fn().mockResolvedValue({ status: "Container recreated", containerId: "new-abc123456789" }),
+    loadHostConfigs: vi.fn().mockReturnValue([
+      { name: "testhost", host: "localhost", port: 2375, protocol: "http" }
+    ] as HostConfig[]),
+    findContainerHost: vi.fn().mockResolvedValue({
+      host: { name: "testhost", host: "localhost", port: 2375, protocol: "http" },
+      container: { Id: "abc123", Names: ["/my-container"] }
+    })
+  };
+});
 
 describe("unified tool integration", () => {
   let mockServer: McpServer;
   let toolHandler: (params: unknown) => Promise<unknown>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
     const registeredTools = new Map<string, (params: unknown) => Promise<unknown>>();
     mockServer = {
       registerTool: vi.fn((name, _config, handler) => {
@@ -57,6 +106,420 @@ describe("unified tool integration", () => {
         query: "plex"
       });
       expect(result).toBeDefined();
+    });
+
+    describe("container state control actions", () => {
+      it("should start container by name", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "start",
+          container_id: "my-container",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.containerAction).toHaveBeenCalledWith(
+          "my-container",
+          "start",
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Successfully performed 'start'");
+        expect(result.content[0].text).toContain("my-container");
+      });
+
+      it("should stop container by name", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "stop",
+          container_id: "my-container",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.containerAction).toHaveBeenCalledWith(
+          "my-container",
+          "stop",
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Successfully performed 'stop'");
+        expect(result.content[0].text).toContain("my-container");
+      });
+
+      it("should restart container by name", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "restart",
+          container_id: "my-container",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.containerAction).toHaveBeenCalledWith(
+          "my-container",
+          "restart",
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Successfully performed 'restart'");
+        expect(result.content[0].text).toContain("my-container");
+      });
+
+      it("should pause container by name", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "pause",
+          container_id: "my-container",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.containerAction).toHaveBeenCalledWith(
+          "my-container",
+          "pause",
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Successfully performed 'pause'");
+        expect(result.content[0].text).toContain("my-container");
+      });
+
+      it("should unpause container by name", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "unpause",
+          container_id: "my-container",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.containerAction).toHaveBeenCalledWith(
+          "my-container",
+          "unpause",
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("Successfully performed 'unpause'");
+        expect(result.content[0].text).toContain("my-container");
+      });
+    });
+
+    describe("container action: stats", () => {
+      it("should get container stats for single host", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "getContainerStats").mockResolvedValue({
+          containerId: "abc123",
+          containerName: "my-container",
+          cpuPercent: 25.5,
+          memoryUsage: 512 * 1024 * 1024, // 512MB
+          memoryLimit: 2 * 1024 * 1024 * 1024, // 2GB
+          memoryPercent: 25.0,
+          networkRx: 1.5 * 1024 * 1024, // 1.5MB
+          networkTx: 2 * 1024 * 1024, // 2MB
+          blockRead: 0,
+          blockWrite: 0
+        });
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "stats",
+          container_id: "my-container",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.getContainerStats).toHaveBeenCalledWith(
+          "my-container",
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("CPU");
+        expect(result.content[0].text).toContain("25.5");
+      });
+
+      it("should get container stats across all hosts when host not specified", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "stats",
+          container_id: "my-container"
+          // No host specified - should search all hosts
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.findContainerHost).toHaveBeenCalledWith(
+          "my-container",
+          expect.any(Array)
+        );
+        expect(result.content).toBeDefined();
+      });
+
+      it("should get stats for all containers when container_id not specified", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "stats",
+          response_format: "json"
+        })) as { content: Array<{ text: string }> };
+
+        expect(result.content).toBeDefined();
+        // Should return JSON with stats array
+        const output = JSON.parse(result.content[0].text);
+        expect(output.stats).toBeDefined();
+        expect(Array.isArray(output.stats)).toBe(true);
+      });
+    });
+
+    describe("container action: inspect", () => {
+      it("should inspect container with summary mode (default)", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "inspectContainer").mockResolvedValue({
+          Id: "abc123456789",
+          Name: "/my-container",
+          Config: {
+            Image: "nginx:latest",
+            Env: ["NODE_ENV=production", "PORT=3000", "API_KEY=secret123"],
+            Labels: { "com.docker.compose.project": "myapp", "version": "1.0" }
+          },
+          State: {
+            Status: "running",
+            Running: true,
+            StartedAt: "2024-01-01T10:00:00Z"
+          },
+          Created: "2024-01-01T09:00:00Z",
+          RestartCount: 0,
+          NetworkSettings: {
+            Ports: {
+              "80/tcp": [{ HostIp: "0.0.0.0", HostPort: "8080" }]
+            },
+            Networks: {
+              bridge: {}
+            }
+          },
+          Mounts: [
+            { Source: "/data", Destination: "/app/data", Type: "bind", Mode: "rw" }
+          ]
+        });
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "inspect",
+          container_id: "my-container",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.inspectContainer).toHaveBeenCalledWith(
+          "my-container",
+          expect.objectContaining({ name: "testhost" })
+        );
+
+        // Summary should include basic info
+        expect(result.content[0].text).toContain("my-container");
+        expect(result.content[0].text).toContain("running");
+        expect(result.content[0].text).toContain("nginx:latest");
+
+        // Summary should show counts for env/labels, not full details
+        expect(result.content[0].text).toContain("Env Vars");
+        expect(result.content[0].text).toContain("3"); // env count
+        expect(result.content[0].text).toContain("Labels");
+        expect(result.content[0].text).toContain("2"); // labels count
+
+        // Summary should NOT show individual environment variables
+        expect(result.content[0].text).not.toContain("NODE_ENV");
+        expect(result.content[0].text).not.toContain("production");
+      });
+
+      it("should inspect container with full detail mode", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "inspectContainer").mockResolvedValue({
+          Id: "abc123456789",
+          Name: "/my-container",
+          Config: {
+            Image: "nginx:latest",
+            Cmd: ["nginx", "-g", "daemon off;"],
+            WorkingDir: "/app",
+            Env: ["NODE_ENV=production", "PORT=3000", "DATABASE_PASSWORD=secret123"],
+            Labels: { "com.docker.compose.project": "myapp" }
+          },
+          State: {
+            Status: "running",
+            Running: true,
+            StartedAt: "2024-01-01T10:00:00Z"
+          },
+          Created: "2024-01-01T09:00:00Z",
+          RestartCount: 2,
+          NetworkSettings: {
+            Ports: {
+              "80/tcp": [{ HostIp: "0.0.0.0", HostPort: "8080" }]
+            },
+            Networks: {
+              bridge: {},
+              custom_network: {}
+            }
+          },
+          Mounts: [
+            { Source: "/data", Destination: "/app/data", Type: "bind", Mode: "rw" },
+            { Source: "/config", Destination: "/etc/nginx", Type: "volume", Mode: "ro" }
+          ]
+        });
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "inspect",
+          container_id: "my-container",
+          host: "testhost",
+          summary: false // Full detail mode
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.inspectContainer).toHaveBeenCalledWith(
+          "my-container",
+          expect.objectContaining({ name: "testhost" })
+        );
+
+        // Full detail should include environment variables
+        expect(result.content[0].text).toContain("NODE_ENV");
+        expect(result.content[0].text).toContain("production");
+
+        // Sensitive variables should be masked
+        expect(result.content[0].text).toContain("DATABASE_PASSWORD=****");
+
+        // Full detail should include mounts
+        expect(result.content[0].text).toContain("/data");
+        expect(result.content[0].text).toContain("/app/data");
+
+        // Full detail should include networks
+        expect(result.content[0].text).toContain("bridge");
+        expect(result.content[0].text).toContain("custom_network");
+
+        // Full detail should include working dir and command
+        expect(result.content[0].text).toContain("/app");
+        expect(result.content[0].text).toContain("nginx");
+      });
+    });
+
+    describe("container action: logs", () => {
+      it("should get container logs without grep filter", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "logs",
+          container_id: "my-container",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.getContainerLogs).toHaveBeenCalledWith(
+          "my-container",
+          expect.objectContaining({ name: "testhost" }),
+          expect.objectContaining({})
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("log line 1");
+        expect(result.content[0].text).toContain("log line 2");
+        expect(result.content[0].text).toContain("log line 3");
+      });
+
+      it("should get container logs with grep filter", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "logs",
+          container_id: "my-container",
+          host: "testhost",
+          grep: "error"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.getContainerLogs).toHaveBeenCalledWith(
+          "my-container",
+          expect.objectContaining({ name: "testhost" }),
+          expect.objectContaining({})
+        );
+        expect(result.content).toBeDefined();
+        // Should only include the error log line after grep filtering
+        expect(result.content[0].text).toContain("error log line 2");
+        expect(result.content[0].text).not.toContain("log line 1");
+        expect(result.content[0].text).not.toContain("log line 3");
+      });
+
+      it("should get container logs with lines parameter", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "logs",
+          container_id: "my-container",
+          host: "testhost",
+          lines: 100
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.getContainerLogs).toHaveBeenCalledWith(
+          "my-container",
+          expect.objectContaining({ name: "testhost" }),
+          expect.objectContaining({ lines: 100 })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("log line 1");
+      });
+    });
+
+    describe("container action: pull", () => {
+      it("should pull latest image for container", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "pull",
+          container_id: "my-container",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        // Should first inspect container to get image name
+        expect(dockerService.inspectContainer).toHaveBeenCalledWith(
+          "my-container",
+          expect.objectContaining({ name: "testhost" })
+        );
+
+        // Then pull the image (not the container name)
+        expect(dockerService.pullImage).toHaveBeenCalledWith(
+          "nginx:latest", // Image name from inspect
+          expect.objectContaining({ name: "testhost" })
+        );
+
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("pulled latest image");
+        expect(result.content[0].text).toContain("nginx:latest");
+        expect(result.content[0].text).toContain("my-container");
+      });
+    });
+
+    describe("container action: recreate", () => {
+      it("should recreate container with latest image", async () => {
+        const dockerService = await import("../services/docker.js");
+
+        const result = (await toolHandler({
+          action: "container",
+          subaction: "recreate",
+          container_id: "my-container",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.recreateContainer).toHaveBeenCalledWith(
+          "my-container",
+          expect.objectContaining({ name: "testhost" }),
+          expect.objectContaining({})
+        );
+        expect(result.content).toBeDefined();
+        // Actual output format: "✓ Container recreated. New container ID: new-abc123"
+        expect(result.content[0].text).toContain("Container recreated");
+        expect(result.content[0].text).toContain("new-abc123");
+      });
     });
   });
 
