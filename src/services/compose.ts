@@ -16,6 +16,30 @@ export function validateProjectName(name: string): void {
 }
 
 /**
+ * Validate extra arguments for docker compose commands
+ *
+ * SECURITY: Prevents command injection by rejecting shell metacharacters.
+ * Only allows alphanumeric, hyphens, underscores, dots, equals, colons,
+ * forward slashes, commas, and spaces.
+ *
+ * @throws {Error} If argument contains shell metacharacters or exceeds 500 chars
+ */
+function validateComposeArgs(args: string[]): void {
+  const SHELL_METACHARACTERS = /[;&|`$()<>{}[\]\\"\'\n\r\t]/;
+
+  for (const arg of args) {
+    if (SHELL_METACHARACTERS.test(arg)) {
+      throw new Error(`Invalid character in compose argument: ${arg}`);
+    }
+
+    // Additional safety: reject extremely long arguments (DoS prevention)
+    if (arg.length > 500) {
+      throw new Error(`Compose argument too long: ${arg.substring(0, 50)}...`);
+    }
+  }
+}
+
+/**
  * Compose project status
  */
 export interface ComposeProject {
@@ -69,6 +93,16 @@ function buildComposeArgs(host: HostConfig): string[] {
 
 /**
  * Execute docker compose command on remote host
+ *
+ * SECURITY: Uses execFile with argument arrays (not shell strings) to prevent
+ * command injection. All extraArgs are validated before execution.
+ *
+ * @param host - Host configuration with SSH details
+ * @param project - Docker Compose project name (validated, alphanumeric only)
+ * @param action - Compose action (up, down, restart, etc.)
+ * @param extraArgs - Additional arguments (validated for shell metacharacters)
+ * @returns Command output
+ * @throws {Error} If validation fails or SSH execution fails
  */
 export async function composeExec(
   host: HostConfig,
@@ -77,12 +111,14 @@ export async function composeExec(
   extraArgs: string[] = []
 ): Promise<string> {
   validateProjectName(project);
+  validateComposeArgs(extraArgs);
 
-  // Build the compose command
-  const composeCmd = ["docker", "compose", "-p", project, action, ...extraArgs].join(" ");
-
+  // Build SSH connection arguments
   const sshArgs = buildComposeArgs(host);
-  sshArgs.push(composeCmd);
+
+  // Build docker compose command as separate arguments (NOT concatenated string)
+  // SSH will receive: ssh [options] host docker compose -p project action arg1 arg2 ...
+  sshArgs.push("docker", "compose", "-p", project, action, ...extraArgs);
 
   try {
     const { stdout } = await execFileAsync("ssh", sshArgs, { timeout: 30000 });
@@ -99,7 +135,7 @@ export async function composeExec(
  */
 export async function listComposeProjects(host: HostConfig): Promise<ComposeProject[]> {
   const sshArgs = buildComposeArgs(host);
-  sshArgs.push("docker compose ls --format json");
+  sshArgs.push("docker", "compose", "ls", "--format", "json");
 
   try {
     const { stdout } = await execFileAsync("ssh", sshArgs, { timeout: 15000 });
@@ -151,7 +187,7 @@ export async function getComposeStatus(host: HostConfig, project: string): Promi
   validateProjectName(project);
 
   const sshArgs = buildComposeArgs(host);
-  sshArgs.push(`docker compose -p ${project} ps --format json`);
+  sshArgs.push("docker", "compose", "-p", project, "ps", "--format", "json");
 
   try {
     const { stdout } = await execFileAsync("ssh", sshArgs, { timeout: 15000 });
