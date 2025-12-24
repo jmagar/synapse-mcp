@@ -974,41 +974,263 @@ describe("unified tool integration", () => {
       expect(result).toBeDefined();
     });
 
-    it("should handle host resources request", async () => {
-      const result = await toolHandler({
-        action: "host",
-        subaction: "resources"
+    describe("host action: resources", () => {
+      it("should get host resources", async () => {
+        const sshService = await import("../services/ssh.js");
+        vi.spyOn(sshService, "getHostResources").mockResolvedValue({
+          hostname: "testhost.local",
+          uptime: "up 5 days",
+          loadAverage: [1.5, 1.2, 1.0],
+          cpu: {
+            cores: 8,
+            usagePercent: 25.5
+          },
+          memory: {
+            totalMB: 16384,
+            usedMB: 4096,
+            freeMB: 12288,
+            usagePercent: 25.0
+          },
+          disk: [
+            {
+              filesystem: "/dev/sda1",
+              mount: "/",
+              totalGB: 500,
+              usedGB: 120,
+              availGB: 380,
+              usagePercent: 24
+            }
+          ]
+        });
+
+        const result = (await toolHandler({
+          action: "host",
+          subaction: "resources",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(sshService.getHostResources).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("CPU");
+        expect(result.content[0].text).toContain("25.5");
+        expect(result.content[0].text).toContain("4096");
+        expect(result.content[0].text).toContain("16384");
       });
-      expect(result).toBeDefined();
     });
   });
 
   describe("docker actions", () => {
-    it("should handle docker info request", async () => {
-      const result = await toolHandler({
-        action: "docker",
-        subaction: "info"
+    describe("docker action: info", () => {
+      it("should get Docker system info", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "getDockerInfo").mockResolvedValue({
+          dockerVersion: "24.0.5",
+          apiVersion: "1.43",
+          os: "linux",
+          arch: "amd64",
+          kernelVersion: "6.1.0",
+          cpus: 8,
+          memoryBytes: 16 * 1024 * 1024 * 1024,
+          storageDriver: "overlay2",
+          rootDir: "/var/lib/docker",
+          containersTotal: 15,
+          containersRunning: 10,
+          containersPaused: 0,
+          containersStopped: 5,
+          images: 25
+        });
+
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "info",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.getDockerInfo).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("24.0.5");
+        expect(result.content[0].text).toContain("1.43");
+        expect(result.content[0].text).toContain("linux");
       });
-      expect(result).toBeDefined();
     });
 
-    it("should handle docker df request", async () => {
-      const result = await toolHandler({
-        action: "docker",
-        subaction: "df"
+    describe("docker action: df", () => {
+      it("should get Docker disk usage", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "getDockerDiskUsage").mockResolvedValue({
+          images: { active: 10, size: 5.2 * 1024 * 1024 * 1024, reclaimable: 1 * 1024 * 1024 * 1024 },
+          containers: { active: 5, size: 1.5 * 1024 * 1024 * 1024, reclaimable: 0.5 * 1024 * 1024 * 1024 },
+          volumes: { active: 3, size: 10 * 1024 * 1024 * 1024, reclaimable: 2 * 1024 * 1024 * 1024 },
+          buildCache: { active: 2, size: 500 * 1024 * 1024, reclaimable: 250 * 1024 * 1024 }
+        });
+
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "df",
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.getDockerDiskUsage).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" })
+        );
+        expect(result.content).toBeDefined();
+        // Should contain disk usage information
+        expect(result.content[0].text).toContain("Images");
+        expect(result.content[0].text).toContain("Containers");
+        expect(result.content[0].text).toContain("Volumes");
       });
-      expect(result).toBeDefined();
-    }, 15000);
+    });
 
-    it("should require force flag for prune", async () => {
-      const result = (await toolHandler({
-        action: "docker",
-        subaction: "prune",
-        prune_target: "images"
-        // missing force: true
-      })) as { isError: boolean };
+    describe("docker action: prune", () => {
+      it("should require force flag for prune", async () => {
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "prune",
+          prune_target: "images"
+          // missing force: true
+        })) as { isError: boolean };
 
-      expect(result.isError).toBe(true);
+        expect(result.isError).toBe(true);
+      });
+
+      it("should prune containers with force flag", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockResolvedValue([
+          {
+            type: "containers",
+            spaceReclaimed: 500 * 1024 * 1024, // 500MB
+            itemsDeleted: 5,
+            details: ["container1", "container2", "container3", "container4", "container5"]
+          }
+        ]);
+
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "prune",
+          prune_target: "containers",
+          force: true,
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.pruneDocker).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "containers"
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("containers");
+      });
+
+      it("should prune images with force flag", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockResolvedValue([
+          {
+            type: "images",
+            spaceReclaimed: 1.2 * 1024 * 1024 * 1024, // 1.2GB
+            itemsDeleted: 10,
+            details: []
+          }
+        ]);
+
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "prune",
+          prune_target: "images",
+          force: true,
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.pruneDocker).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "images"
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("images");
+      });
+
+      it("should prune volumes with force flag", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockResolvedValue([
+          {
+            type: "volumes",
+            spaceReclaimed: 2 * 1024 * 1024 * 1024, // 2GB
+            itemsDeleted: 3,
+            details: []
+          }
+        ]);
+
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "prune",
+          prune_target: "volumes",
+          force: true,
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.pruneDocker).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "volumes"
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("volumes");
+      });
+
+      it("should prune networks with force flag", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockResolvedValue([
+          {
+            type: "networks",
+            spaceReclaimed: 0, // Networks don't reclaim space
+            itemsDeleted: 2,
+            details: []
+          }
+        ]);
+
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "prune",
+          prune_target: "networks",
+          force: true,
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.pruneDocker).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "networks"
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("networks");
+      });
+
+      it("should prune everything (all) with force flag", async () => {
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockResolvedValue([
+          {
+            type: "all",
+            spaceReclaimed: 3.7 * 1024 * 1024 * 1024, // 3.7GB total
+            itemsDeleted: 20,
+            details: []
+          }
+        ]);
+
+        const result = (await toolHandler({
+          action: "docker",
+          subaction: "prune",
+          prune_target: "all",
+          force: true,
+          host: "testhost"
+        })) as { content: Array<{ text: string }> };
+
+        expect(dockerService.pruneDocker).toHaveBeenCalledWith(
+          expect.objectContaining({ name: "testhost" }),
+          "all"
+        );
+        expect(result.content).toBeDefined();
+        expect(result.content[0].text).toContain("all");
+      });
     });
   });
 
