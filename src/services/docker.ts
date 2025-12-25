@@ -11,6 +11,7 @@ import {
   ImageInfo
 } from "../types.js";
 import { DEFAULT_DOCKER_SOCKET, API_TIMEOUT, ENV_HOSTS_CONFIG } from "../constants.js";
+import { HostOperationError, logError } from "../utils/errors.js";
 
 /**
  * Check if a string looks like a Unix socket path
@@ -100,7 +101,10 @@ export function loadHostConfigs(): HostConfig[] {
           break;
         }
       } catch (error) {
-        console.error(`Failed to parse config file ${configPath}:`, error);
+        logError(error, {
+          operation: "loadHostConfigs",
+          metadata: { configPath, source: "file" }
+        });
       }
     }
   }
@@ -113,7 +117,10 @@ export function loadHostConfigs(): HostConfig[] {
         hosts = JSON.parse(configJson) as HostConfig[];
         console.error(`Loaded ${hosts.length} hosts from HOMELAB_HOSTS_CONFIG env`);
       } catch (error) {
-        console.error("Failed to parse HOMELAB_HOSTS_CONFIG:", error);
+        logError(error, {
+          operation: "loadHostConfigs",
+          metadata: { source: "HOMELAB_HOSTS_CONFIG" }
+        });
       }
     }
   }
@@ -190,8 +197,16 @@ export async function findContainerHost(
       if (found) {
         return { host, container: found };
       }
-    } catch {
-      // Host unreachable, continue to next
+    } catch (error) {
+      logError(
+        new HostOperationError(
+          "Failed to list containers on host",
+          host.name,
+          "findContainerHost",
+          error
+        ),
+        { metadata: { containerId } }
+      );
     }
   }
   return null;
@@ -502,6 +517,15 @@ async function getHostStatusSingle(host: HostConfig): Promise<HostStatus> {
       runningCount: running
     };
   } catch (error) {
+    logError(
+      new HostOperationError(
+        "Failed to get host info",
+        host.name,
+        "getHostInfo",
+        error
+      ),
+      { metadata: { host: host.host } }
+    );
     return {
       name: host.name,
       host: host.host,
@@ -617,7 +641,16 @@ export async function checkConnection(host: HostConfig): Promise<boolean> {
     const docker = getDockerClient(host);
     await docker.ping();
     return true;
-  } catch {
+  } catch (error) {
+    logError(
+      new HostOperationError(
+        "Docker ping failed",
+        host.name,
+        "isDockerHostConnected",
+        error
+      ),
+      { metadata: { cacheKey } }
+    );
     // Remove stale client from cache on failure
     dockerClients.delete(cacheKey);
     return false;
@@ -870,6 +903,15 @@ export async function pruneDocker(
         }
       }
     } catch (error) {
+      logError(
+        new HostOperationError(
+          "Docker cleanup failed",
+          host.name,
+          "dockerCleanup",
+          error
+        ),
+        { metadata: { type: t } }
+      );
       results.push({
         type: t,
         spaceReclaimed: 0,
