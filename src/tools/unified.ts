@@ -156,7 +156,7 @@ ACTIONS:
     status               - Check host connectivity
     resources            - Get CPU/memory/disk via SSH
 
-  docker <subaction>     - Docker daemon operations
+  docker <subaction>     - Docker daemon operations (host parameter required)
     info                 - Get Docker system info
     df                   - Get disk usage
     prune                - Remove unused resources
@@ -172,7 +172,9 @@ EXAMPLES:
   { action: "container", subaction: "restart", container_id: "plex" }
   { action: "compose", subaction: "up", host: "tootie", project: "plex" }
   { action: "host", subaction: "resources", host: "tootie" }
-  { action: "docker", subaction: "prune", prune_target: "images", force: true }
+  { action: "docker", subaction: "info", host: "tootie" }
+  { action: "docker", subaction: "df", host: "tootie" }
+  { action: "docker", subaction: "prune", host: "tootie", prune_target: "images", force: true }
   { action: "image", subaction: "pull", host: "tootie", image: "nginx:latest" }`;
 
   server.registerTool(
@@ -583,8 +585,8 @@ async function handleComposeAction(
 
     case "logs": {
       const logs = await composeLogs(targetHost, params.project, {
-        lines: params.lines,
-        service: params.service
+        tail: params.lines,
+        services: params.service ? [params.service] : undefined
       });
 
       const title = params.service
@@ -718,80 +720,51 @@ async function handleDockerAction(
 
   switch (subaction) {
     case "info": {
-      const targetHosts = params.host ? hosts.filter((h) => h.name === params.host) : hosts;
-      if (params.host && targetHosts.length === 0) {
+      const targetHost = hosts.find((h) => h.name === params.host);
+      if (!targetHost) {
         return errorResponse(`Host '${params.host}' not found.`);
       }
 
-      const results = await Promise.all(
-        targetHosts.map(async (host) => {
-          try {
-            const info = await getDockerInfo(host);
-            return { host: host.name, info };
-          } catch (error) {
-            return {
-              host: host.name,
-              info: {
-                dockerVersion: "error",
-                apiVersion: "error",
-                os: error instanceof Error ? error.message : "Connection failed",
-                arch: "",
-                kernelVersion: "",
-                cpus: 0,
-                memoryBytes: 0,
-                storageDriver: "",
-                rootDir: "",
-                containersTotal: 0,
-                containersRunning: 0,
-                containersPaused: 0,
-                containersStopped: 0,
-                images: 0
-              }
-            };
-          }
-        })
-      );
+      try {
+        const info = await getDockerInfo(targetHost);
+        const results = [{ host: targetHost.name, info }];
 
-      const output = { hosts: results };
-      const text =
-        params.response_format === ResponseFormat.JSON
-          ? JSON.stringify(output, null, 2)
-          : formatDockerInfoMarkdown(results);
+        const output = { hosts: results };
+        const text =
+          params.response_format === ResponseFormat.JSON
+            ? JSON.stringify(output, null, 2)
+            : formatDockerInfoMarkdown(results);
 
-      return successResponse(text, output);
+        return successResponse(text, output);
+      } catch (error) {
+        return errorResponse(
+          `Failed to get Docker info from ${targetHost.name}: ${error instanceof Error ? error.message : "Connection failed"}`
+        );
+      }
     }
 
     case "df": {
-      const targetHosts = params.host ? hosts.filter((h) => h.name === params.host) : hosts;
-      if (params.host && targetHosts.length === 0) {
+      const targetHost = hosts.find((h) => h.name === params.host);
+      if (!targetHost) {
         return errorResponse(`Host '${params.host}' not found.`);
       }
 
-      const settled = await Promise.allSettled(
-        targetHosts.map(async (host) => {
-          const usage = await getDockerDiskUsage(host);
-          return { host: host.name, usage };
-        })
-      );
+      try {
+        const usage = await getDockerDiskUsage(targetHost);
+        const results = [{ host: targetHost.name, usage }];
 
-      const results = settled
-        .filter(
-          (
-            r
-          ): r is PromiseFulfilledResult<{
-            host: string;
-            usage: Awaited<ReturnType<typeof getDockerDiskUsage>>;
-          }> => r.status === "fulfilled"
-        )
-        .map((r) => r.value);
+        const output = { hosts: results };
+        const text =
+          params.response_format === ResponseFormat.JSON
+            ? JSON.stringify(output, null, 2)
+            : formatDockerDfMarkdown(results);
 
-      const output = { hosts: results };
-      const text =
-        params.response_format === ResponseFormat.JSON
-          ? JSON.stringify(output, null, 2)
-          : formatDockerDfMarkdown(results);
-
-      return successResponse(text, output);
+        return successResponse(text, output);
+      } catch (error) {
+        return errorResponse(
+          `Failed to get disk usage from ${targetHost.name}: ${error instanceof Error ? error.message : "Connection failed"}`
+        );
+      }
     }
 
     case "prune": {
@@ -799,37 +772,24 @@ async function handleDockerAction(
         return errorResponse("⚠️ This is a destructive operation. Set force=true to confirm.");
       }
 
-      const targetHosts = params.host ? hosts.filter((h) => h.name === params.host) : hosts;
-      if (params.host && targetHosts.length === 0) {
+      const targetHost = hosts.find((h) => h.name === params.host);
+      if (!targetHost) {
         return errorResponse(`Host '${params.host}' not found.`);
       }
 
-      const allResults: Array<{ host: string; results: Awaited<ReturnType<typeof pruneDocker>> }> =
-        [];
+      try {
+        const results = await pruneDocker(targetHost, params.prune_target);
+        const allResults = [{ host: targetHost.name, results }];
 
-      for (const host of targetHosts) {
-        try {
-          const results = await pruneDocker(host, params.prune_target);
-          allResults.push({ host: host.name, results });
-        } catch (error) {
-          allResults.push({
-            host: host.name,
-            results: [
-              {
-                type: params.prune_target,
-                spaceReclaimed: 0,
-                itemsDeleted: 0,
-                details: [`Error: ${error instanceof Error ? error.message : "Unknown error"}`]
-              }
-            ]
-          });
-        }
+        const output = { hosts: allResults };
+        const text = formatPruneMarkdown(allResults);
+
+        return successResponse(text, output);
+      } catch (error) {
+        return errorResponse(
+          `Failed to prune on ${targetHost.name}: ${error instanceof Error ? error.message : "Connection failed"}`
+        );
       }
-
-      const output = { hosts: allResults };
-      const text = formatPruneMarkdown(allResults);
-
-      return successResponse(text, output);
     }
 
     default:

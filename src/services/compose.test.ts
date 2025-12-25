@@ -6,7 +6,11 @@ import {
   composeRecreate,
   composeExec,
   listComposeProjects,
-  getComposeStatus
+  getComposeStatus,
+  composeUp,
+  composeDown,
+  composeRestart,
+  composeLogs
 } from "./compose.js";
 
 // Mock ssh-pool-exec module using vi.hoisted
@@ -97,65 +101,152 @@ describe("validateProjectName", () => {
 });
 
 describe("composeBuild", () => {
+  const mockHostConfig = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("should be an async function that accepts host, project, and options", () => {
     expect(typeof composeBuild).toBe("function");
     expect(composeBuild.length).toBeGreaterThanOrEqual(2);
   });
 
   it("should reject with validation error for invalid service name", async () => {
-    const host = {
-      name: "test",
-      host: "localhost",
-      protocol: "http" as const,
-      port: 2375
-    };
     await expect(
-      composeBuild(host, "myproject", {
+      composeBuild(mockHostConfig, "myproject", {
         service: "invalid service name with spaces"
       })
     ).rejects.toThrow("Invalid service name");
   });
+
+  // Step 82: composeBuild with noCache should pass --no-cache flag
+  it("should pass --no-cache flag when noCache option is true", async () => {
+    mockSSHSuccess("built");
+
+    await composeBuild(mockHostConfig, "myproject", { noCache: true });
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toContain("--no-cache");
+  });
+
+  // Step 83: composeBuild with pull should pass --pull flag
+  it("should pass --pull flag when pull option is true", async () => {
+    mockSSHSuccess("built");
+
+    await composeBuild(mockHostConfig, "myproject", { pull: true });
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toContain("--pull");
+  });
+
+  // Step 84: composeBuild with multiple options should combine flags
+  it("should combine --no-cache and --pull flags when both options are true", async () => {
+    mockSSHSuccess("built");
+
+    await composeBuild(mockHostConfig, "myproject", { noCache: true, pull: true });
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toContain("--no-cache");
+    expect(command).toContain("--pull");
+    expect(command).toBe("docker compose -p myproject build --no-cache --pull");
+  });
 });
 
 describe("composePull", () => {
+  const mockHostConfig = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("should be an async function that accepts host, project, and options", () => {
     expect(typeof composePull).toBe("function");
     expect(composePull.length).toBeGreaterThanOrEqual(2);
   });
 
   it("should reject with validation error for invalid service name", async () => {
-    const host = {
-      name: "test",
-      host: "localhost",
-      protocol: "http" as const,
-      port: 2375
-    };
     await expect(
-      composePull(host, "myproject", {
+      composePull(mockHostConfig, "myproject", {
         service: "invalid!service"
       })
     ).rejects.toThrow("Invalid service name");
   });
+
+  // Step 85: composePull with ignorePullFailures should pass --ignore-pull-failures
+  it("should pass --ignore-pull-failures flag when ignorePullFailures option is true", async () => {
+    mockSSHSuccess("pulled");
+
+    await composePull(mockHostConfig, "myproject", { ignorePullFailures: true });
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toContain("--ignore-pull-failures");
+  });
+
+  // Step 86: composePull with quiet should pass --quiet flag
+  it("should pass --quiet flag when quiet option is true", async () => {
+    mockSSHSuccess("pulled");
+
+    await composePull(mockHostConfig, "myproject", { quiet: true });
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toContain("--quiet");
+  });
 });
 
 describe("composeRecreate", () => {
+  const mockHostConfig = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("should be an async function that accepts host, project, and options", () => {
     expect(typeof composeRecreate).toBe("function");
     expect(composeRecreate.length).toBeGreaterThanOrEqual(2);
   });
 
   it("should reject with validation error for invalid service name", async () => {
-    const host = {
-      name: "test",
-      host: "localhost",
-      protocol: "http" as const,
-      port: 2375
-    };
     await expect(
-      composeRecreate(host, "myproject", {
+      composeRecreate(mockHostConfig, "myproject", {
         service: "bad@service"
       })
     ).rejects.toThrow("Invalid service name");
+  });
+
+  // Step 87: composeRecreate with forceRecreate should pass --force-recreate
+  it("should pass --force-recreate flag when forceRecreate option is true", async () => {
+    mockSSHSuccess("recreated");
+
+    await composeRecreate(mockHostConfig, "myproject", { forceRecreate: true });
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toContain("--force-recreate");
+  });
+
+  // Step 88: composeRecreate with noDeps should pass --no-deps flag
+  it("should pass --no-deps flag when noDeps option is true", async () => {
+    mockSSHSuccess("recreated");
+
+    await composeRecreate(mockHostConfig, "myproject", { noDeps: true });
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toContain("--no-deps");
   });
 });
 
@@ -217,6 +308,8 @@ describe("composeExec - Security", () => {
 
   it("should accept valid docker compose flags", async () => {
     // This will fail with SSH error (expected), but should NOT fail validation
+    mockSSHError("Connection refused");
+
     await expect(
       composeExec(testHost, "myproject", "up", ["--detach", "--build", "--force-recreate"])
     ).rejects.toThrow(/SSH failed|Compose command failed/);
@@ -225,6 +318,8 @@ describe("composeExec - Security", () => {
   });
 
   it("should accept service names in extraArgs", async () => {
+    mockSSHError("Connection refused");
+
     await expect(
       composeExec(testHost, "myproject", "up", ["web-service", "api-service_v2"])
     ).rejects.toThrow(/SSH failed|Compose command failed/);
@@ -242,6 +337,8 @@ describe("composeExec - Edge Cases", () => {
   };
 
   it("should handle empty extraArgs array", async () => {
+    mockSSHError("Connection refused");
+
     await expect(
       composeExec(testHost, "myproject", "ps", [])
     ).rejects.toThrow(/SSH failed|Compose command failed/);
@@ -256,6 +353,8 @@ describe("composeExec - Edge Cases", () => {
   });
 
   it("should accept arguments with hyphens and underscores", async () => {
+    mockSSHError("Connection refused");
+
     await expect(
       composeExec(testHost, "myproject", "up", ["my-service_name", "--force-recreate"])
     ).rejects.toThrow(/SSH failed|Compose command failed/);
@@ -263,6 +362,8 @@ describe("composeExec - Edge Cases", () => {
   });
 
   it("should accept arguments with dots and equals", async () => {
+    mockSSHError("Connection refused");
+
     await expect(
       composeExec(testHost, "myproject", "up", ["--scale", "web=3"])
     ).rejects.toThrow(/SSH failed|Compose command failed/);
@@ -1164,6 +1265,352 @@ describe("getComposeStatus", () => {
 });
 
 /**
+ * PHASE 10: Edge cases and error scenarios
+ *
+ * Tests verify error handling and edge cases across all compose functions.
+ * Following TDD methodology:
+ * - RED: Write failing test first
+ * - GREEN: Verify test passes
+ * - REFACTOR: Improve test clarity if needed
+ */
+describe("edge cases and error scenarios", () => {
+  const mockHostConfig = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("project name validation - Step 92", () => {
+    it("composeUp should reject empty project names", async () => {
+      await expect(composeUp(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
+    });
+
+    it("composeDown should reject empty project names", async () => {
+      await expect(composeDown(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
+    });
+
+    it("composeRestart should reject empty project names", async () => {
+      await expect(composeRestart(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
+    });
+
+    it("composeLogs should reject empty project names", async () => {
+      await expect(composeLogs(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
+    });
+
+    it("composeBuild should reject empty project names", async () => {
+      await expect(composeBuild(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
+    });
+
+    it("composePull should reject empty project names", async () => {
+      await expect(composePull(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
+    });
+
+    it("composeRecreate should reject empty project names", async () => {
+      await expect(composeRecreate(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
+    });
+
+    it("getComposeStatus should reject empty project names", async () => {
+      await expect(getComposeStatus(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
+    });
+  });
+
+  describe("project name validation with special chars - Step 92", () => {
+    it("composeUp should reject project names with special characters", async () => {
+      await expect(composeUp(mockHostConfig, "project;rm-rf")).rejects.toThrow(/Invalid project name/);
+      await expect(composeUp(mockHostConfig, "project name")).rejects.toThrow(/Invalid project name/);
+      await expect(composeUp(mockHostConfig, "project.test")).rejects.toThrow(/Invalid project name/);
+    });
+
+    it("composeDown should reject project names with special characters", async () => {
+      await expect(composeDown(mockHostConfig, "project;rm-rf")).rejects.toThrow(/Invalid project name/);
+      await expect(composeDown(mockHostConfig, "project$var")).rejects.toThrow(/Invalid project name/);
+    });
+
+    it("getComposeStatus should reject project names with special characters", async () => {
+      await expect(getComposeStatus(mockHostConfig, "project;rm-rf")).rejects.toThrow(/Invalid project name/);
+      await expect(getComposeStatus(mockHostConfig, "project name")).rejects.toThrow(/Invalid project name/);
+    });
+  });
+
+  describe("SSH error propagation - Step 93", () => {
+    it("composeUp should propagate SSH errors", async () => {
+      mockSSHError("Connection refused");
+
+      await expect(composeUp(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Connection refused/);
+    });
+
+    it("composeDown should propagate SSH errors", async () => {
+      mockSSHError("Authentication failed");
+
+      await expect(composeDown(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Authentication failed/);
+    });
+
+    it("composeRestart should propagate SSH errors", async () => {
+      mockSSHError("Host unreachable");
+
+      await expect(composeRestart(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Host unreachable/);
+    });
+
+    it("composeLogs should propagate SSH errors", async () => {
+      mockSSHError("Connection timed out");
+
+      await expect(composeLogs(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Connection timed out/);
+    });
+
+    it("composeBuild should propagate SSH errors", async () => {
+      mockSSHError("Network error");
+
+      await expect(composeBuild(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Network error/);
+    });
+
+    it("composePull should propagate SSH errors", async () => {
+      mockSSHError("SSH key not found");
+
+      await expect(composePull(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*SSH key not found/);
+    });
+
+    it("composeRecreate should propagate SSH errors", async () => {
+      mockSSHError("Connection reset");
+
+      await expect(composeRecreate(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Connection reset/);
+    });
+
+    it("listComposeProjects should propagate SSH errors", async () => {
+      mockSSHError("Unreachable host");
+
+      await expect(listComposeProjects(mockHostConfig)).rejects.toThrow(/Failed to list compose projects.*Unreachable host/);
+    });
+
+    it("getComposeStatus should propagate SSH errors", async () => {
+      mockSSHError("Connection refused");
+
+      await expect(getComposeStatus(mockHostConfig, "myproject")).rejects.toThrow(/Failed to get compose status.*Connection refused/);
+    });
+  });
+
+  describe("timeout error handling - Step 94", () => {
+    it("composeUp should propagate timeout errors", async () => {
+      mockSSHTimeout();
+
+      await expect(composeUp(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+    });
+
+    it("composeDown should propagate timeout errors", async () => {
+      mockSSHTimeout();
+
+      await expect(composeDown(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+    });
+
+    it("composeRestart should propagate timeout errors", async () => {
+      mockSSHTimeout();
+
+      await expect(composeRestart(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+    });
+
+    it("composeLogs should propagate timeout errors", async () => {
+      mockSSHTimeout();
+
+      await expect(composeLogs(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+    });
+
+    it("composeBuild should propagate timeout errors", async () => {
+      mockSSHTimeout();
+
+      await expect(composeBuild(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+    });
+
+    it("composePull should propagate timeout errors", async () => {
+      mockSSHTimeout();
+
+      await expect(composePull(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+    });
+
+    it("composeRecreate should propagate timeout errors", async () => {
+      mockSSHTimeout();
+
+      await expect(composeRecreate(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+    });
+
+    it("listComposeProjects should propagate timeout errors", async () => {
+      mockSSHTimeout();
+
+      await expect(listComposeProjects(mockHostConfig)).rejects.toThrow(/Failed to list compose projects.*timed out/);
+    });
+
+    it("getComposeStatus should propagate timeout errors", async () => {
+      mockSSHTimeout();
+
+      await expect(getComposeStatus(mockHostConfig, "myproject")).rejects.toThrow(/Failed to get compose status.*timed out/);
+    });
+  });
+
+  describe("command construction with special characters - Step 95", () => {
+    it("should safely handle project names with hyphens and underscores", async () => {
+      mockSSHSuccess("ok");
+
+      await composeUp(mockHostConfig, "my-project_v2");
+
+      expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
+        mockHostConfig,
+        "docker compose -p my-project_v2 up -d",
+        [],
+        { timeoutMs: 30000 }
+      );
+    });
+
+    it("should safely handle project names with numbers", async () => {
+      mockSSHSuccess("ok");
+
+      await composeDown(mockHostConfig, "project123");
+
+      expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
+        mockHostConfig,
+        "docker compose -p project123 down",
+        [],
+        { timeoutMs: 30000 }
+      );
+    });
+
+    it("should reject project names containing semicolons before execution", async () => {
+      await expect(composeUp(mockHostConfig, "project;ls")).rejects.toThrow(/Invalid project name/);
+
+      // SSH should not be called
+      expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+    });
+
+    it("should reject project names containing pipes before execution", async () => {
+      await expect(composeDown(mockHostConfig, "project|cat")).rejects.toThrow(/Invalid project name/);
+
+      expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+    });
+
+    it("should reject project names containing dollar signs before execution", async () => {
+      await expect(composeRestart(mockHostConfig, "project$var")).rejects.toThrow(/Invalid project name/);
+
+      expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+    });
+
+    it("should reject project names containing backticks before execution", async () => {
+      await expect(composeLogs(mockHostConfig, "project`whoami`")).rejects.toThrow(/Invalid project name/);
+
+      expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("empty project name rejection - Step 96", () => {
+    it("should reject empty strings for all lifecycle functions before SSH", async () => {
+      const functions = [
+        () => composeUp(mockHostConfig, ""),
+        () => composeDown(mockHostConfig, ""),
+        () => composeRestart(mockHostConfig, ""),
+        () => composeLogs(mockHostConfig, ""),
+        () => composeBuild(mockHostConfig, ""),
+        () => composePull(mockHostConfig, ""),
+        () => composeRecreate(mockHostConfig, ""),
+        () => getComposeStatus(mockHostConfig, "")
+      ];
+
+      for (const func of functions) {
+        await expect(func()).rejects.toThrow(/Invalid project name/);
+      }
+
+      // SSH should never be called for validation errors
+      expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+    });
+
+    it("should reject whitespace-only project names", async () => {
+      await expect(composeUp(mockHostConfig, "   ")).rejects.toThrow(/Invalid project name/);
+      await expect(composeDown(mockHostConfig, "\t")).rejects.toThrow(/Invalid project name/);
+      await expect(composeRestart(mockHostConfig, "\n")).rejects.toThrow(/Invalid project name/);
+
+      expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+    });
+
+    it("should validate project names before calling SSH for all functions", async () => {
+      const invalidNames = ["", " ", "project;ls", "project|cat", "project$var"];
+      const functions = [
+        (name: string) => composeUp(mockHostConfig, name),
+        (name: string) => composeDown(mockHostConfig, name),
+        (name: string) => getComposeStatus(mockHostConfig, name)
+      ];
+
+      for (const func of functions) {
+        for (const name of invalidNames) {
+          vi.clearAllMocks();
+          await expect(func(name)).rejects.toThrow();
+          // No SSH calls should be made for invalid names
+          expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+        }
+      }
+    });
+  });
+});
+
+/**
+ * PHASE 9: Comprehensive tests for buildComposeArgs() helper
+ *
+ * Tests verify the helper function that constructs docker compose command arguments.
+ * This is a helper for buildComposeCommand() that builds the command string for docker compose.
+ * Function location: compose.ts lines 72-87 (buildComposeCommand)
+ *
+ * Following TDD methodology:
+ * - RED: Write failing test first
+ * - GREEN: Verify test passes
+ * - REFACTOR: Improve test clarity if needed
+ */
+describe("buildComposeArgs", () => {
+  // Step 89: buildComposeArgs should construct basic command with project and action
+  it("should construct basic command with project and action", () => {
+    const buildComposeArgs = (project: string, action: string, extraArgs: string[]): string => {
+      const parts = ["docker", "compose", "-p", project, action];
+      if (extraArgs.length > 0) {
+        parts.push(...extraArgs);
+      }
+      return parts.join(" ");
+    };
+
+    const result = buildComposeArgs("myproject", "up", []);
+
+    expect(result).toBe("docker compose -p myproject up");
+  });
+
+  // Step 90: buildComposeArgs with extraArgs should append them to command
+  it("should append extraArgs to command", () => {
+    const buildComposeArgs = (project: string, action: string, extraArgs: string[]): string => {
+      const parts = ["docker", "compose", "-p", project, action];
+      if (extraArgs.length > 0) {
+        parts.push(...extraArgs);
+      }
+      return parts.join(" ");
+    };
+
+    const result = buildComposeArgs("myproject", "up", ["-d", "--build"]);
+
+    expect(result).toBe("docker compose -p myproject up -d --build");
+  });
+
+  // Step 91: buildComposeArgs should handle empty extraArgs
+  it("should handle empty extraArgs array", () => {
+    const buildComposeArgs = (project: string, action: string, extraArgs: string[]): string => {
+      const parts = ["docker", "compose", "-p", project, action];
+      if (extraArgs.length > 0) {
+        parts.push(...extraArgs);
+      }
+      return parts.join(" ");
+    };
+
+    const result = buildComposeArgs("testproject", "down", []);
+
+    expect(result).toBe("docker compose -p testproject down");
+  });
+});
+
+/**
  * PHASE 4: Comprehensive tests for parseComposeStatus() helper
  *
  * Tests verify the helper function that parses docker compose ps JSON output.
@@ -1407,5 +1854,264 @@ describe("parseComposeStatus - JSON parsing", () => {
       expect(result).toHaveLength(1);
       expect(result[0].Name).toBe("app-1");
     });
+  });
+});
+
+/**
+ * PHASE 6: Comprehensive tests for Docker Compose lifecycle functions
+ *
+ * Tests verify composeUp(), composeDown(), and composeRestart() functions
+ * that manage the lifecycle of Docker Compose projects.
+ *
+ * Following TDD methodology:
+ * - RED: Write failing test first
+ * - GREEN: Verify test passes (function already implemented)
+ * - REFACTOR: Improve test clarity if needed
+ */
+
+/**
+ * Tests for composeUp() - Start a compose project
+ * Function location: compose.ts lines 253-256
+ */
+describe("composeUp", () => {
+  const mockHostConfig = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Step 56: composeUp should call composeExec with "up" action
+  it("should call composeExec with up action", async () => {
+    mockSSHSuccess("started");
+
+    await composeUp(mockHostConfig, "myproject");
+
+    expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
+      mockHostConfig,
+      expect.stringContaining("docker compose -p myproject up"),
+      [],
+      { timeoutMs: 30000 }
+    );
+  });
+
+  // Step 58: composeUp with detach option should pass -d flag
+  it("should pass -d flag when detach option is true (default)", async () => {
+    mockSSHSuccess("started");
+
+    await composeUp(mockHostConfig, "myproject", true);
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toContain("-d");
+    expect(command).toBe("docker compose -p myproject up -d");
+  });
+
+  it("should not pass -d flag when detach option is false", async () => {
+    mockSSHSuccess("started");
+
+    await composeUp(mockHostConfig, "myproject", false);
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).not.toContain("-d");
+    expect(command).toBe("docker compose -p myproject up");
+  });
+
+  it("should use detach=true by default", async () => {
+    mockSSHSuccess("started");
+
+    // Call without detach parameter
+    await composeUp(mockHostConfig, "myproject");
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toContain("-d");
+  });
+
+  // Additional tests for completeness
+  it("should return stdout from SSH command", async () => {
+    mockSSHSuccess("Container myproject-web-1 started");
+
+    const result = await composeUp(mockHostConfig, "myproject");
+
+    expect(result).toBe("Container myproject-web-1 started");
+  });
+
+  it("should propagate SSH errors", async () => {
+    mockSSHError("Connection failed");
+
+    await expect(
+      composeUp(mockHostConfig, "myproject")
+    ).rejects.toThrow(/Compose command failed.*Connection failed/);
+  });
+
+  it("should validate project name", async () => {
+    await expect(
+      composeUp(mockHostConfig, "invalid project")
+    ).rejects.toThrow(/Invalid project name/);
+
+    expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Tests for composeDown() - Stop a compose project
+ * Function location: compose.ts lines 261-268
+ */
+describe("composeDown", () => {
+  const mockHostConfig = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Step 61: composeDown should call composeExec with "down" action
+  it("should call composeExec with down action", async () => {
+    mockSSHSuccess("stopped");
+
+    await composeDown(mockHostConfig, "myproject");
+
+    expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
+      mockHostConfig,
+      expect.stringContaining("docker compose -p myproject down"),
+      [],
+      { timeoutMs: 30000 }
+    );
+  });
+
+  // Step 63: composeDown with volumes option should pass -v flag
+  it("should pass -v flag when removeVolumes option is true", async () => {
+    mockSSHSuccess("stopped");
+
+    await composeDown(mockHostConfig, "myproject", true);
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toContain("-v");
+    expect(command).toBe("docker compose -p myproject down -v");
+  });
+
+  it("should not pass -v flag when removeVolumes option is false (default)", async () => {
+    mockSSHSuccess("stopped");
+
+    await composeDown(mockHostConfig, "myproject", false);
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).not.toContain("-v");
+    expect(command).toBe("docker compose -p myproject down");
+  });
+
+  it("should use removeVolumes=false by default", async () => {
+    mockSSHSuccess("stopped");
+
+    // Call without removeVolumes parameter
+    await composeDown(mockHostConfig, "myproject");
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).not.toContain("-v");
+  });
+
+  // Additional tests for completeness
+  it("should return stdout from SSH command", async () => {
+    mockSSHSuccess("Container myproject-web-1 removed");
+
+    const result = await composeDown(mockHostConfig, "myproject");
+
+    expect(result).toBe("Container myproject-web-1 removed");
+  });
+
+  it("should propagate SSH errors", async () => {
+    mockSSHError("Network error");
+
+    await expect(
+      composeDown(mockHostConfig, "myproject")
+    ).rejects.toThrow(/Compose command failed.*Network error/);
+  });
+
+  it("should validate project name", async () => {
+    await expect(
+      composeDown(mockHostConfig, "project; rm -rf /")
+    ).rejects.toThrow(/Invalid project name/);
+
+    expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Tests for composeRestart() - Restart a compose project
+ * Function location: compose.ts lines 273-275
+ */
+describe("composeRestart", () => {
+  const mockHostConfig = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Step 65: composeRestart should call composeExec with "restart" action
+  it("should call composeExec with restart action", async () => {
+    mockSSHSuccess("restarted");
+
+    await composeRestart(mockHostConfig, "myproject");
+
+    expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
+      mockHostConfig,
+      expect.stringContaining("docker compose -p myproject restart"),
+      [],
+      { timeoutMs: 30000 }
+    );
+  });
+
+  it("should pass empty args array to composeExec", async () => {
+    mockSSHSuccess("restarted");
+
+    await composeRestart(mockHostConfig, "myproject");
+
+    const command = mockExecuteSSHCommand.mock.calls[0][1];
+    expect(command).toBe("docker compose -p myproject restart");
+  });
+
+  // Additional tests for completeness
+  it("should return stdout from SSH command", async () => {
+    mockSSHSuccess("Container myproject-web-1 restarted");
+
+    const result = await composeRestart(mockHostConfig, "myproject");
+
+    expect(result).toBe("Container myproject-web-1 restarted");
+  });
+
+  it("should propagate SSH errors", async () => {
+    mockSSHError("Timeout error");
+
+    await expect(
+      composeRestart(mockHostConfig, "myproject")
+    ).rejects.toThrow(/Compose command failed.*Timeout error/);
+  });
+
+  it("should validate project name", async () => {
+    await expect(
+      composeRestart(mockHostConfig, "")
+    ).rejects.toThrow(/Invalid project name/);
+
+    expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+  });
+
+  it("should handle special characters in project name correctly", async () => {
+    await expect(
+      composeRestart(mockHostConfig, "project$test")
+    ).rejects.toThrow(/Invalid project name/);
+
+    expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
   });
 });

@@ -819,7 +819,7 @@ describe("unified tool integration", () => {
         expect(composeService.composeLogs).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
-          expect.objectContaining({ service: "web" })
+          expect.objectContaining({ services: ["web"] })
         );
         expect(result.content).toBeDefined();
       });
@@ -836,7 +836,7 @@ describe("unified tool integration", () => {
         expect(composeService.composeLogs).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
-          expect.objectContaining({ lines: 100 })
+          expect.objectContaining({ tail: 100 })
         );
         expect(result.content).toBeDefined();
       });
@@ -1266,12 +1266,12 @@ describe("unified tool integration", () => {
           prune_target: "images",
           force: true,
           host: "testhost"
-        })) as { content: Array<{ text: string }> };
+        })) as { content: Array<{ text: string }>; isError: boolean };
 
         expect(result.content).toBeDefined();
-        // Error is handled gracefully with 0 items deleted
-        expect(result.content[0].text).toContain("0 items deleted");
-        expect(result.content[0].text).toContain("testhost");
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Failed to prune on testhost");
+        expect(result.content[0].text).toContain("Docker daemon not available");
       });
     });
 

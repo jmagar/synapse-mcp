@@ -280,20 +280,45 @@ export async function composeRestart(host: HostConfig, project: string): Promise
 export async function composeLogs(
   host: HostConfig,
   project: string,
-  options: { lines?: number; service?: string } = {}
+  options: {
+    tail?: number;
+    follow?: boolean;
+    timestamps?: boolean;
+    since?: string;
+    until?: string;
+    services?: string[];
+  } = {}
 ): Promise<string> {
   const args: string[] = ["--no-color"];
 
-  if (options.lines) {
-    args.push("--tail", String(options.lines));
+  if (options.tail !== undefined) {
+    args.push("--tail", String(options.tail));
   }
 
-  if (options.service) {
-    // Validate service name like project name
-    if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
-      throw new Error(`Invalid service name: ${options.service}`);
+  if (options.follow) {
+    args.push("-f");
+  }
+
+  if (options.timestamps) {
+    args.push("-t");
+  }
+
+  if (options.since) {
+    args.push("--since", options.since);
+  }
+
+  if (options.until) {
+    args.push("--until", options.until);
+  }
+
+  if (options.services && options.services.length > 0) {
+    // Validate service names
+    for (const service of options.services) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(service)) {
+        throw new Error(`Invalid service name: ${service}`);
+      }
     }
-    args.push(options.service);
+    args.push(...options.services);
   }
 
   return composeExec(host, project, "logs", args);
@@ -305,12 +330,16 @@ export async function composeLogs(
 export async function composeBuild(
   host: HostConfig,
   project: string,
-  options: { service?: string; noCache?: boolean } = {}
+  options: { service?: string; noCache?: boolean; pull?: boolean } = {}
 ): Promise<string> {
   const args: string[] = [];
 
   if (options.noCache) {
     args.push("--no-cache");
+  }
+
+  if (options.pull) {
+    args.push("--pull");
   }
 
   if (options.service) {
@@ -329,9 +358,17 @@ export async function composeBuild(
 export async function composePull(
   host: HostConfig,
   project: string,
-  options: { service?: string } = {}
+  options: { service?: string; ignorePullFailures?: boolean; quiet?: boolean } = {}
 ): Promise<string> {
   const args: string[] = [];
+
+  if (options.ignorePullFailures) {
+    args.push("--ignore-pull-failures");
+  }
+
+  if (options.quiet) {
+    args.push("--quiet");
+  }
 
   if (options.service) {
     if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
@@ -349,9 +386,17 @@ export async function composePull(
 export async function composeRecreate(
   host: HostConfig,
   project: string,
-  options: { service?: string } = {}
+  options: { service?: string; forceRecreate?: boolean; noDeps?: boolean } = {}
 ): Promise<string> {
-  const args: string[] = ["-d", "--force-recreate"];
+  const args: string[] = ["-d"];
+
+  if (options.forceRecreate !== false) {
+    args.push("--force-recreate");
+  }
+
+  if (options.noDeps) {
+    args.push("--no-deps");
+  }
 
   if (options.service) {
     if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {

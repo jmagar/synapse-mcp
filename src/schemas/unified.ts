@@ -259,7 +259,7 @@ const dockerInfoSchema = z.object({
   action_subaction: z.literal("docker:info"),
   action: z.literal("docker"),
   subaction: z.literal("info"),
-  host: z.string().optional(),
+  host: z.string().min(1),
   response_format: responseFormatSchema
 });
 
@@ -267,7 +267,7 @@ const dockerDfSchema = z.object({
   action_subaction: z.literal("docker:df"),
   action: z.literal("docker"),
   subaction: z.literal("df"),
-  host: z.string().optional(),
+  host: z.string().min(1),
   response_format: responseFormatSchema
 });
 
@@ -275,7 +275,7 @@ const dockerPruneSchema = z.object({
   action_subaction: z.literal("docker:prune"),
   action: z.literal("docker"),
   subaction: z.literal("prune"),
-  host: z.string().optional(),
+  host: z.string().min(1),
   prune_target: z.enum(["containers", "images", "volumes", "networks", "buildcache", "all"]),
   force: z.boolean().default(false)
 });
