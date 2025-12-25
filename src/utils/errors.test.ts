@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   HostOperationError,
   SSHCommandError,
-  ComposeOperationError
+  ComposeOperationError,
+  logError
 } from "./errors.js";
 
 describe("HostOperationError", () => {
@@ -89,5 +90,58 @@ describe("ComposeOperationError", () => {
     expect(error.message).toContain("up");
     expect(error.project).toBe("production-db");
     expect(error.action).toBe("up");
+  });
+});
+
+describe("logError", () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("should log structured error with context", () => {
+    const error = new HostOperationError(
+      "Connection failed",
+      "docker-01",
+      "listContainers",
+      new Error("ECONNREFUSED")
+    );
+
+    logError(error, { requestId: "req-123" });
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("HostOperationError")
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("docker-01")
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("listContainers")
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("req-123")
+    );
+  });
+
+  it("should handle non-Error types", () => {
+    logError("string error", { operation: "test" });
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("string error")
+    );
+  });
+
+  it("should include stack trace for Error instances", () => {
+    const error = new Error("Test error");
+    logError(error);
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(error.stack || "")
+    );
   });
 });
