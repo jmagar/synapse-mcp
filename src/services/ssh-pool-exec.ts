@@ -1,5 +1,6 @@
 import { SSHConnectionPoolImpl, type SSHConnectionPool, type SSHPoolConfig } from "./ssh-pool.js";
 import type { HostConfig } from "../types.js";
+import { SSHCommandError } from "../utils/errors.js";
 
 /**
  * Global SSH connection pool singleton
@@ -64,11 +65,12 @@ export async function executeSSHCommand(
   // Get connection from pool
   const connection = await pool.getConnection(host);
 
+  // Build full command
+  const fullCommand = args.length > 0
+    ? `${command} ${args.join(" ")}`
+    : command;
+
   try {
-    // Build full command
-    const fullCommand = args.length > 0
-      ? `${command} ${args.join(" ")}`
-      : command;
 
     // Execute with timeout
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -83,20 +85,42 @@ export async function executeSSHCommand(
 
     // Check exit code
     if (result.code !== 0) {
-      throw new Error(
-        `SSH command failed (exit ${result.code}): ${command}\n` +
-        `stderr: ${result.stderr}\n` +
-        `stdout: ${result.stdout}`
+      throw new SSHCommandError(
+        "SSH command failed with non-zero exit code",
+        host.name,
+        fullCommand,
+        result.code,
+        result.stderr,
+        result.stdout
       );
     }
 
     return result.stdout.trim();
   } catch (error) {
-    // Re-throw with context
     if (error instanceof Error) {
-      throw error;
+      if (error instanceof SSHCommandError) {
+        throw error;
+      }
+      const baseMessage = error.message || "SSH command execution failed";
+      throw new SSHCommandError(
+        baseMessage,
+        host.name,
+        fullCommand,
+        undefined,
+        undefined,
+        undefined,
+        error
+      );
     }
-    throw new Error(`SSH command failed: ${command} - ${String(error)}`);
+    throw new SSHCommandError(
+      "SSH command execution failed",
+      host.name,
+      fullCommand,
+      undefined,
+      undefined,
+      undefined,
+      error
+    );
   } finally {
     // Always release connection back to pool
     await pool.releaseConnection(host, connection);

@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { executeSSHCommand, getGlobalPool } from "./ssh-pool-exec.js";
 import type { HostConfig } from "../types.js";
+import type { NodeSSH } from "node-ssh";
+import { SSHCommandError } from "../utils/errors.js";
 
 // Mock node-ssh module
 vi.mock("node-ssh", () => {
@@ -223,6 +225,73 @@ describe("ssh-pool-exec", () => {
         expect(error).toBeInstanceOf(Error);
         expect((error as Error).message).toMatch(/SSH command failed/i);
         expect((error as Error).message).toMatch(/nonexistent-command/);
+      }
+    });
+  });
+
+  describe("executeSSHCommand error handling", () => {
+    it("should throw SSHCommandError with full context on command failure", async () => {
+      const pool = getGlobalPool();
+      const mockConnection = {
+        execCommand: vi.fn().mockResolvedValue({
+          code: 127,
+          stderr: "command not found: nonexistent",
+          stdout: ""
+        })
+      } as unknown as NodeSSH;
+
+      const getConnectionSpy = vi
+        .spyOn(pool, "getConnection")
+        .mockResolvedValue(mockConnection);
+      const releaseConnectionSpy = vi
+        .spyOn(pool, "releaseConnection")
+        .mockResolvedValue(undefined);
+
+      try {
+        await expect(
+          executeSSHCommand(testHost, "nonexistent-command")
+        ).rejects.toThrow(SSHCommandError);
+
+        await expect(
+          executeSSHCommand(testHost, "nonexistent-command")
+        ).rejects.toMatchObject({
+          hostName: testHost.name,
+          command: "nonexistent-command",
+          exitCode: 127,
+          stderr: expect.stringContaining("command not found")
+        });
+      } finally {
+        getConnectionSpy.mockRestore();
+        releaseConnectionSpy.mockRestore();
+      }
+    });
+
+    it("should chain original error cause on exception", async () => {
+      const pool = getGlobalPool();
+      const rootError = new Error("Network timeout");
+      const mockConnection = {
+        execCommand: vi.fn().mockRejectedValue(rootError)
+      } as unknown as NodeSSH;
+
+      const getConnectionSpy = vi
+        .spyOn(pool, "getConnection")
+        .mockResolvedValue(mockConnection);
+      const releaseConnectionSpy = vi
+        .spyOn(pool, "releaseConnection")
+        .mockResolvedValue(undefined);
+
+      try {
+        await expect(
+          executeSSHCommand(testHost, "test-command")
+        ).rejects.toMatchObject({
+          name: "SSHCommandError",
+          hostName: testHost.name,
+          command: "test-command",
+          cause: rootError
+        });
+      } finally {
+        getConnectionSpy.mockRestore();
+        releaseConnectionSpy.mockRestore();
       }
     });
   });
