@@ -41,7 +41,7 @@ export interface IDockerService {
 }
 
 export interface ISSHService {
-  executeCommand(host: HostConfig, command: string, args?: string[], options?: { timeoutMs?: number }): Promise<string>;
+  executeSSHCommand(host: HostConfig, command: string, args?: string[], options?: { timeoutMs?: number }): Promise<string>;
   getHostResources(host: HostConfig): Promise<HostResources>;
 }
 

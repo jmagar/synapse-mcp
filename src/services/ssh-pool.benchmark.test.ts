@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { executeSSHCommand, getGlobalPool } from "./ssh-pool-exec.js";
 import { HostConfig } from "../types.js";
+import { logError } from "../utils/errors.js";
 
 describe("SSH Connection Pool Performance Benchmarks", () => {
   const testHost: HostConfig = {
@@ -72,7 +73,13 @@ describe("SSH Connection Pool Performance Benchmarks", () => {
 
     const start = Date.now();
     const promises = Array.from({ length: concurrentRequests }, (_, i) =>
-      executeSSHCommand(testHost, `${command} ${i}`).catch(() => null)
+      executeSSHCommand(testHost, `${command} ${i}`).catch((error) => {
+        logError(error, {
+          operation: "benchmark",
+          metadata: { commandIndex: i, command }
+        });
+        return null;
+      })
     );
 
     await Promise.allSettled(promises);

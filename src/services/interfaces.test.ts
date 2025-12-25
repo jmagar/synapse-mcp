@@ -33,7 +33,7 @@ describe("Service Interfaces", () => {
 
   it("should define ISSHService interface", () => {
     const mockService: ISSHService = {
-      executeCommand: async () => "",
+      executeSSHCommand: async () => "",
       getHostResources: async () => ({}) as never
     };
 
