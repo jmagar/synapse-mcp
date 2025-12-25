@@ -89,7 +89,7 @@ export async function executeSSHCommand(
         "SSH command failed with non-zero exit code",
         host.name,
         fullCommand,
-        result.code,
+        result.code ?? undefined,
         result.stderr,
         result.stdout
       );

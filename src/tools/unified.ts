@@ -49,6 +49,7 @@ import {
   formatComposeListMarkdown,
   formatComposeStatusMarkdown
 } from "../formatters/index.js";
+import { logError, HostOperationError } from "../utils/errors.js";
 
 /**
  * Collect container stats in parallel across hosts and containers
@@ -102,7 +103,20 @@ async function collectStatsParallel(
           )
           .map((result) => result.value);
       } catch (error) {
-        console.error(`Failed to collect stats from host ${host.name}:`, error);
+        logError(
+          new HostOperationError(
+            "Failed to collect stats from host",
+            host.name,
+            "collectStatsParallel",
+            error
+          ),
+          {
+            metadata: {
+              maxContainersPerHost,
+              timestamp: new Date().toISOString()
+            }
+          }
+        );
         return [];
       }
     })
@@ -682,6 +696,16 @@ async function handleHostAction(
             const resources = await getHostResources(host);
             return { host: host.name, resources };
           } catch (error) {
+            logError(
+              new HostOperationError(
+                "Failed to get host resources",
+                host.name,
+                "getHostResources",
+                error
+              ),
+              { operation: "handleHostAction:resources" }
+            );
+
             return {
               host: host.name,
               resources: null,

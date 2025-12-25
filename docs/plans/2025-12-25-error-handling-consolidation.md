@@ -4,44 +4,50 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Eliminate 12% code duplication in error handling by creating reusable error utilities and standardizing error response formats across the codebase.
+**Goal:** Reduce duplication in error handling by introducing reusable helpers in `src/utils/error-helpers.ts` while preserving existing error classes and response formats.
 
-**Architecture:** Create centralized error utilities in `src/utils/errors.ts` that provide: (1) type-safe error message extraction, (2) standardized MCP response builders, (3) consistent error wrapping/rethrowing helpers. Maintain backward compatibility with existing error response formats.
+**Architecture:** Add a dedicated `error-helpers` utility module (separate from existing `src/utils/errors.ts` error classes/logging). Refactor services and tools to use shared helpers for extracting error messages, wrapping errors with context, and building MCP responses. Keep existing error classes unchanged and maintain response format compatibility in `src/tools/unified.ts`.
 
-**Tech Stack:** TypeScript 5.7+, Vitest for testing, Zod for validation
+**Tech Stack:** TypeScript 5.7+, Vitest for testing
 
 ---
 
 ## Analysis Summary
 
-**Duplicate Patterns Found:**
-1. `error instanceof Error ? error.message : "..."` - 13 occurrences
-2. MCP error response structure - duplicated in unified.ts
-3. Try-catch wrapper pattern - repeated across services
-4. Inconsistent error message formatting
+**Existing error infrastructure:**
+- `src/utils/errors.ts` already defines custom errors (`HostOperationError`, `SSHCommandError`, `ComposeOperationError`) and `logError()`.
+- `src/utils/index.ts` only exports `validateSecurePath`.
+
+**Duplicate patterns to consolidate:**
+1. `error instanceof Error ? error.message : "..."` in `src/tools/unified.ts`, `src/services/compose.ts`, `src/services/docker.ts`, `src/services/ssh-pool.ts`
+2. MCP response helper duplication in `src/tools/unified.ts`
 
 **Files Affected:**
-- `src/tools/unified.ts` (primary - 5 error patterns)
-- `src/services/compose.ts` (3 error patterns)
-- `src/services/docker.ts` (2 error patterns)
-- `src/services/ssh-pool.ts` (1 error pattern)
-- `src/services/ssh-pool-exec.ts` (1 error pattern)
+- `src/utils/error-helpers.ts` (new)
+- `src/utils/error-helpers.test.ts` (new)
+- `src/utils/index.ts` (export new helpers)
+- `src/tools/unified.ts` (refactor to shared helpers)
+- `src/services/compose.ts` (wrapError)
+- `src/services/docker.ts` (extractErrorMessage)
+- `src/services/ssh-pool.ts` (extractErrorMessage)
+- `docs/error-handling.md` (new)
+- `CLAUDE.md` (update conventions)
 
 ---
 
-### Task 1: Create Error Utilities Module (TDD)
+### Task 1: Create error-helpers module (TDD)
 
 **Files:**
-- Create: `src/utils/errors.ts`
-- Create: `src/utils/errors.test.ts`
+- Create: `src/utils/error-helpers.ts`
+- Create: `src/utils/error-helpers.test.ts`
 
-**Step 1: Write failing test for extractErrorMessage**
+**Step 1: Write the failing test for extractErrorMessage**
 
-Create test file `src/utils/errors.test.ts`:
+Create `src/utils/error-helpers.test.ts`:
 
 ```typescript
 import { describe, it, expect } from "vitest";
-import { extractErrorMessage } from "./errors.js";
+import { extractErrorMessage } from "./error-helpers.js";
 
 describe("extractErrorMessage", () => {
   it("should extract message from Error instance", () => {
@@ -64,52 +70,36 @@ describe("extractErrorMessage", () => {
   it("should handle numbers", () => {
     expect(extractErrorMessage(42)).toBe("Unknown error");
   });
-
-  it("should convert non-Error objects to string", () => {
-    expect(extractErrorMessage({ code: 500 })).toBe("[object Object]");
-  });
 });
 ```
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm test src/utils/errors.test.ts`
-Expected: FAIL with "Cannot find module './errors.js'"
+Run: `pnpm test src/utils/error-helpers.test.ts`
+Expected: FAIL with "Cannot find module './error-helpers.js'"
 
 **Step 3: Write minimal implementation**
 
-Create `src/utils/errors.ts`:
+Create `src/utils/error-helpers.ts`:
 
 ```typescript
 /**
- * Error handling utilities for homelab-mcp-server
+ * Error helper utilities (message extraction, response builders, wrappers)
  *
- * Provides centralized error message extraction, response formatting,
- * and error wrapping helpers to eliminate code duplication.
+ * Kept separate from src/utils/errors.ts to avoid mixing helpers with
+ * custom error classes and logging utilities.
  */
 
 /**
  * Extract error message from unknown error value
  *
- * Handles the common pattern: error instanceof Error ? error.message : fallback
- *
  * @param error - Unknown error value (from catch block)
  * @param fallback - Fallback message if error is not an Error instance
  * @returns Error message string
- *
- * @example
- * try {
- *   await riskyOperation();
- * } catch (error) {
- *   console.error(extractErrorMessage(error, "Operation failed"));
- * }
  */
 export function extractErrorMessage(error: unknown, fallback = "Unknown error"): string {
   if (error instanceof Error) {
     return error.message;
-  }
-  if (typeof error === "string") {
-    return fallback;
   }
   return fallback;
 }
@@ -117,30 +107,30 @@ export function extractErrorMessage(error: unknown, fallback = "Unknown error"):
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm test src/utils/errors.test.ts`
-Expected: PASS (all 6 tests)
+Run: `pnpm test src/utils/error-helpers.test.ts`
+Expected: PASS (all tests)
 
 **Step 5: Commit**
 
 ```bash
-git add src/utils/errors.ts src/utils/errors.test.ts
-git commit -m "feat(errors): add extractErrorMessage utility with tests"
+git add src/utils/error-helpers.ts src/utils/error-helpers.test.ts
+git commit -m "feat(errors): add error-helpers module with extractErrorMessage"
 ```
 
 ---
 
-### Task 2: Add MCP Response Builders (TDD)
+### Task 2: Add MCP response builders to error-helpers (TDD)
 
 **Files:**
-- Modify: `src/utils/errors.test.ts`
-- Modify: `src/utils/errors.ts`
+- Modify: `src/utils/error-helpers.test.ts`
+- Modify: `src/utils/error-helpers.ts`
 
 **Step 1: Write failing tests for MCP response builders**
 
-Add to `src/utils/errors.test.ts`:
+Add to `src/utils/error-helpers.test.ts`:
 
 ```typescript
-import { createMcpErrorResponse, createMcpSuccessResponse } from "./errors.js";
+import { createMcpErrorResponse, createMcpSuccessResponse } from "./error-helpers.js";
 
 describe("createMcpErrorResponse", () => {
   it("should create error response with message", () => {
@@ -199,12 +189,12 @@ describe("createMcpSuccessResponse", () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm test src/utils/errors.test.ts`
+Run: `pnpm test src/utils/error-helpers.test.ts`
 Expected: FAIL with "createMcpErrorResponse is not exported"
 
 **Step 3: Write implementation for response builders**
 
-Add to `src/utils/errors.ts`:
+Add to `src/utils/error-helpers.ts`:
 
 ```typescript
 /**
@@ -233,24 +223,13 @@ export interface McpSuccessResponse {
 
 /**
  * Create standardized MCP error response
- *
- * Replaces duplicate errorResponse helper functions across codebase.
- *
- * @param error - Error message string, Error instance, or unknown error
- * @param fallback - Fallback message if error is not an Error instance
- * @returns MCP error response object
- *
- * @example
- * return createMcpErrorResponse("Container not found");
- * return createMcpErrorResponse(error, "Operation failed");
  */
 export function createMcpErrorResponse(
   error: string | Error | unknown,
   fallback = "Unknown error"
 ): McpErrorResponse {
-  const message = typeof error === "string"
-    ? error
-    : extractErrorMessage(error, fallback);
+  const message =
+    typeof error === "string" ? error : extractErrorMessage(error, fallback);
 
   return {
     isError: true,
@@ -260,16 +239,6 @@ export function createMcpErrorResponse(
 
 /**
  * Create standardized MCP success response
- *
- * Replaces duplicate successResponse helper functions across codebase.
- *
- * @param text - Response text message
- * @param structuredContent - Optional structured data for programmatic access
- * @returns MCP success response object
- *
- * @example
- * return createMcpSuccessResponse("Container started");
- * return createMcpSuccessResponse("Success", { id: "123", status: "running" });
  */
 export function createMcpSuccessResponse(
   text: string,
@@ -284,30 +253,30 @@ export function createMcpSuccessResponse(
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm test src/utils/errors.test.ts`
+Run: `pnpm test src/utils/error-helpers.test.ts`
 Expected: PASS (all tests)
 
 **Step 5: Commit**
 
 ```bash
-git add src/utils/errors.ts src/utils/errors.test.ts
-git commit -m "feat(errors): add MCP response builder utilities"
+git add src/utils/error-helpers.ts src/utils/error-helpers.test.ts
+git commit -m "feat(errors): add MCP response helpers"
 ```
 
 ---
 
-### Task 3: Add Error Wrapping Helper (TDD)
+### Task 3: Add wrapError helper (TDD)
 
 **Files:**
-- Modify: `src/utils/errors.test.ts`
-- Modify: `src/utils/errors.ts`
+- Modify: `src/utils/error-helpers.test.ts`
+- Modify: `src/utils/error-helpers.ts`
 
 **Step 1: Write failing tests for wrapError**
 
-Add to `src/utils/errors.test.ts`:
+Add to `src/utils/error-helpers.test.ts`:
 
 ```typescript
-import { wrapError } from "./errors.js";
+import { wrapError } from "./error-helpers.js";
 
 describe("wrapError", () => {
   it("should wrap error with context message", () => {
@@ -340,31 +309,21 @@ describe("wrapError", () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm test src/utils/errors.test.ts`
+Run: `pnpm test src/utils/error-helpers.test.ts`
 Expected: FAIL with "wrapError is not exported"
 
 **Step 3: Write implementation for wrapError**
 
-Add to `src/utils/errors.ts`:
+Add to `src/utils/error-helpers.ts`:
 
 ```typescript
 /**
  * Wrap error with additional context
  *
- * Replaces pattern: throw new Error(`Context: ${error instanceof Error ? error.message : fallback}`)
- * Preserves original error as cause for better stack traces.
- *
  * @param context - Context message to prepend
  * @param error - Original error value
  * @param fallback - Fallback message if error is not an Error instance
  * @returns New Error with context and original error as cause
- *
- * @example
- * try {
- *   await operation();
- * } catch (error) {
- *   throw wrapError("Failed to execute operation", error);
- * }
  */
 export function wrapError(
   context: string,
@@ -374,7 +333,6 @@ export function wrapError(
   const message = extractErrorMessage(error, fallback);
   const wrappedError = new Error(`${context}: ${message}`);
 
-  // Preserve original error as cause for stack trace debugging
   if (error instanceof Error) {
     wrappedError.cause = error;
   }
@@ -385,19 +343,19 @@ export function wrapError(
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm test src/utils/errors.test.ts`
+Run: `pnpm test src/utils/error-helpers.test.ts`
 Expected: PASS (all tests)
 
 **Step 5: Commit**
 
 ```bash
-git add src/utils/errors.ts src/utils/errors.test.ts
-git commit -m "feat(errors): add wrapError helper for error context"
+git add src/utils/error-helpers.ts src/utils/error-helpers.test.ts
+git commit -m "feat(errors): add wrapError helper"
 ```
 
 ---
 
-### Task 4: Export Utilities from Index
+### Task 4: Export helpers from utils index
 
 **Files:**
 - Modify: `src/utils/index.ts`
@@ -407,7 +365,6 @@ git commit -m "feat(errors): add wrapError helper for error context"
 Modify `src/utils/index.ts`:
 
 ```typescript
-// Export all error utilities
 export {
   extractErrorMessage,
   createMcpErrorResponse,
@@ -416,61 +373,55 @@ export {
   type McpContentItem,
   type McpErrorResponse,
   type McpSuccessResponse
-} from "./errors.js";
+} from "./error-helpers.js";
 
-// Export path security utilities
 export { validateSecurePath } from "./path-security.js";
 ```
 
 **Step 2: Verify exports work**
 
-Run: `pnpm test src/utils/errors.test.ts`
-Expected: PASS (all tests still pass)
+Run: `pnpm test src/utils/error-helpers.test.ts`
+Expected: PASS
 
 **Step 3: Commit**
 
 ```bash
 git add src/utils/index.ts
-git commit -m "feat(utils): export error handling utilities"
+git commit -m "feat(utils): export error helper utilities"
 ```
 
 ---
 
-### Task 5: Refactor unified.ts Error Handling (TDD)
+### Task 5: Refactor unified.ts error handling (TDD)
 
 **Files:**
 - Modify: `src/tools/unified.ts`
 - Modify: `src/tools/unified.test.ts`
 
-**Step 1: Write test to verify backward compatibility**
+**Step 1: Write test to verify response format compatibility**
 
 Add to `src/tools/unified.test.ts`:
 
 ```typescript
-describe("Error handling backward compatibility", () => {
-  it("should maintain error response format after refactor", () => {
-    // This test ensures our refactored code produces identical responses
-    const errorMsg = "Test error";
+describe("error handling compatibility", () => {
+  it("should keep MCP error format stable", () => {
     const expected = {
       isError: true,
-      content: [{ type: "text", text: errorMsg }]
+      content: [{ type: "text", text: "Test error" }]
     };
 
-    // Test will pass before and after refactor if format is maintained
     expect(expected.isError).toBe(true);
-    expect(expected.content[0].text).toBe(errorMsg);
+    expect(expected.content[0].text).toBe("Test error");
   });
 
-  it("should maintain success response format after refactor", () => {
-    const msg = "Success";
-    const data = { id: "123" };
+  it("should keep MCP success format stable", () => {
     const expected = {
-      content: [{ type: "text", text: msg }],
-      structuredContent: data
+      content: [{ type: "text", text: "Success" }],
+      structuredContent: { id: "123" }
     };
 
-    expect(expected.content[0].text).toBe(msg);
-    expect(expected.structuredContent).toEqual(data);
+    expect(expected.content[0].text).toBe("Success");
+    expect(expected.structuredContent).toEqual({ id: "123" });
   });
 });
 ```
@@ -478,13 +429,13 @@ describe("Error handling backward compatibility", () => {
 **Step 2: Run test to verify it passes**
 
 Run: `pnpm test src/tools/unified.test.ts`
-Expected: PASS (baseline established)
+Expected: PASS
 
-**Step 3: Refactor unified.ts to use error utilities**
+**Step 3: Refactor unified.ts to use error helpers**
 
 Modify `src/tools/unified.ts`:
 
-1. Add import at top:
+1. Add import:
 ```typescript
 import {
   createMcpErrorResponse,
@@ -493,94 +444,69 @@ import {
 } from "../utils/index.js";
 ```
 
-2. Replace errorResponse function (lines 910-918) with usage:
+2. Replace error response in tool registration catch:
 ```typescript
-// DELETE old errorResponse function:
-// function errorResponse(message: string): { ... } { ... }
-
-// All calls to errorResponse() now use createMcpErrorResponse()
-```
-
-3. Replace successResponse function (lines 897-908) with usage:
-```typescript
-// DELETE old successResponse function:
-// function successResponse(text: string, ...) { ... }
-
-// All calls to successResponse() now use createMcpSuccessResponse()
-```
-
-4. Replace line 204 error response:
-```typescript
-// BEFORE:
-return {
-  isError: true,
-  content: [
-    {
-      type: "text" as const,
-      text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-    }
-  ]
-};
-
+// BEFORE: inline response
 // AFTER:
 return createMcpErrorResponse(error, "Unknown error");
 ```
 
-5. Replace line 260 errorResponse call:
+3. Replace all `errorResponse()` calls:
 ```typescript
-// BEFORE:
-return errorResponse(
-  `Host '${params.host}' not found. Available: ${hosts.map((h) => h.name).join(", ")}`
-);
-
-// AFTER:
-return createMcpErrorResponse(
-  `Host '${params.host}' not found. Available: ${hosts.map((h) => h.name).join(", ")}`
-);
+errorResponse("message") -> createMcpErrorResponse("message")
 ```
 
-6. Replace all remaining errorResponse() and successResponse() calls:
-   - Use find/replace or systematic search to replace all ~50 occurrences
-   - errorResponse(msg) → createMcpErrorResponse(msg)
-   - successResponse(text) → createMcpSuccessResponse(text)
-   - successResponse(text, data) → createMcpSuccessResponse(text, data)
-   - After replacements, delete the old helper functions (lines 897-918)
-   - Verify with: `grep -n "errorResponse\|successResponse" src/tools/unified.ts`
-   - Should only find the new imports, no function definitions or old calls
+4. Replace all `successResponse()` calls:
+```typescript
+successResponse(text) -> createMcpSuccessResponse(truncateIfNeeded(text))
+successResponse(text, data) -> createMcpSuccessResponse(truncateIfNeeded(text), data)
+```
 
-**Step 4: Run tests to verify backward compatibility**
+5. Replace inline `error instanceof Error ? error.message : "..."`:
+```typescript
+extractErrorMessage(error, "Fallback")
+```
+
+6. Delete `successResponse()` and `errorResponse()` helper functions.
+
+7. Verify no remaining helper calls:
+```bash
+rg -n "errorResponse|successResponse" src/tools/unified.ts
+```
+Expected: No matches
+
+**Step 4: Run tests**
 
 Run: `pnpm test src/tools/unified.test.ts`
-Expected: PASS (all tests, including new backward compatibility tests)
+Expected: PASS
 
 **Step 5: Run integration tests**
 
 Run: `pnpm test src/tools/unified.integration.test.ts`
-Expected: PASS (response format unchanged)
+Expected: PASS
 
 **Step 6: Commit**
 
 ```bash
 git add src/tools/unified.ts src/tools/unified.test.ts
-git commit -m "refactor(unified): use centralized error utilities"
+git commit -m "refactor(unified): use error helpers for MCP responses"
 ```
 
 ---
 
-### Task 6: Refactor compose.ts Error Handling
+### Task 6: Refactor compose.ts error handling
 
 **Files:**
 - Modify: `src/services/compose.ts`
 - Modify: `src/services/compose.test.ts`
 
-**Step 1: Write test for error message consistency**
+**Step 1: Add lightweight consistency test**
 
 Add to `src/services/compose.test.ts`:
 
 ```typescript
-describe("Error handling consistency", () => {
-  it("should use consistent error messages", () => {
-    // Verify error messages follow pattern: "Context: details"
+describe("error handling consistency", () => {
+  it("should keep compose error messages formatted with context", () => {
     expect("Compose command failed: timeout").toContain(":");
     expect("Failed to list compose projects: connection refused").toContain(":");
   });
@@ -592,7 +518,7 @@ describe("Error handling consistency", () => {
 Run: `pnpm test src/services/compose.test.ts`
 Expected: PASS
 
-**Step 3: Refactor compose.ts error handling**
+**Step 3: Refactor compose.ts to use wrapError**
 
 Modify `src/services/compose.ts`:
 
@@ -601,79 +527,59 @@ Modify `src/services/compose.ts`:
 import { wrapError } from "../utils/index.js";
 ```
 
-2. Replace line 116-120:
+2. Replace catch blocks:
 ```typescript
-// BEFORE:
-} catch (error) {
-  throw new Error(
-    `Compose command failed: ${error instanceof Error ? error.message : "Unknown error"}`
-  );
-}
-
-// AFTER:
-} catch (error) {
-  throw wrapError("Compose command failed", error);
-}
+throw new Error(
+  `Compose command failed: ${error instanceof Error ? error.message : "Unknown error"}`
+);
+// ->
+throw wrapError("Compose command failed", error);
 ```
 
-3. Replace line 150-154:
 ```typescript
-// BEFORE:
-} catch (error) {
-  throw new Error(
-    `Failed to list compose projects: ${error instanceof Error ? error.message : "Unknown error"}`
-  );
-}
-
-// AFTER:
-} catch (error) {
-  throw wrapError("Failed to list compose projects", error);
-}
+throw new Error(
+  `Failed to list compose projects: ${error instanceof Error ? error.message : "Unknown error"}`
+);
+// ->
+throw wrapError("Failed to list compose projects", error);
 ```
 
-4. Replace line 243-247:
 ```typescript
-// BEFORE:
-} catch (error) {
-  throw new Error(
-    `Failed to get compose status: ${error instanceof Error ? error.message : "Unknown error"}`
-  );
-}
-
-// AFTER:
-} catch (error) {
-  throw wrapError("Failed to get compose status", error);
-}
+throw new Error(
+  `Failed to get compose status: ${error instanceof Error ? error.message : "Unknown error"}`
+);
+// ->
+throw wrapError("Failed to get compose status", error);
 ```
 
-**Step 4: Run tests to verify behavior unchanged**
+**Step 4: Run tests**
 
 Run: `pnpm test src/services/compose.test.ts`
-Expected: PASS (all tests)
+Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
 git add src/services/compose.ts src/services/compose.test.ts
-git commit -m "refactor(compose): use wrapError utility for error handling"
+git commit -m "refactor(compose): use wrapError helper"
 ```
 
 ---
 
-### Task 7: Refactor docker.ts Error Handling
+### Task 7: Refactor docker.ts error handling
 
 **Files:**
 - Modify: `src/services/docker.ts`
 - Modify: `src/services/docker.test.ts`
 
-**Step 1: Add test for error handling consistency**
+**Step 1: Add small regression test**
 
 Add to `src/services/docker.test.ts`:
 
 ```typescript
-describe("Error handling", () => {
-  it("should maintain error format after refactor", () => {
-    const error = new Error("Docker connection failed");
+describe("error handling", () => {
+  it("should keep error message formatting stable", () => {
+    const error = new Error("Connection failed");
     expect(error.message).toContain("failed");
   });
 });
@@ -684,7 +590,7 @@ describe("Error handling", () => {
 Run: `pnpm test src/services/docker.test.ts`
 Expected: PASS
 
-**Step 3: Refactor docker.ts error handling**
+**Step 3: Refactor docker.ts to use extractErrorMessage**
 
 Modify `src/services/docker.ts`:
 
@@ -693,39 +599,34 @@ Modify `src/services/docker.ts`:
 import { extractErrorMessage } from "../utils/index.js";
 ```
 
-2. Replace line 511:
+2. Replace inline error extraction:
 ```typescript
-// BEFORE:
 error: error instanceof Error ? error.message : "Connection failed"
-
-// AFTER:
+// ->
 error: extractErrorMessage(error, "Connection failed")
 ```
 
-3. Replace line 877:
 ```typescript
-// BEFORE:
 details: [`Error: ${error instanceof Error ? error.message : "Unknown error"}`]
-
-// AFTER:
+// ->
 details: [`Error: ${extractErrorMessage(error)}`]
 ```
 
 **Step 4: Run tests**
 
 Run: `pnpm test src/services/docker.test.ts`
-Expected: PASS (all tests)
+Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
 git add src/services/docker.ts src/services/docker.test.ts
-git commit -m "refactor(docker): use extractErrorMessage utility"
+git commit -m "refactor(docker): use extractErrorMessage helper"
 ```
 
 ---
 
-### Task 8: Refactor ssh-pool.ts Error Handling
+### Task 8: Refactor ssh-pool.ts error handling
 
 **Files:**
 - Modify: `src/services/ssh-pool.ts`
@@ -734,106 +635,41 @@ git commit -m "refactor(docker): use extractErrorMessage utility"
 
 Modify `src/services/ssh-pool.ts`:
 
-1. Add import at top:
+1. Add import:
 ```typescript
 import { extractErrorMessage } from "../utils/index.js";
 ```
 
-2. Replace line 216:
+2. Replace error message extraction:
 ```typescript
-// BEFORE:
-console.error(`[SSH Pool] Connection failed to ${host.name}: ${error instanceof Error ? error.message : String(error)}`);
-
-// AFTER:
-console.error(`[SSH Pool] Connection failed to ${host.name}: ${extractErrorMessage(error, String(error))}`);
+console.error(
+  `[SSH Pool] Connection failed to ${host.name}: ${error instanceof Error ? error.message : String(error)}`
+);
+// ->
+console.error(
+  `[SSH Pool] Connection failed to ${host.name}: ${extractErrorMessage(error, String(error))}`
+);
 ```
 
 **Step 2: Run tests**
 
 Run: `pnpm test src/services/ssh-pool.test.ts`
-Expected: PASS (all tests)
+Expected: PASS
 
 **Step 3: Commit**
 
 ```bash
 git add src/services/ssh-pool.ts
-git commit -m "refactor(ssh-pool): use extractErrorMessage utility"
+git commit -m "refactor(ssh-pool): use extractErrorMessage helper"
 ```
 
 ---
 
-### Task 9: Refactor ssh-pool-exec.ts Error Handling
+### Task 9: Update documentation
 
 **Files:**
-- Modify: `src/services/ssh-pool-exec.ts`
-- Modify: `src/services/ssh-pool-exec.test.ts`
-
-**Step 1: Add test for error preservation**
-
-Add to `src/services/ssh-pool-exec.test.ts`:
-
-```typescript
-describe("Error handling", () => {
-  it("should preserve error information", () => {
-    const error = new Error("SSH timeout");
-    expect(error.message).toBe("SSH timeout");
-  });
-});
-```
-
-**Step 2: Run test**
-
-Run: `pnpm test src/services/ssh-pool-exec.test.ts`
-Expected: PASS
-
-**Step 3: Refactor error handling**
-
-Modify `src/services/ssh-pool-exec.ts`:
-
-The error handling at line 94-99 is already clean (re-throws original error or creates contextual error). No changes needed unless we want to use wrapError for consistency:
-
-```typescript
-// OPTIONAL: If we want consistency, add import:
-import { wrapError } from "../utils/index.js";
-
-// Then at line 94-99:
-// BEFORE:
-} catch (error) {
-  // Re-throw with context
-  if (error instanceof Error) {
-    throw error;
-  }
-  throw new Error(`SSH command failed: ${command} - ${String(error)}`);
-}
-
-// AFTER (for consistency):
-} catch (error) {
-  if (error instanceof Error) {
-    throw error;
-  }
-  throw wrapError("SSH command failed", error, String(error));
-}
-```
-
-**Step 4: Run tests**
-
-Run: `pnpm test src/services/ssh-pool-exec.test.ts`
-Expected: PASS
-
-**Step 5: Commit**
-
-```bash
-git add src/services/ssh-pool-exec.ts src/services/ssh-pool-exec.test.ts
-git commit -m "refactor(ssh-pool-exec): standardize error handling"
-```
-
----
-
-### Task 10: Update Documentation
-
-**Files:**
-- Modify: `CLAUDE.md`
 - Create: `docs/error-handling.md`
+- Modify: `CLAUDE.md`
 
 **Step 1: Create error handling documentation**
 
@@ -844,13 +680,12 @@ Create `docs/error-handling.md`:
 
 ## Overview
 
-All error handling in homelab-mcp-server uses centralized utilities from `src/utils/errors.ts` to ensure consistency and eliminate code duplication.
+Error handling is standardized using helper utilities from `src/utils/error-helpers.ts`.
+Custom error classes and structured logging live in `src/utils/errors.ts`.
 
-## Utilities
+## Error Helpers
 
 ### extractErrorMessage
-
-Safely extract error message from unknown error values.
 
 ```typescript
 import { extractErrorMessage } from "../utils/index.js";
@@ -864,8 +699,6 @@ try {
 
 ### wrapError
 
-Add context to errors while preserving stack traces.
-
 ```typescript
 import { wrapError } from "../utils/index.js";
 
@@ -878,136 +711,78 @@ try {
 
 ### MCP Response Builders
 
-Create standardized MCP protocol responses.
-
 ```typescript
 import { createMcpErrorResponse, createMcpSuccessResponse } from "../utils/index.js";
 
-// Error response
 return createMcpErrorResponse("Container not found");
 return createMcpErrorResponse(error, "Operation failed");
 
-// Success response
 return createMcpSuccessResponse("Container started");
 return createMcpSuccessResponse("Success", { id: "123", status: "running" });
 ```
 
-## Patterns
+## Error Classes & Logging
 
-### Service Error Handling
-
-```typescript
-try {
-  const result = await externalService();
-  return result;
-} catch (error) {
-  throw wrapError("Service operation failed", error);
-}
-```
-
-### MCP Tool Error Handling
-
-```typescript
-try {
-  const result = await serviceCall();
-  return createMcpSuccessResponse("Operation complete", result);
-} catch (error) {
-  return createMcpErrorResponse(error, "Operation failed");
-}
-```
-
-### Logging Errors
-
-```typescript
-try {
-  await operation();
-} catch (error) {
-  console.error(`Operation failed: ${extractErrorMessage(error)}`);
-  throw error;
-}
-```
-
-## Migration Notes
-
-All legacy error handling patterns have been replaced:
-- ❌ `error instanceof Error ? error.message : "fallback"`
-- ✅ `extractErrorMessage(error, "fallback")`
-
-- ❌ `throw new Error(\`Context: ${error instanceof Error ? error.message : "fallback"}\`)`
-- ✅ `throw wrapError("Context", error, "fallback")`
-
-- ❌ Custom errorResponse/successResponse helpers
-- ✅ `createMcpErrorResponse()` / `createMcpSuccessResponse()`
+Use custom error classes from `src/utils/errors.ts` for context-rich errors
+and `logError()` for structured logging.
 ```
 
 **Step 2: Update CLAUDE.md**
 
-Add to `CLAUDE.md` in the "Code Conventions" section:
+Add to the "Code Conventions" section:
 
 ```markdown
 ## Error Handling
-- Use centralized error utilities from `src/utils/errors.ts`
-- Never use inline `error instanceof Error ? error.message : fallback`
-- Use `extractErrorMessage(error, fallback)` for safe message extraction
-- Use `wrapError(context, error)` to add context to errors
+- Use helpers from `src/utils/error-helpers.ts` for message extraction and MCP responses
+- Prefer `extractErrorMessage(error, fallback)` over inline `error instanceof Error` checks
+- Use `wrapError(context, error)` to add context while preserving causes
 - Use `createMcpErrorResponse()` and `createMcpSuccessResponse()` for MCP responses
-- See `docs/error-handling.md` for detailed patterns
+- See `docs/error-handling.md` for patterns
 ```
 
 **Step 3: Commit**
 
 ```bash
-git add CLAUDE.md docs/error-handling.md
-git commit -m "docs: add error handling guide and update conventions"
+git add docs/error-handling.md CLAUDE.md
+git commit -m "docs: add error handling guide and conventions"
 ```
 
 ---
 
-### Task 11: Verification and Testing
+### Task 10: Verification and cleanup
 
-**Files:**
-- None (verification only)
+**Step 1: Run targeted tests**
 
-**Step 1: Run full test suite**
-
-Run: `pnpm test`
-Expected: PASS (all tests)
-
-**Step 2: Run type checking**
-
-Run: `pnpm run build`
-Expected: No type errors (TypeScript compilation succeeds)
-
-**Step 3: Run linting**
-
-Run: `pnpm run lint`
-Expected: No linting errors
-
-**Step 4: Check test coverage**
-
-Run: `pnpm run test:coverage`
-Expected: Coverage maintained or improved for affected files
-
-**Step 5: Verify no regressions**
-
-Run integration tests:
 ```bash
+pnpm test src/utils/error-helpers.test.ts
+pnpm test src/tools/unified.test.ts
 pnpm test src/tools/unified.integration.test.ts
-pnpm test src/services/compose.integration.test.ts
+pnpm test src/services/compose.test.ts
+pnpm test src/services/docker.test.ts
+pnpm test src/services/ssh-pool.test.ts
 ```
-Expected: PASS (all integration tests)
 
-**Step 6: Search for remaining duplicate patterns**
+Expected: PASS
+
+**Step 2: Run lint/type checks**
 
 ```bash
-# Should find 0 occurrences in src/ directory
-git grep "error instanceof Error ? error.message" src/
+pnpm run lint
+pnpm run build
 ```
-Expected: No matches (all replaced)
 
-**Step 7: Final commit if fixes needed**
+Expected: No errors
 
-If any issues found, fix and commit:
+**Step 3: Search for remaining inline error extraction**
+
+```bash
+rg -n "error instanceof Error \\? error.message" src
+```
+
+Expected: No matches in `src/` (tests may still include inline examples)
+
+**Step 4: Final commit if fixes required**
+
 ```bash
 git add .
 git commit -m "fix: address verification findings"
@@ -1018,30 +793,19 @@ git commit -m "fix: address verification findings"
 ## Summary
 
 **Consolidation Achieved:**
-- ✅ 19 instances of `error instanceof Error ? error.message` → `extractErrorMessage()`
-- ✅ Duplicate errorResponse/successResponse helpers → centralized utilities
-- ✅ Inconsistent error wrapping → `wrapError()` with preserved stack traces
-- ✅ Standardized MCP response format across all tools
-- ✅ Comprehensive test coverage for error utilities
-- ✅ Documentation for error handling patterns
+- ✅ Centralized helpers in `src/utils/error-helpers.ts`
+- ✅ MCP response formatting standardized via helpers
+- ✅ Inline error extraction reduced across services/tools
+- ✅ Existing error classes (`src/utils/errors.ts`) remain intact
+- ✅ Documentation updated for new patterns
 
 **Files Modified:**
-- Created: `src/utils/errors.ts` (new utilities)
-- Created: `src/utils/errors.test.ts` (comprehensive tests)
-- Created: `docs/error-handling.md` (documentation)
-- Modified: `src/utils/index.ts` (exports)
-- Modified: `src/tools/unified.ts` (refactored)
-- Modified: `src/services/compose.ts` (refactored)
-- Modified: `src/services/docker.ts` (refactored)
-- Modified: `src/services/ssh-pool.ts` (refactored)
-- Modified: `src/services/ssh-pool-exec.ts` (refactored)
-- Modified: `CLAUDE.md` (conventions)
-
-**Code Duplication Reduction:**
-- Before: ~12% duplication in error handling
-- After: 0% duplication (all centralized)
-
-**Backward Compatibility:**
-- ✅ All MCP response formats unchanged
-- ✅ All error message formats preserved
-- ✅ No breaking changes to public APIs
+- Created: `src/utils/error-helpers.ts`
+- Created: `src/utils/error-helpers.test.ts`
+- Modified: `src/utils/index.ts`
+- Modified: `src/tools/unified.ts`
+- Modified: `src/services/compose.ts`
+- Modified: `src/services/docker.ts`
+- Modified: `src/services/ssh-pool.ts`
+- Created: `docs/error-handling.md`
+- Modified: `CLAUDE.md`

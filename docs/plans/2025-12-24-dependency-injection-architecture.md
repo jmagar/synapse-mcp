@@ -1,77 +1,86 @@
-# Dependency Injection Architecture Implementation Plan
-
-**Created:** 11:35:18 PM | 12/24/2025 (EST)
-
-> **Organization Note:** When this plan is fully implemented and verified, move this file to `docs/plans/complete/` to keep the plans folder organized.
+# Dependency Injection Architecture Implementation Plan (No Backward Compatibility)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Introduce dependency injection architecture to eliminate global singletons, improve testability, and enable service composition.
+**Created:** 14:00:00 | 12/27/2025 (EST)
 
-**Architecture:** Constructor injection pattern with factory functions. Create service interfaces, implement default factories, refactor services to accept dependencies via constructors, update tool handlers to use injected services. No heavy DI containers (YAGNI).
+**Goal:** Replace global singletons with constructor-injected services and a lightweight container, with no legacy/backward-compat APIs.
 
-**Tech Stack:** TypeScript 5.7+, Vitest, existing service layer (Docker, SSH, Compose)
+**Architecture:** Pure class-based services (`DockerService`, `SSHConnectionPool`, `SSHService`, `ComposeService`) wired by a `ServiceContainer`. Tool handlers depend on interfaces and are passed a container instance. Configuration loading is separated from Docker service concerns.
+
+**Tech Stack:** TypeScript 5.7+, Vitest, existing service layer (Docker/SSH/Compose)
 
 ---
 
 ## Table of Contents
 
-1. [Phase 1: Service Interfaces](#phase-1-service-interfaces)
-2. [Phase 2: Docker Service DI](#phase-2-docker-service-di)
-3. [Phase 3: SSH Pool DI](#phase-3-ssh-pool-di)
-4. [Phase 4: Compose Service DI](#phase-4-compose-service-di)
-5. [Phase 5: Service Container](#phase-5-service-container)
-6. [Phase 6: Tool Handler Refactoring](#phase-6-tool-handler-refactoring)
-7. [Phase 7: Integration & Cleanup](#phase-7-integration--cleanup)
+1. [Phase 0: Recon & Design Lock](#phase-0-recon--design-lock)
+2. [Phase 1: Service Interfaces](#phase-1-service-interfaces)
+3. [Phase 2: Docker Service Class (No Globals)](#phase-2-docker-service-class-no-globals)
+4. [Phase 3: SSH Pool + SSH Service (No Globals)](#phase-3-ssh-pool--ssh-service-no-globals)
+5. [Phase 4: Compose Service Class (No Globals)](#phase-4-compose-service-class-no-globals)
+6. [Phase 5: Service Container](#phase-5-service-container)
+7. [Phase 6: Tool Handler Refactor](#phase-6-tool-handler-refactor)
+8. [Phase 7: Entry Point & Shutdown](#phase-7-entry-point--shutdown)
+9. [Phase 8: Documentation](#phase-8-documentation)
+10. [Phase 9: Final Verification](#phase-9-final-verification)
 
 ---
 
-## Current Architecture Issues
+## Constraints
 
-### Problem 1: Global Singletons
-```typescript
-// src/services/docker.ts:26
-export const dockerClients = new Map<string, Docker>();
+- **No backward compatibility**: Remove or replace global singletons and exported function APIs.
+- **TDD required**: Write failing tests first for each new class/function.
+- **No heavy DI container**: Only lightweight `ServiceContainer`.
+- **No global caches**: Docker client cache and SSH pool must be instance-owned.
 
-// src/services/ssh-pool-exec.ts:7
-let globalPool: SSHConnectionPool | null = null;
-```
+---
 
-**Impact:** Cannot test services in isolation, shared state across tests, no way to inject mocks.
+## Phase 0: Recon & Design Lock
 
-### Problem 2: Hardcoded Dependencies
-```typescript
-// src/tools/unified.ts:1-32
-import { listContainers, containerAction, ... } from "../services/docker.js";
-import { getHostResources } from "../services/ssh.js";
-import { listComposeProjects, ... } from "../services/compose.js";
-```
+**Goal:** Confirm file locations and APIs to be changed before coding.
 
-**Impact:** Tool handlers tightly coupled to service implementations, cannot swap services for testing.
+### Task 0: Verify current touchpoints
 
-### Problem 3: Direct Instantiation
-```typescript
-// src/services/docker.ts:149-171
-export function getDockerClient(config: HostConfig): Docker {
-  // ... directly instantiates new Docker()
-  docker = new Docker({ socketPath });
-}
-```
+**Files:**
+- Read: `src/services/docker.ts`
+- Read: `src/services/ssh.ts`
+- Read: `src/services/ssh-pool.ts`
+- Read: `src/services/ssh-pool-exec.ts`
+- Read: `src/services/compose.ts`
+- Read: `src/tools/unified.ts`
+- Read: `src/tools/index.ts`
+- Read: `src/index.ts`
 
-**Impact:** Cannot inject test doubles, forces integration tests for everything.
+**Step 1: List all direct imports of service functions**
+
+Run: `rg -n "services/(docker|ssh|compose|ssh-pool|ssh-pool-exec)" src`
+
+Expected: Output list of direct imports that will be replaced with DI.
+
+**Step 2: Record existing globals to remove**
+
+Run: `rg -n "dockerClients|globalPool|getGlobalPool|clearDockerClients" src/services`
+
+Expected: Output references to global caches/singletons.
+
+**Step 3: Commit (doc-only)**
+
+No commit for recon.
 
 ---
 
 ## Phase 1: Service Interfaces
 
-**Goal:** Define TypeScript interfaces for all services to establish contracts.
+**Goal:** Define service contracts for DI usage.
 
-### Task 1: Create Service Interface File
+### Task 1: Add interfaces + tests
 
 **Files:**
 - Create: `src/services/interfaces.ts`
+- Create: `src/services/interfaces.test.ts`
 
-**Step 1: Write interface tests first**
+**Step 1: Write failing interface tests**
 
 Create: `src/services/interfaces.test.ts`
 
@@ -81,23 +90,24 @@ import type {
   IDockerService,
   ISSHService,
   IComposeService,
-  ISSHConnectionPool
+  ISSHConnectionPool,
+  IServiceFactory
 } from "./interfaces.js";
 
 describe("Service Interfaces", () => {
   it("should define IDockerService interface", () => {
     const mockService: IDockerService = {
-      getDockerClient: () => ({}) as any,
+      getDockerClient: () => ({}) as never,
       listContainers: async () => [],
       containerAction: async () => {},
       getContainerLogs: async () => [],
-      getContainerStats: async () => ({}) as any,
+      getContainerStats: async () => ({}) as never,
       findContainerHost: async () => null,
       getHostStatus: async () => [],
       listImages: async () => [],
-      inspectContainer: async () => ({}) as any,
-      getDockerInfo: async () => ({}) as any,
-      getDockerDiskUsage: async () => ({}) as any,
+      inspectContainer: async () => ({}) as never,
+      getDockerInfo: async () => ({}) as never,
+      getDockerDiskUsage: async () => ({}) as never,
       pruneDocker: async () => [],
       pullImage: async () => ({ status: "ok" }),
       recreateContainer: async () => ({ status: "ok", containerId: "id" }),
@@ -111,7 +121,7 @@ describe("Service Interfaces", () => {
   it("should define ISSHService interface", () => {
     const mockService: ISSHService = {
       executeCommand: async () => "",
-      getHostResources: async () => ({}) as any
+      getHostResources: async () => ({}) as never
     };
 
     expect(mockService).toBeDefined();
@@ -121,7 +131,7 @@ describe("Service Interfaces", () => {
     const mockService: IComposeService = {
       composeExec: async () => "",
       listComposeProjects: async () => [],
-      getComposeStatus: async () => ({}) as any,
+      getComposeStatus: async () => ({}) as never,
       composeUp: async () => "",
       composeDown: async () => "",
       composeRestart: async () => "",
@@ -136,14 +146,25 @@ describe("Service Interfaces", () => {
 
   it("should define ISSHConnectionPool interface", () => {
     const mockPool: ISSHConnectionPool = {
-      getConnection: async () => ({}) as any,
+      getConnection: async () => ({}) as never,
       releaseConnection: async () => {},
       closeConnection: async () => {},
       closeAll: async () => {},
-      getStats: () => ({}) as any
+      getStats: () => ({}) as never
     };
 
     expect(mockPool).toBeDefined();
+  });
+
+  it("should define IServiceFactory interface", () => {
+    const mockFactory: IServiceFactory = {
+      createDockerService: () => ({}) as never,
+      createSSHConnectionPool: () => ({}) as never,
+      createSSHService: () => ({}) as never,
+      createComposeService: () => ({}) as never
+    };
+
+    expect(mockFactory).toBeDefined();
   });
 });
 ```
@@ -154,7 +175,7 @@ Run: `pnpm test src/services/interfaces.test.ts`
 
 Expected: FAIL with "Cannot find module './interfaces.js'"
 
-**Step 3: Create service interfaces**
+**Step 3: Create interfaces**
 
 Create: `src/services/interfaces.ts`
 
@@ -164,16 +185,10 @@ import type Docker from "dockerode";
 import type { NodeSSH } from "node-ssh";
 import type { HostResources } from "./ssh.js";
 import type { DockerSystemInfo, DockerDiskUsage, PruneResult, ListImagesOptions } from "./docker.js";
-import type { ComposeService } from "./compose.js";
 import type { PoolStats } from "./ssh-pool.js";
 
-/**
- * Docker service interface
- * Handles all Docker API operations across multiple hosts
- */
 export interface IDockerService {
   getDockerClient(config: HostConfig): Docker;
-
   listContainers(
     hosts: HostConfig[],
     options?: {
@@ -183,144 +198,51 @@ export interface IDockerService {
       labelFilter?: string;
     }
   ): Promise<ContainerInfo[]>;
-
-  containerAction(
-    containerId: string,
-    action: "start" | "stop" | "restart" | "pause" | "unpause",
-    host: HostConfig
-  ): Promise<void>;
-
+  containerAction(containerId: string, action: "start" | "stop" | "restart" | "pause" | "unpause", host: HostConfig): Promise<void>;
   getContainerLogs(
     containerId: string,
     host: HostConfig,
-    options?: {
-      lines?: number;
-      since?: string;
-      until?: string;
-      stream?: "all" | "stdout" | "stderr";
-    }
+    options?: { lines?: number; since?: string; until?: string; stream?: "all" | "stdout" | "stderr" }
   ): Promise<LogEntry[]>;
-
   getContainerStats(containerId: string, host: HostConfig): Promise<ContainerStats>;
-
-  findContainerHost(
-    containerId: string,
-    hosts: HostConfig[]
-  ): Promise<{ host: HostConfig; container: Docker.ContainerInfo } | null>;
-
+  findContainerHost(containerId: string, hosts: HostConfig[]): Promise<{ host: HostConfig; container: Docker.ContainerInfo } | null>;
   getHostStatus(hosts: HostConfig[]): Promise<HostStatus[]>;
-
   listImages(hosts: HostConfig[], options?: ListImagesOptions): Promise<ImageInfo[]>;
-
   inspectContainer(containerId: string, host: HostConfig): Promise<Docker.ContainerInspectInfo>;
-
   getDockerInfo(host: HostConfig): Promise<DockerSystemInfo>;
-
   getDockerDiskUsage(host: HostConfig): Promise<DockerDiskUsage>;
-
-  pruneDocker(
-    host: HostConfig,
-    target: "containers" | "images" | "volumes" | "networks" | "buildcache" | "all"
-  ): Promise<PruneResult[]>;
-
+  pruneDocker(host: HostConfig, target: "containers" | "images" | "volumes" | "networks" | "buildcache" | "all"): Promise<PruneResult[]>;
   pullImage(imageName: string, host: HostConfig): Promise<{ status: string }>;
-
-  recreateContainer(
-    containerId: string,
-    host: HostConfig,
-    options?: { pull?: boolean }
-  ): Promise<{ status: string; containerId: string }>;
-
-  removeImage(
-    imageId: string,
-    host: HostConfig,
-    options?: { force?: boolean }
-  ): Promise<{ status: string }>;
-
+  recreateContainer(containerId: string, host: HostConfig, options?: { pull?: boolean }): Promise<{ status: string; containerId: string }>;
+  removeImage(imageId: string, host: HostConfig, options?: { force?: boolean }): Promise<{ status: string }>;
   buildImage(
     host: HostConfig,
-    options: {
-      context: string;
-      tag: string;
-      dockerfile?: string;
-      noCache?: boolean;
-    }
+    options: { context: string; tag: string; dockerfile?: string; noCache?: boolean }
   ): Promise<{ status: string }>;
 }
 
-/**
- * SSH service interface
- * Handles SSH command execution and resource monitoring
- */
 export interface ISSHService {
-  executeCommand(
-    host: HostConfig,
-    command: string,
-    args?: string[],
-    options?: { timeoutMs?: number }
-  ): Promise<string>;
-
+  executeCommand(host: HostConfig, command: string, args?: string[], options?: { timeoutMs?: number }): Promise<string>;
   getHostResources(host: HostConfig): Promise<HostResources>;
 }
 
-/**
- * Compose service interface
- * Handles Docker Compose operations
- */
 export interface IComposeService {
-  composeExec(
-    host: HostConfig,
-    project: string,
-    action: string,
-    extraArgs?: string[]
-  ): Promise<string>;
-
+  composeExec(host: HostConfig, project: string, action: string, extraArgs?: string[]): Promise<string>;
   listComposeProjects(host: HostConfig): Promise<ComposeProject[]>;
-
   getComposeStatus(host: HostConfig, project: string): Promise<ComposeProject>;
-
   composeUp(host: HostConfig, project: string, detach?: boolean): Promise<string>;
-
   composeDown(host: HostConfig, project: string, removeVolumes?: boolean): Promise<string>;
-
   composeRestart(host: HostConfig, project: string): Promise<string>;
-
   composeLogs(
     host: HostConfig,
     project: string,
-    options?: {
-      tail?: number;
-      follow?: boolean;
-      timestamps?: boolean;
-      since?: string;
-      until?: string;
-      services?: string[];
-    }
+    options?: { tail?: number; follow?: boolean; timestamps?: boolean; since?: string; until?: string; services?: string[] }
   ): Promise<string>;
-
-  composeBuild(
-    host: HostConfig,
-    project: string,
-    options?: { service?: string; noCache?: boolean; pull?: boolean }
-  ): Promise<string>;
-
-  composePull(
-    host: HostConfig,
-    project: string,
-    options?: { service?: string; ignorePullFailures?: boolean; quiet?: boolean }
-  ): Promise<string>;
-
-  composeRecreate(
-    host: HostConfig,
-    project: string,
-    options?: { service?: string; forceRecreate?: boolean; noDeps?: boolean }
-  ): Promise<string>;
+  composeBuild(host: HostConfig, project: string, options?: { service?: string; noCache?: boolean; pull?: boolean }): Promise<string>;
+  composePull(host: HostConfig, project: string, options?: { service?: string; ignorePullFailures?: boolean; quiet?: boolean }): Promise<string>;
+  composeRecreate(host: HostConfig, project: string, options?: { service?: string; forceRecreate?: boolean; noDeps?: boolean }): Promise<string>;
 }
 
-/**
- * SSH Connection Pool interface
- * Manages SSH connection pooling and lifecycle
- */
 export interface ISSHConnectionPool {
   getConnection(host: HostConfig): Promise<NodeSSH>;
   releaseConnection(host: HostConfig, connection: NodeSSH): Promise<void>;
@@ -329,15 +251,11 @@ export interface ISSHConnectionPool {
   getStats(): PoolStats;
 }
 
-/**
- * Service factory interface
- * Creates service instances with dependencies injected
- */
 export interface IServiceFactory {
   createDockerService(): IDockerService;
+  createSSHConnectionPool(config?: Partial<{ maxConnections: number }>): ISSHConnectionPool;
   createSSHService(pool: ISSHConnectionPool): ISSHService;
   createComposeService(sshService: ISSHService): IComposeService;
-  createSSHConnectionPool(config?: Partial<{ maxConnections: number }>): ISSHConnectionPool;
 }
 ```
 
@@ -345,37 +263,27 @@ export interface IServiceFactory {
 
 Run: `pnpm test src/services/interfaces.test.ts`
 
-Expected: PASS (all 4 tests)
+Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
 git add src/services/interfaces.ts src/services/interfaces.test.ts
-git commit -m "feat(di): add service interfaces for dependency injection
-
-- Define IDockerService interface (18 methods)
-- Define ISSHService interface (2 methods)
-- Define IComposeService interface (9 methods)
-- Define ISSHConnectionPool interface (5 methods)
-- Define IServiceFactory interface for creating services
-- Add comprehensive interface tests"
+git commit -m "feat(di): add service interfaces"
 ```
 
 ---
 
-## Phase 2: Docker Service DI
+## Phase 2: Docker Service Class (No Globals)
 
-**Goal:** Refactor Docker service to support dependency injection while maintaining backward compatibility.
+**Goal:** Convert docker module to an instance-based service and remove module-level cache.
 
-### Task 2: Create Docker Service Class
+### Task 2: DockerService tests
 
 **Files:**
-- Modify: `src/services/docker.ts:1-1060`
 - Create: `src/services/docker-service.test.ts`
 
-**Step 1: Write test for DockerService class**
-
-Create: `src/services/docker-service.test.ts`
+**Step 1: Write failing tests for DockerService**
 
 ```typescript
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -385,67 +293,36 @@ import type Docker from "dockerode";
 
 describe("DockerService", () => {
   let service: DockerService;
-  let mockDockerFactory: (config: HostConfig) => Docker;
+  let mockFactory: (config: HostConfig) => Docker;
 
   beforeEach(() => {
-    // Create a mock factory that returns mock Docker instances
-    mockDockerFactory = vi.fn((config: HostConfig) => {
-      return {
-        listContainers: vi.fn().mockResolvedValue([]),
-        ping: vi.fn().mockResolvedValue(true),
-        info: vi.fn().mockResolvedValue({}),
-        version: vi.fn().mockResolvedValue({})
-      } as unknown as Docker;
-    });
+    mockFactory = vi.fn(() => ({
+      listContainers: vi.fn().mockResolvedValue([]),
+      ping: vi.fn().mockResolvedValue(true),
+      info: vi.fn().mockResolvedValue({}),
+      version: vi.fn().mockResolvedValue({})
+    } as unknown as Docker));
 
-    service = new DockerService(mockDockerFactory);
+    service = new DockerService(mockFactory);
   });
 
-  it("should create DockerService instance", () => {
-    expect(service).toBeDefined();
+  it("creates a service instance", () => {
     expect(service).toBeInstanceOf(DockerService);
   });
 
-  it("should use injected factory to create Docker clients", () => {
-    const hostConfig: HostConfig = {
-      name: "test-host",
-      host: "localhost",
-      protocol: "http",
-      dockerSocketPath: "/var/run/docker.sock"
-    };
-
-    const client = service.getDockerClient(hostConfig);
-
-    expect(mockDockerFactory).toHaveBeenCalledWith(hostConfig);
+  it("uses injected factory to create Docker clients", () => {
+    const host: HostConfig = { name: "test", host: "localhost", protocol: "http", dockerSocketPath: "/var/run/docker.sock" };
+    const client = service.getDockerClient(host);
+    expect(mockFactory).toHaveBeenCalledWith(host);
     expect(client).toBeDefined();
   });
 
-  it("should cache Docker clients by host", () => {
-    const hostConfig: HostConfig = {
-      name: "test-host",
-      host: "localhost",
-      protocol: "http",
-      dockerSocketPath: "/var/run/docker.sock"
-    };
-
-    const client1 = service.getDockerClient(hostConfig);
-    const client2 = service.getDockerClient(hostConfig);
-
-    expect(mockDockerFactory).toHaveBeenCalledTimes(1);
+  it("caches Docker clients per host", () => {
+    const host: HostConfig = { name: "test", host: "localhost", protocol: "http", dockerSocketPath: "/var/run/docker.sock" };
+    const client1 = service.getDockerClient(host);
+    const client2 = service.getDockerClient(host);
+    expect(mockFactory).toHaveBeenCalledTimes(1);
     expect(client1).toBe(client2);
-  });
-
-  it("should support listContainers operation", async () => {
-    const hostConfig: HostConfig = {
-      name: "test-host",
-      host: "localhost",
-      protocol: "http",
-      dockerSocketPath: "/var/run/docker.sock"
-    };
-
-    const containers = await service.listContainers([hostConfig]);
-
-    expect(containers).toEqual([]);
   });
 });
 ```
@@ -454,322 +331,132 @@ describe("DockerService", () => {
 
 Run: `pnpm test src/services/docker-service.test.ts`
 
-Expected: FAIL with "DockerService is not a constructor" or "cannot find export"
+Expected: FAIL (missing DockerService export)
 
-**Step 3: Implement DockerService class wrapper**
+### Task 3: Implement DockerService and remove globals
 
-Modify: `src/services/docker.ts`
+**Files:**
+- Modify: `src/services/docker.ts`
+- Modify: `src/services/docker.test.ts`
 
-Add at the end of the file (before exports):
+**Step 1: Implement DockerService (no module globals)**
+
+- Remove `dockerClients` and `clearDockerClients` exports.
+- Convert `getDockerClient` into class method using `this.clientCache`.
+- Convert other exported functions to instance methods.
+- Export `DockerService` class and supporting types (`ListImagesOptions`, `DockerSystemInfo`, etc.).
+- Keep pure helpers (`formatBytes`, `formatUptime`, `formatImageId`, `isSocketPath`) as named exports.
+
+**Implementation sketch:**
 
 ```typescript
-/**
- * Docker service class with dependency injection support
- *
- * Wraps all Docker operations to support constructor injection.
- * Backward compatible - existing functions still work via singleton.
- */
 export class DockerService implements IDockerService {
-  private clientCache: Map<string, Docker>;
-  private dockerFactory: (config: HostConfig) => Docker;
+  private clientCache = new Map<string, Docker>();
+  constructor(private dockerFactory: (config: HostConfig) => Docker = createDefaultDockerClient) {}
 
-  /**
-   * Create a new DockerService instance
-   *
-   * @param dockerFactory - Optional factory function to create Docker clients
-   *                        Defaults to createDefaultDockerClient for backward compatibility
-   */
-  constructor(dockerFactory?: (config: HostConfig) => Docker) {
-    this.clientCache = new Map();
-    this.dockerFactory = dockerFactory || createDefaultDockerClient;
+  getDockerClient(config: HostConfig): Docker { /* same logic, uses this.clientCache */ }
+  clearClients(): void { this.clientCache.clear(); }
+
+  async listContainers(hosts: HostConfig[], options: ListContainersOptions = {}): Promise<ContainerInfo[]> {
+    return await Promise.allSettled(hosts.map((h) => this.listContainersOnHost(h, options)))
+      .then((results) => results.filter((r): r is PromiseFulfilledResult<ContainerInfo[]> => r.status === "fulfilled").flatMap((r) => r.value));
   }
 
-  /**
-   * Get or create Docker client for a host
-   * Uses injected factory for client creation
-   */
-  getDockerClient(config: HostConfig): Docker {
-    const cacheKey = `${config.name}-${config.host}`;
+  private async listContainersOnHost(host: HostConfig, options: ListContainersOptions): Promise<ContainerInfo[]> { /* move existing body */ }
 
-    const cached = this.clientCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    const docker = this.dockerFactory(config);
-    this.clientCache.set(cacheKey, docker);
-    return docker;
-  }
-
-  /**
-   * Clear all cached Docker clients
-   */
-  clearClients(): void {
-    this.clientCache.clear();
-  }
-
-  // Delegate all operations to existing functions, using our client cache
-  async listContainers(
-    hosts: HostConfig[],
-    options: {
-      state?: "all" | "running" | "stopped" | "paused";
-      nameFilter?: string;
-      imageFilter?: string;
-      labelFilter?: string;
-    } = {}
-  ): Promise<ContainerInfo[]> {
-    // Use internal cache instead of global
-    const originalClients = dockerClients;
-    (global as any).dockerClients = this.clientCache;
-
-    try {
-      return await listContainers(hosts, options);
-    } finally {
-      (global as any).dockerClients = originalClients;
-    }
-  }
-
-  async containerAction(
-    containerId: string,
-    action: "start" | "stop" | "restart" | "pause" | "unpause",
-    host: HostConfig
-  ): Promise<void> {
-    return containerAction(containerId, action, host);
-  }
-
-  async getContainerLogs(
-    containerId: string,
-    host: HostConfig,
-    options: {
-      lines?: number;
-      since?: string;
-      until?: string;
-      stream?: "all" | "stdout" | "stderr";
-    } = {}
-  ): Promise<LogEntry[]> {
-    return getContainerLogs(containerId, host, options);
-  }
-
-  async getContainerStats(containerId: string, host: HostConfig): Promise<ContainerStats> {
-    return getContainerStats(containerId, host);
-  }
-
-  async findContainerHost(
-    containerId: string,
-    hosts: HostConfig[]
-  ): Promise<{ host: HostConfig; container: Docker.ContainerInfo } | null> {
-    return findContainerHost(containerId, hosts);
-  }
-
-  async getHostStatus(hosts: HostConfig[]): Promise<HostStatus[]> {
-    return getHostStatus(hosts);
-  }
-
-  async listImages(hosts: HostConfig[], options: ListImagesOptions = {}): Promise<ImageInfo[]> {
-    return listImages(hosts, options);
-  }
-
-  async inspectContainer(containerId: string, host: HostConfig): Promise<Docker.ContainerInspectInfo> {
-    return inspectContainer(containerId, host);
-  }
-
-  async getDockerInfo(host: HostConfig): Promise<DockerSystemInfo> {
-    return getDockerInfo(host);
-  }
-
-  async getDockerDiskUsage(host: HostConfig): Promise<DockerDiskUsage> {
-    return getDockerDiskUsage(host);
-  }
-
-  async pruneDocker(
-    host: HostConfig,
-    target: "containers" | "images" | "volumes" | "networks" | "buildcache" | "all"
-  ): Promise<PruneResult[]> {
-    return pruneDocker(host, target);
-  }
-
-  async pullImage(imageName: string, host: HostConfig): Promise<{ status: string }> {
-    return pullImage(imageName, host);
-  }
-
-  async recreateContainer(
-    containerId: string,
-    host: HostConfig,
-    options: { pull?: boolean } = {}
-  ): Promise<{ status: string; containerId: string }> {
-    return recreateContainer(containerId, host, options);
-  }
-
-  async removeImage(
-    imageId: string,
-    host: HostConfig,
-    options: { force?: boolean } = {}
-  ): Promise<{ status: string }> {
-    return removeImage(imageId, host, options);
-  }
-
-  async buildImage(
-    host: HostConfig,
-    options: {
-      context: string;
-      tag: string;
-      dockerfile?: string;
-      noCache?: boolean;
-    }
-  ): Promise<{ status: string }> {
-    return buildImage(host, options);
-  }
-}
-
-/**
- * Create default Docker client (backward compatibility)
- * Extracted from getDockerClient for reuse in class constructor
- */
-function createDefaultDockerClient(config: HostConfig): Docker {
-  const socketPath = config.dockerSocketPath || (isSocketPath(config.host) ? config.host : null);
-
-  if (socketPath) {
-    return new Docker({ socketPath });
-  } else if (config.protocol === "http" || config.protocol === "https") {
-    return new Docker({
-      host: config.host,
-      port: config.port || 2375,
-      protocol: config.protocol,
-      timeout: API_TIMEOUT
-    });
-  } else {
-    throw new Error(`Unsupported protocol: ${config.protocol}`);
-  }
+  // Convert remaining exports to methods, replacing getDockerClient with this.getDockerClient
 }
 ```
 
-Add import at top:
+**Step 2: Update docker tests to use class**
 
-```typescript
-import type { IDockerService } from "./interfaces.js";
-```
+- Remove references to `dockerClients` and `clearDockerClients`.
+- Add tests that assert `DockerService.clearClients()` empties cache.
+- Update `checkConnection` test to use a DockerService instance method and validate cache invalidation there.
 
-**Step 4: Run test to verify it passes**
+**Step 3: Run tests**
 
 Run: `pnpm test src/services/docker-service.test.ts`
 
-Expected: PASS (all 4 tests)
+Expected: PASS
 
-**Step 5: Commit**
+Run: `pnpm test src/services/docker.test.ts`
+
+Expected: PASS (with updated tests)
+
+**Step 4: Commit**
 
 ```bash
-git add src/services/docker.ts src/services/docker-service.test.ts
-git commit -m "feat(di): add DockerService class with constructor injection
-
-- Create DockerService class implementing IDockerService
-- Support factory injection for Docker client creation
-- Maintain backward compatibility with existing functions
-- Add comprehensive unit tests
-- Extract createDefaultDockerClient for reuse"
+git add src/services/docker.ts src/services/docker.test.ts src/services/docker-service.test.ts
+git commit -m "refactor(di): convert docker module to DockerService"
 ```
 
 ---
 
-## Phase 3: SSH Pool DI
+## Phase 3: SSH Pool + SSH Service (No Globals)
 
-**Goal:** Refactor SSH pool to support dependency injection.
+**Goal:** Remove global SSH pool singleton and provide instance-based pool and service.
 
-### Task 3: Make SSH Pool Injectable
+### Task 4: SSHConnectionPool class tests
 
 **Files:**
-- Modify: `src/services/ssh-pool-exec.ts:1-132`
+- Create: `src/services/ssh-connection-pool.test.ts`
+
+**Step 1: Write failing test for class usage**
+
+```typescript
+import { describe, it, expect } from "vitest";
+import { SSHConnectionPoolImpl } from "./ssh-pool.js";
+
+describe("SSHConnectionPoolImpl", () => {
+  it("creates a pool instance", () => {
+    const pool = new SSHConnectionPoolImpl({ maxConnections: 1 });
+    expect(pool).toBeDefined();
+  });
+});
+```
+
+**Step 2: Run test to verify it fails if export is missing**
+
+Run: `pnpm test src/services/ssh-connection-pool.test.ts`
+
+Expected: FAIL only if class is not exported or named differently. If it passes, proceed.
+
+### Task 5: SSHService class + remove global pool
+
+**Files:**
+- Modify: `src/services/ssh-pool-exec.ts`
 - Create: `src/services/ssh-service.test.ts`
+- Modify: `src/services/ssh.ts`
+- Modify: `src/services/ssh-pool-exec.test.ts`
 
-**Step 1: Write test for SSHService class**
-
-Create: `src/services/ssh-service.test.ts`
+**Step 1: Write failing tests for SSHService**
 
 ```typescript
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { SSHService } from "./ssh.js";
-import type { ISSHConnectionPool } from "./interfaces.js";
+import { SSHService } from "./ssh-service.js";
 import type { HostConfig } from "../types.js";
+import type { ISSHConnectionPool } from "./interfaces.js";
 
 describe("SSHService", () => {
+  let pool: ISSHConnectionPool;
   let service: SSHService;
-  let mockPool: ISSHConnectionPool;
 
   beforeEach(() => {
-    mockPool = {
-      getConnection: vi.fn().mockResolvedValue({
-        execCommand: vi.fn().mockResolvedValue({ code: 0, stdout: "test output", stderr: "" })
-      }),
-      releaseConnection: vi.fn().mockResolvedValue(undefined),
-      closeConnection: vi.fn().mockResolvedValue(undefined),
-      closeAll: vi.fn().mockResolvedValue(undefined),
-      getStats: vi.fn().mockReturnValue({
-        poolHits: 0,
-        poolMisses: 0,
-        activeConnections: 0,
-        idleConnections: 0,
-        totalConnections: 0,
-        healthChecksPassed: 0,
-        healthCheckFailures: 0
-      })
+    pool = {
+      getConnection: vi.fn(async () => ({ execCommand: vi.fn().mockResolvedValue({ code: 0, stdout: "ok", stderr: "" }) } as never)),
+      releaseConnection: vi.fn(async () => {}),
+      closeConnection: vi.fn(async () => {}),
+      closeAll: vi.fn(async () => {}),
+      getStats: vi.fn(() => ({}) as never)
     };
-
-    service = new SSHService(mockPool);
+    service = new SSHService(pool);
   });
 
-  it("should create SSHService instance", () => {
-    expect(service).toBeDefined();
-    expect(service).toBeInstanceOf(SSHService);
-  });
-
-  it("should execute SSH commands using injected pool", async () => {
-    const hostConfig: HostConfig = {
-      name: "test-host",
-      host: "192.168.1.100",
-      protocol: "ssh",
-      sshUser: "admin"
-    };
-
-    const result = await service.executeCommand(hostConfig, "echo test");
-
-    expect(result).toBe("test output");
-    expect(mockPool.getConnection).toHaveBeenCalledWith(hostConfig);
-    expect(mockPool.releaseConnection).toHaveBeenCalled();
-  });
-
-  it("should handle command timeout", async () => {
-    const hostConfig: HostConfig = {
-      name: "test-host",
-      host: "192.168.1.100",
-      protocol: "ssh"
-    };
-
-    vi.mocked(mockPool.getConnection).mockResolvedValue({
-      execCommand: vi.fn().mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ code: 0, stdout: "", stderr: "" }), 1000))
-      )
-    } as any);
-
-    await expect(
-      service.executeCommand(hostConfig, "sleep 10", [], { timeoutMs: 100 })
-    ).rejects.toThrow("timeout");
-  });
-
-  it("should release connection even on error", async () => {
-    const hostConfig: HostConfig = {
-      name: "test-host",
-      host: "192.168.1.100",
-      protocol: "ssh"
-    };
-
-    vi.mocked(mockPool.getConnection).mockResolvedValue({
-      execCommand: vi.fn().mockResolvedValue({ code: 1, stdout: "", stderr: "error" })
-    } as any);
-
-    await expect(
-      service.executeCommand(hostConfig, "failing command")
-    ).rejects.toThrow("SSH command failed");
-
-    expect(mockPool.releaseConnection).toHaveBeenCalled();
+  it("executes commands via pool", async () => {
+    const host: HostConfig = { name: "test", host: "127.0.0.1", protocol: "http" };
+    const result = await service.executeCommand(host, "echo", ["ok"]);
+    expect(result).toBe("ok");
   });
 });
 ```
@@ -778,108 +465,51 @@ describe("SSHService", () => {
 
 Run: `pnpm test src/services/ssh-service.test.ts`
 
-Expected: FAIL with "SSHService is not exported"
+Expected: FAIL (SSHService missing)
 
-**Step 3: Create SSHService class**
+**Step 3: Implement SSHService and remove global pool**
 
-Modify: `src/services/ssh.ts`
+- Replace `getGlobalPool` with a new class `SSHService` that accepts an `ISSHConnectionPool` in constructor.
+- Move `executeSSHCommand` logic into `SSHService.executeCommand`.
+- Keep `SSHCommandOptions` exported from `ssh-pool-exec.ts` or move to `ssh-service.ts`.
+- Remove all global shutdown handlers from `ssh-pool-exec.ts` (container will own lifecycle).
+- Update `ssh.ts` to accept an `ISSHService` instance OR convert `getHostResources` into a method on `SSHService` and remove the direct import of `executeSSHCommand`.
 
-Add at the end:
+**Step 4: Update existing tests**
 
-```typescript
-import type { ISSHService, ISSHConnectionPool } from "./interfaces.js";
+- `src/services/ssh-pool-exec.test.ts` should be replaced to test `SSHService` (or deleted if superseded).
+- `src/services/ssh.test.ts` should remain for `sanitizeForShell` and `validateHostForSsh` only.
 
-/**
- * SSH service class with dependency injection support
- */
-export class SSHService implements ISSHService {
-  private pool: ISSHConnectionPool;
-
-  constructor(pool: ISSHConnectionPool) {
-    this.pool = pool;
-  }
-
-  async executeCommand(
-    host: HostConfig,
-    command: string,
-    args: string[] = [],
-    options: { timeoutMs?: number } = {}
-  ): Promise<string> {
-    const timeoutMs = options.timeoutMs || 30000;
-    const connection = await this.pool.getConnection(host);
-
-    try {
-      const fullCommand = args.length > 0 ? `${command} ${args.join(" ")}` : command;
-
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`SSH command timeout after ${timeoutMs}ms: ${command}`));
-        }, timeoutMs);
-      });
-
-      const execPromise = connection.execCommand(fullCommand);
-      const result = await Promise.race([execPromise, timeoutPromise]);
-
-      if (result.code !== 0) {
-        throw new Error(
-          `SSH command failed (exit ${result.code}): ${command}\n` +
-          `stderr: ${result.stderr}\n` +
-          `stdout: ${result.stdout}`
-        );
-      }
-
-      return result.stdout.trim();
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`SSH command failed: ${command} - ${String(error)}`);
-    } finally {
-      await this.pool.releaseConnection(host, connection);
-    }
-  }
-
-  async getHostResources(host: HostConfig): Promise<HostResources> {
-    // Reuse existing implementation
-    return getHostResources(host);
-  }
-}
-```
-
-**Step 4: Run test to verify it passes**
+**Step 5: Run tests**
 
 Run: `pnpm test src/services/ssh-service.test.ts`
 
-Expected: PASS (all 4 tests)
+Expected: PASS
 
-**Step 5: Commit**
+Run: `pnpm test src/services/ssh.test.ts`
+
+Expected: PASS
+
+**Step 6: Commit**
 
 ```bash
-git add src/services/ssh.ts src/services/ssh-service.test.ts
-git commit -m "feat(di): add SSHService class with pool injection
+git add src/services/ssh-pool-exec.ts src/services/ssh.ts src/services/ssh-service.test.ts src/services/ssh-pool-exec.test.ts
 
-- Create SSHService class implementing ISSHService
-- Inject SSH connection pool via constructor
-- Add comprehensive unit tests
-- Handle timeouts and errors properly
-- Ensure connection release in finally block"
+git commit -m "refactor(di): replace global ssh pool with SSHService"
 ```
 
 ---
 
-## Phase 4: Compose Service DI
+## Phase 4: Compose Service Class (No Globals)
 
-**Goal:** Refactor Compose service to accept SSHService dependency.
+**Goal:** Convert Compose functions into class using injected SSHService.
 
-### Task 4: Create Compose Service Class
+### Task 6: ComposeService tests
 
 **Files:**
-- Modify: `src/services/compose.ts:1-410`
 - Create: `src/services/compose-service.test.ts`
 
-**Step 1: Write test for ComposeService class**
-
-Create: `src/services/compose-service.test.ts`
+**Step 1: Write failing test for ComposeService**
 
 ```typescript
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -888,73 +518,21 @@ import type { ISSHService } from "./interfaces.js";
 import type { HostConfig } from "../types.js";
 
 describe("ComposeService", () => {
+  let ssh: ISSHService;
   let service: ComposeService;
-  let mockSSHService: ISSHService;
 
   beforeEach(() => {
-    mockSSHService = {
+    ssh = {
       executeCommand: vi.fn().mockResolvedValue(""),
-      getHostResources: vi.fn().mockResolvedValue({})
+      getHostResources: vi.fn().mockResolvedValue({}) as never
     };
-
-    service = new ComposeService(mockSSHService);
+    service = new ComposeService(ssh);
   });
 
-  it("should create ComposeService instance", () => {
-    expect(service).toBeDefined();
-    expect(service).toBeInstanceOf(ComposeService);
-  });
-
-  it("should execute compose commands via injected SSH service", async () => {
-    const hostConfig: HostConfig = {
-      name: "test-host",
-      host: "192.168.1.100",
-      protocol: "ssh"
-    };
-
-    vi.mocked(mockSSHService.executeCommand).mockResolvedValue("compose output");
-
-    const result = await service.composeExec(hostConfig, "myproject", "ps", []);
-
-    expect(result).toBe("compose output");
-    expect(mockSSHService.executeCommand).toHaveBeenCalledWith(
-      hostConfig,
-      "docker compose -p myproject ps",
-      [],
-      { timeoutMs: 30000 }
-    );
-  });
-
-  it("should list compose projects", async () => {
-    const hostConfig: HostConfig = {
-      name: "test-host",
-      host: "192.168.1.100",
-      protocol: "ssh"
-    };
-
-    const mockProjectsJson = JSON.stringify([
-      { Name: "project1", Status: "running(2)", ConfigFiles: "/path/docker-compose.yml" }
-    ]);
-
-    vi.mocked(mockSSHService.executeCommand).mockResolvedValue(mockProjectsJson);
-
-    const projects = await service.listComposeProjects(hostConfig);
-
-    expect(projects).toHaveLength(1);
-    expect(projects[0].name).toBe("project1");
-    expect(projects[0].status).toBe("running");
-  });
-
-  it("should validate project names", async () => {
-    const hostConfig: HostConfig = {
-      name: "test-host",
-      host: "192.168.1.100",
-      protocol: "ssh"
-    };
-
-    await expect(
-      service.composeExec(hostConfig, "bad;project", "up", [])
-    ).rejects.toThrow("Invalid project name");
+  it("executes compose commands via SSH service", async () => {
+    const host: HostConfig = { name: "test", host: "127.0.0.1", protocol: "http" };
+    await service.composeExec(host, "proj", "ps");
+    expect(ssh.executeCommand).toHaveBeenCalled();
   });
 });
 ```
@@ -963,453 +541,83 @@ describe("ComposeService", () => {
 
 Run: `pnpm test src/services/compose-service.test.ts`
 
-Expected: FAIL with "ComposeService is not exported"
+Expected: FAIL (ComposeService class missing)
 
-**Step 3: Create ComposeService class**
+### Task 7: Implement ComposeService class
 
-Modify: `src/services/compose.ts`
+**Files:**
+- Modify: `src/services/compose.ts`
+- Modify: `src/services/compose.test.ts`
+- Modify: `src/services/compose.integration.test.ts`
 
-Add at the end:
+**Step 1: Convert exports to class**
 
-```typescript
-import type { IComposeService, ISSHService } from "./interfaces.js";
+- Export `ComposeService` class that accepts `ISSHService` in constructor.
+- Convert `composeExec`, `listComposeProjects`, `getComposeStatus`, etc. to methods.
+- Replace direct `executeSSHCommand` calls with `this.sshService.executeCommand`.
+- Keep pure helpers (`validateProjectName`) exported as named exports.
 
-/**
- * Compose service class with dependency injection support
- */
-export class ComposeService implements IComposeService {
-  private sshService: ISSHService;
+**Step 2: Update tests to instantiate ComposeService**
 
-  constructor(sshService: ISSHService) {
-    this.sshService = sshService;
-  }
+- Replace direct function calls with `new ComposeService(mockSsh).composeExec(...)` etc.
 
-  async composeExec(
-    host: HostConfig,
-    project: string,
-    action: string,
-    extraArgs: string[] = []
-  ): Promise<string> {
-    validateHostForSsh(host);
-    validateProjectName(project);
-    validateComposeArgs(extraArgs);
-
-    const command = buildComposeCommand(project, action, extraArgs);
-
-    try {
-      return await this.sshService.executeCommand(host, command, [], { timeoutMs: 30000 });
-    } catch (error) {
-      throw new Error(
-        `Compose command failed: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
-    }
-  }
-
-  async listComposeProjects(host: HostConfig): Promise<ComposeProject[]> {
-    validateHostForSsh(host);
-
-    const command = buildComposeCommand(null, "ls", ["--format", "json"]);
-
-    try {
-      const stdout = await this.sshService.executeCommand(host, command, [], { timeoutMs: 15000 });
-
-      if (!stdout.trim()) {
-        return [];
-      }
-
-      const projects = JSON.parse(stdout) as Array<{
-        Name: string;
-        Status: string;
-        ConfigFiles: string;
-      }>;
-
-      return projects.map((p) => ({
-        name: p.Name,
-        status: parseComposeStatus(p.Status),
-        configFiles: p.ConfigFiles.split(",").map((f) => f.trim()),
-        services: []
-      }));
-    } catch (error) {
-      throw new Error(
-        `Failed to list compose projects: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
-    }
-  }
-
-  async getComposeStatus(host: HostConfig, project: string): Promise<ComposeProject> {
-    validateHostForSsh(host);
-    validateProjectName(project);
-
-    const command = buildComposeCommand(project, "ps", ["--format", "json"]);
-
-    try {
-      const stdout = await this.sshService.executeCommand(host, command, [], { timeoutMs: 15000 });
-      const services: ComposeService[] = [];
-
-      if (stdout.trim()) {
-        const lines = stdout.trim().split("\n");
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const svc = JSON.parse(line) as {
-              Name: string;
-              State: string;
-              Health?: string;
-              ExitCode?: number;
-              Publishers?: Array<{
-                PublishedPort: number;
-                TargetPort: number;
-                Protocol: string;
-              }>;
-            };
-            services.push({
-              name: svc.Name,
-              status: svc.State,
-              health: svc.Health,
-              exitCode: svc.ExitCode,
-              publishers: svc.Publishers?.map((p) => ({
-                publishedPort: p.PublishedPort,
-                targetPort: p.TargetPort,
-                protocol: p.Protocol
-              }))
-            });
-          } catch {
-            // Skip malformed lines
-          }
-        }
-      }
-
-      let status: ComposeProject["status"] = "unknown";
-      if (services.length === 0) {
-        status = "stopped";
-      } else {
-        const running = services.filter((s) => s.status === "running").length;
-        if (running === services.length) {
-          status = "running";
-        } else if (running > 0) {
-          status = "partial";
-        } else {
-          status = "stopped";
-        }
-      }
-
-      return {
-        name: project,
-        status,
-        configFiles: [],
-        services
-      };
-    } catch (error) {
-      throw new Error(
-        `Failed to get compose status: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
-    }
-  }
-
-  async composeUp(host: HostConfig, project: string, detach = true): Promise<string> {
-    const args = detach ? ["-d"] : [];
-    return this.composeExec(host, project, "up", args);
-  }
-
-  async composeDown(
-    host: HostConfig,
-    project: string,
-    removeVolumes = false
-  ): Promise<string> {
-    const args = removeVolumes ? ["-v"] : [];
-    return this.composeExec(host, project, "down", args);
-  }
-
-  async composeRestart(host: HostConfig, project: string): Promise<string> {
-    return this.composeExec(host, project, "restart", []);
-  }
-
-  async composeLogs(
-    host: HostConfig,
-    project: string,
-    options: {
-      tail?: number;
-      follow?: boolean;
-      timestamps?: boolean;
-      since?: string;
-      until?: string;
-      services?: string[];
-    } = {}
-  ): Promise<string> {
-    const args: string[] = ["--no-color"];
-
-    if (options.tail !== undefined) {
-      args.push("--tail", String(options.tail));
-    }
-
-    if (options.follow) {
-      args.push("-f");
-    }
-
-    if (options.timestamps) {
-      args.push("-t");
-    }
-
-    if (options.since) {
-      args.push("--since", options.since);
-    }
-
-    if (options.until) {
-      args.push("--until", options.until);
-    }
-
-    if (options.services && options.services.length > 0) {
-      for (const service of options.services) {
-        if (!/^[a-zA-Z0-9_-]+$/.test(service)) {
-          throw new Error(`Invalid service name: ${service}`);
-        }
-      }
-      args.push(...options.services);
-    }
-
-    return this.composeExec(host, project, "logs", args);
-  }
-
-  async composeBuild(
-    host: HostConfig,
-    project: string,
-    options: { service?: string; noCache?: boolean; pull?: boolean } = {}
-  ): Promise<string> {
-    const args: string[] = [];
-
-    if (options.noCache) {
-      args.push("--no-cache");
-    }
-
-    if (options.pull) {
-      args.push("--pull");
-    }
-
-    if (options.service) {
-      if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
-        throw new Error(`Invalid service name: ${options.service}`);
-      }
-      args.push(options.service);
-    }
-
-    return this.composeExec(host, project, "build", args);
-  }
-
-  async composePull(
-    host: HostConfig,
-    project: string,
-    options: { service?: string; ignorePullFailures?: boolean; quiet?: boolean } = {}
-  ): Promise<string> {
-    const args: string[] = [];
-
-    if (options.ignorePullFailures) {
-      args.push("--ignore-pull-failures");
-    }
-
-    if (options.quiet) {
-      args.push("--quiet");
-    }
-
-    if (options.service) {
-      if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
-        throw new Error(`Invalid service name: ${options.service}`);
-      }
-      args.push(options.service);
-    }
-
-    return this.composeExec(host, project, "pull", args);
-  }
-
-  async composeRecreate(
-    host: HostConfig,
-    project: string,
-    options: { service?: string; forceRecreate?: boolean; noDeps?: boolean } = {}
-  ): Promise<string> {
-    const args: string[] = ["-d"];
-
-    if (options.forceRecreate !== false) {
-      args.push("--force-recreate");
-    }
-
-    if (options.noDeps) {
-      args.push("--no-deps");
-    }
-
-    if (options.service) {
-      if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
-        throw new Error(`Invalid service name: ${options.service}`);
-      }
-      args.push(options.service);
-    }
-
-    return this.composeExec(host, project, "up", args);
-  }
-}
-```
-
-**Step 4: Run test to verify it passes**
+**Step 3: Run tests**
 
 Run: `pnpm test src/services/compose-service.test.ts`
 
-Expected: PASS (all 4 tests)
+Expected: PASS
 
-**Step 5: Commit**
+Run: `pnpm test src/services/compose.test.ts`
+
+Expected: PASS
+
+**Step 4: Commit**
 
 ```bash
-git add src/services/compose.ts src/services/compose-service.test.ts
-git commit -m "feat(di): add ComposeService class with SSH service injection
-
-- Create ComposeService class implementing IComposeService
-- Inject SSH service via constructor
-- Add comprehensive unit tests
-- Validate all inputs (project names, service names, args)
-- Reuse existing helper functions (validateProjectName, etc.)"
+git add src/services/compose.ts src/services/compose.test.ts src/services/compose.integration.test.ts src/services/compose-service.test.ts
+git commit -m "refactor(di): convert compose module to ComposeService"
 ```
 
 ---
 
 ## Phase 5: Service Container
 
-**Goal:** Create lightweight service container for managing dependencies.
+**Goal:** Create a lightweight container that builds and owns service instances.
 
-### Task 5: Create Service Container
+### Task 8: Add ServiceContainer with tests
 
 **Files:**
 - Create: `src/services/container.ts`
 - Create: `src/services/container.test.ts`
 
-**Step 1: Write test for service container**
-
-Create: `src/services/container.test.ts`
+**Step 1: Write failing tests**
 
 ```typescript
-import { describe, it, expect, beforeEach } from "vitest";
-import { ServiceContainer, createDefaultContainer } from "./container.js";
+import { describe, it, expect } from "vitest";
+import { ServiceContainer } from "./container.js";
 import type { IDockerService, ISSHService, IComposeService } from "./interfaces.js";
 
 describe("ServiceContainer", () => {
-  let container: ServiceContainer;
-
-  beforeEach(() => {
-    container = new ServiceContainer();
-  });
-
-  it("should create service container instance", () => {
-    expect(container).toBeDefined();
-    expect(container).toBeInstanceOf(ServiceContainer);
-  });
-
-  it("should provide Docker service", () => {
-    const dockerService = container.getDockerService();
-
-    expect(dockerService).toBeDefined();
-    expect(dockerService.getDockerClient).toBeDefined();
-    expect(dockerService.listContainers).toBeDefined();
-  });
-
-  it("should cache Docker service instance", () => {
-    const service1 = container.getDockerService();
-    const service2 = container.getDockerService();
-
-    expect(service1).toBe(service2);
-  });
-
-  it("should provide SSH service", () => {
-    const sshService = container.getSSHService();
-
-    expect(sshService).toBeDefined();
-    expect(sshService.executeCommand).toBeDefined();
-  });
-
-  it("should cache SSH service instance", () => {
-    const service1 = container.getSSHService();
-    const service2 = container.getSSHService();
-
-    expect(service1).toBe(service2);
-  });
-
-  it("should provide Compose service", () => {
-    const composeService = container.getComposeService();
-
-    expect(composeService).toBeDefined();
-    expect(composeService.composeExec).toBeDefined();
-    expect(composeService.listComposeProjects).toBeDefined();
-  });
-
-  it("should cache Compose service instance", () => {
-    const service1 = container.getComposeService();
-    const service2 = container.getComposeService();
-
-    expect(service1).toBe(service2);
-  });
-
-  it("should allow custom Docker service", () => {
-    const customDockerService: IDockerService = {
-      getDockerClient: () => ({}) as any,
-      listContainers: async () => [],
-      containerAction: async () => {},
-      getContainerLogs: async () => [],
-      getContainerStats: async () => ({}) as any,
-      findContainerHost: async () => null,
-      getHostStatus: async () => [],
-      listImages: async () => [],
-      inspectContainer: async () => ({}) as any,
-      getDockerInfo: async () => ({}) as any,
-      getDockerDiskUsage: async () => ({}) as any,
-      pruneDocker: async () => [],
-      pullImage: async () => ({ status: "ok" }),
-      recreateContainer: async () => ({ status: "ok", containerId: "id" }),
-      removeImage: async () => ({ status: "ok" }),
-      buildImage: async () => ({ status: "ok" })
-    };
-
-    container.setDockerService(customDockerService);
-
-    const service = container.getDockerService();
-    expect(service).toBe(customDockerService);
-  });
-
-  it("should allow custom SSH service", () => {
-    const customSSHService: ISSHService = {
-      executeCommand: async () => "",
-      getHostResources: async () => ({}) as any
-    };
-
-    container.setSSHService(customSSHService);
-
-    const service = container.getSSHService();
-    expect(service).toBe(customSSHService);
-  });
-
-  it("should allow custom Compose service", () => {
-    const customComposeService: IComposeService = {
-      composeExec: async () => "",
-      listComposeProjects: async () => [],
-      getComposeStatus: async () => ({}) as any,
-      composeUp: async () => "",
-      composeDown: async () => "",
-      composeRestart: async () => "",
-      composeLogs: async () => "",
-      composeBuild: async () => "",
-      composePull: async () => "",
-      composeRecreate: async () => ""
-    };
-
-    container.setComposeService(customComposeService);
-
-    const service = container.getComposeService();
-    expect(service).toBe(customComposeService);
-  });
-});
-
-describe("createDefaultContainer", () => {
-  it("should create container with default services", () => {
-    const container = createDefaultContainer();
-
-    expect(container).toBeDefined();
+  it("creates default services lazily", () => {
+    const container = new ServiceContainer();
     expect(container.getDockerService()).toBeDefined();
     expect(container.getSSHService()).toBeDefined();
     expect(container.getComposeService()).toBeDefined();
+  });
+
+  it("allows service overrides", () => {
+    const container = new ServiceContainer();
+    const docker = {} as IDockerService;
+    const ssh = {} as ISSHService;
+    const compose = {} as IComposeService;
+
+    container.setDockerService(docker);
+    container.setSSHService(ssh);
+    container.setComposeService(compose);
+
+    expect(container.getDockerService()).toBe(docker);
+    expect(container.getSSHService()).toBe(ssh);
+    expect(container.getComposeService()).toBe(compose);
   });
 });
 ```
@@ -1418,788 +626,257 @@ describe("createDefaultContainer", () => {
 
 Run: `pnpm test src/services/container.test.ts`
 
-Expected: FAIL with "Cannot find module './container.js'"
+Expected: FAIL (ServiceContainer missing)
 
-**Step 3: Implement service container**
+**Step 3: Implement container**
 
 Create: `src/services/container.ts`
 
 ```typescript
-import type { IDockerService, ISSHService, IComposeService, ISSHConnectionPool } from "./interfaces.js";
 import { DockerService } from "./docker.js";
-import { SSHService } from "./ssh.js";
-import { ComposeService } from "./compose.js";
 import { SSHConnectionPoolImpl } from "./ssh-pool.js";
+import { SSHService } from "./ssh-service.js";
+import { ComposeService } from "./compose.js";
+import type { IDockerService, ISSHService, IComposeService, ISSHConnectionPool } from "./interfaces.js";
 
-/**
- * Service container for dependency injection
- *
- * Lightweight container that manages service lifecycle and dependencies.
- * Supports lazy initialization and service replacement for testing.
- */
 export class ServiceContainer {
   private dockerService?: IDockerService;
   private sshService?: ISSHService;
   private composeService?: IComposeService;
-  private sshConnectionPool?: ISSHConnectionPool;
+  private sshPool?: ISSHConnectionPool;
 
-  /**
-   * Get Docker service instance (creates on first access)
-   */
   getDockerService(): IDockerService {
-    if (!this.dockerService) {
-      this.dockerService = new DockerService();
-    }
+    if (!this.dockerService) this.dockerService = new DockerService();
     return this.dockerService;
   }
 
-  /**
-   * Set custom Docker service (for testing)
-   */
   setDockerService(service: IDockerService): void {
     this.dockerService = service;
   }
 
-  /**
-   * Get SSH connection pool (creates on first access)
-   */
   getSSHConnectionPool(): ISSHConnectionPool {
-    if (!this.sshConnectionPool) {
-      this.sshConnectionPool = new SSHConnectionPoolImpl();
-    }
-    return this.sshConnectionPool;
+    if (!this.sshPool) this.sshPool = new SSHConnectionPoolImpl();
+    return this.sshPool;
   }
 
-  /**
-   * Set custom SSH connection pool (for testing)
-   */
   setSSHConnectionPool(pool: ISSHConnectionPool): void {
-    this.sshConnectionPool = pool;
+    this.sshPool = pool;
   }
 
-  /**
-   * Get SSH service instance (creates on first access)
-   */
   getSSHService(): ISSHService {
-    if (!this.sshService) {
-      const pool = this.getSSHConnectionPool();
-      this.sshService = new SSHService(pool);
-    }
+    if (!this.sshService) this.sshService = new SSHService(this.getSSHConnectionPool());
     return this.sshService;
   }
 
-  /**
-   * Set custom SSH service (for testing)
-   */
   setSSHService(service: ISSHService): void {
     this.sshService = service;
   }
 
-  /**
-   * Get Compose service instance (creates on first access)
-   */
   getComposeService(): IComposeService {
-    if (!this.composeService) {
-      const sshService = this.getSSHService();
-      this.composeService = new ComposeService(sshService);
-    }
+    if (!this.composeService) this.composeService = new ComposeService(this.getSSHService());
     return this.composeService;
   }
 
-  /**
-   * Set custom Compose service (for testing)
-   */
   setComposeService(service: IComposeService): void {
     this.composeService = service;
   }
 
-  /**
-   * Cleanup all services (close connections, clear caches)
-   */
   async cleanup(): Promise<void> {
-    if (this.sshConnectionPool) {
-      await this.sshConnectionPool.closeAll();
-    }
-
+    if (this.sshPool) await this.sshPool.closeAll();
     if (this.dockerService && "clearClients" in this.dockerService) {
       (this.dockerService as DockerService).clearClients();
     }
   }
 }
 
-/**
- * Create a service container with default implementations
- */
 export function createDefaultContainer(): ServiceContainer {
   return new ServiceContainer();
 }
-
-/**
- * Global default container instance
- * Used for backward compatibility with existing code
- */
-let defaultContainer: ServiceContainer | null = null;
-
-/**
- * Get or create the global default container
- */
-export function getDefaultContainer(): ServiceContainer {
-  if (!defaultContainer) {
-    defaultContainer = createDefaultContainer();
-  }
-  return defaultContainer;
-}
-
-/**
- * Reset the global default container (for testing)
- */
-export function resetDefaultContainer(): void {
-  defaultContainer = null;
-}
 ```
 
-**Step 4: Run test to verify it passes**
+**Step 4: Run tests**
 
 Run: `pnpm test src/services/container.test.ts`
 
-Expected: PASS (all 10 tests)
+Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
 git add src/services/container.ts src/services/container.test.ts
-git commit -m "feat(di): add lightweight service container
-
-- Create ServiceContainer class for managing dependencies
-- Support lazy initialization of services
-- Allow service replacement for testing
-- Provide global default container
-- Add comprehensive unit tests
-- Include cleanup method for graceful shutdown"
+git commit -m "feat(di): add service container"
 ```
 
 ---
 
-## Phase 6: Tool Handler Refactoring
+## Phase 6: Tool Handler Refactor
 
-**Goal:** Refactor unified tool to use service container instead of direct imports.
+**Goal:** Use DI in tool handlers and remove direct function imports.
 
-### Task 6: Refactor Unified Tool
+### Task 9: Update unified tool to use container
 
 **Files:**
-- Modify: `src/tools/unified.ts:1-1200`
-- Modify: `src/tools/index.ts:1-10`
+- Modify: `src/tools/unified.ts`
+- Modify: `src/tools/unified.test.ts`
+- Modify: `src/tools/index.ts`
 
-**Step 1: Write test for container-based tool handler**
+**Step 1: Write failing test for container injection**
 
-Modify: `src/tools/unified.test.ts`
-
-Add at the beginning (after imports):
+Add to `src/tools/unified.test.ts`:
 
 ```typescript
 import { ServiceContainer } from "../services/container.js";
 import type { IDockerService, ISSHService, IComposeService } from "../services/interfaces.js";
 
-describe("Unified Tool with Dependency Injection", () => {
-  it("should use injected services instead of direct imports", () => {
-    const container = new ServiceContainer();
+it("uses injected services from container", () => {
+  const container = new ServiceContainer();
+  const docker = { listContainers: async () => [] } as IDockerService;
+  const ssh = { executeCommand: async () => "" } as ISSHService;
+  const compose = { listComposeProjects: async () => [] } as IComposeService;
 
-    // Mock services
-    const mockDockerService: IDockerService = {
-      listContainers: vi.fn().mockResolvedValue([]),
-      // ... other methods
-    } as any;
+  container.setDockerService(docker);
+  container.setSSHService(ssh);
+  container.setComposeService(compose);
 
-    const mockSSHService: ISSHService = {
-      executeCommand: vi.fn().mockResolvedValue(""),
-      // ... other methods
-    } as any;
-
-    const mockComposeService: IComposeService = {
-      listComposeProjects: vi.fn().mockResolvedValue([]),
-      // ... other methods
-    } as any;
-
-    container.setDockerService(mockDockerService);
-    container.setSSHService(mockSSHService);
-    container.setComposeService(mockComposeService);
-
-    expect(container.getDockerService()).toBe(mockDockerService);
-    expect(container.getSSHService()).toBe(mockSSHService);
-    expect(container.getComposeService()).toBe(mockComposeService);
-  });
+  expect(container.getDockerService()).toBe(docker);
+  expect(container.getSSHService()).toBe(ssh);
+  expect(container.getComposeService()).toBe(compose);
 });
 ```
 
-**Step 2: Run test to verify it passes (structure test)**
+**Step 2: Run test to verify it fails if imports are wrong**
 
-Run: `pnpm test src/tools/unified.test.ts -t "should use injected services"`
+Run: `pnpm test src/tools/unified.test.ts -t "uses injected services"`
+
+Expected: PASS or FAIL depending on missing imports. If it passes, proceed.
+
+**Step 3: Refactor unified tool to accept container**
+
+- Change `registerUnifiedTool(server: McpServer)` to `registerUnifiedTool(server: McpServer, container: ServiceContainer)`.
+- Remove direct imports from `services/docker`, `services/ssh`, `services/compose`.
+- In handler, fetch services from container and call methods.
+- Move `loadHostConfigs` to a new config module if you want to avoid Docker module coupling.
+
+**Step 4: Update index tool registry**
+
+`src/tools/index.ts` should accept optional container and pass it to `registerUnifiedTool`.
+
+**Step 5: Run tests**
+
+Run: `pnpm test src/tools/unified.test.ts`
 
 Expected: PASS
 
-**Step 3: Refactor unified.ts to accept container**
-
-Modify: `src/tools/unified.ts`
-
-Change the tool registration function signature:
-
-```typescript
-import { ServiceContainer, getDefaultContainer } from "../services/container.js";
-
-/**
- * Register unified homelab tool with MCP server
- *
- * @param server - MCP server instance
- * @param container - Service container (defaults to global container)
- */
-export function registerUnifiedTool(
-  server: McpServer,
-  container?: ServiceContainer
-): void {
-  const services = container || getDefaultContainer();
-
-  server.tool(
-    "homelab",
-    zodToJsonSchema(UnifiedHomelabSchema) as ToolSchema,
-    async (params: unknown) => {
-      const validated = UnifiedHomelabSchema.parse(params);
-
-      // Get services from container
-      const dockerService = services.getDockerService();
-      const sshService = services.getSSHService();
-      const composeService = services.getComposeService();
-
-      // ... rest of handler logic using injected services
-      // Replace all direct function calls with service methods:
-      // listContainers(...) -> dockerService.listContainers(...)
-      // executeSSHCommand(...) -> sshService.executeCommand(...)
-      // composeExec(...) -> composeService.composeExec(...)
-    }
-  );
-}
-```
-
-**Step 4: Update all service calls in unified.ts**
-
-Replace direct imports and calls (this is a large refactor):
-
-```typescript
-// BEFORE
-import { listContainers, containerAction, ... } from "../services/docker.js";
-const containers = await listContainers(hosts, options);
-
-// AFTER (no imports, use injected service)
-const containers = await dockerService.listContainers(hosts, options);
-```
-
-Pattern to follow for each action:
-- `listContainers` -> `dockerService.listContainers`
-- `containerAction` -> `dockerService.containerAction`
-- `getContainerLogs` -> `dockerService.getContainerLogs`
-- `getContainerStats` -> `dockerService.getContainerStats`
-- `findContainerHost` -> `dockerService.findContainerHost`
-- `getHostStatus` -> `dockerService.getHostStatus`
-- `listImages` -> `dockerService.listImages`
-- `inspectContainer` -> `dockerService.inspectContainer`
-- `getDockerInfo` -> `dockerService.getDockerInfo`
-- `getDockerDiskUsage` -> `dockerService.getDockerDiskUsage`
-- `pruneDocker` -> `dockerService.pruneDocker`
-- `pullImage` -> `dockerService.pullImage`
-- `recreateContainer` -> `dockerService.recreateContainer`
-- `removeImage` -> `dockerService.removeImage`
-- `buildImage` -> `dockerService.buildImage`
-- `getHostResources` -> `sshService.getHostResources`
-- `composeExec` -> `composeService.composeExec`
-- `listComposeProjects` -> `composeService.listComposeProjects`
-- `getComposeStatus` -> `composeService.getComposeStatus`
-- `composeUp` -> `composeService.composeUp`
-- `composeDown` -> `composeService.composeDown`
-- `composeRestart` -> `composeService.composeRestart`
-- `composeLogs` -> `composeService.composeLogs`
-- `composeBuild` -> `composeService.composeBuild`
-- `composePull` -> `composeService.composePull`
-- `composeRecreate` -> `composeService.composeRecreate`
-
-**Step 5: Update tool registration in index.ts**
-
-Modify: `src/tools/index.ts`
-
-```typescript
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerUnifiedTool } from "./unified.js";
-import { ServiceContainer } from "../services/container.js";
-
-/**
- * Register all homelab tools with the MCP server
- *
- * @param server - MCP server instance
- * @param container - Optional service container for dependency injection
- */
-export function registerTools(server: McpServer, container?: ServiceContainer): void {
-  registerUnifiedTool(server, container);
-}
-```
-
-**Step 6: Run all tests**
-
-Run: `pnpm test`
-
-Expected: All tests pass (419+ tests)
-
-**Step 7: Commit**
+**Step 6: Commit**
 
 ```bash
-git add src/tools/unified.ts src/tools/index.ts src/tools/unified.test.ts
-git commit -m "refactor(di): migrate unified tool to use service container
-
-- Accept ServiceContainer parameter in registerUnifiedTool
-- Replace all direct service imports with injected services
-- Update registerTools to accept optional container
-- Maintain backward compatibility with default container
-- All 419+ tests passing"
+git add src/tools/unified.ts src/tools/unified.test.ts src/tools/index.ts
+git commit -m "refactor(di): inject services into unified tool"
 ```
 
 ---
 
-## Phase 7: Integration & Cleanup
+## Phase 7: Entry Point & Shutdown
 
-**Goal:** Update entry point, add documentation, verify all tests pass.
+**Goal:** Instantiate container in entry point and cleanly shutdown services.
 
-### Task 7: Update Entry Point
+### Task 10: Update server creation and cleanup
 
 **Files:**
-- Modify: `src/index.ts:1-178`
-- Create: `docs/architecture/dependency-injection.md`
+- Modify: `src/index.ts`
 
-**Step 1: Update server initialization**
+**Step 1: Write failing test (if entry tests exist)**
 
-Modify: `src/index.ts`
+If no entry tests exist, skip test creation and proceed with implementation.
 
-```typescript
-import { ServiceContainer, createDefaultContainer } from "./services/container.js";
+**Step 2: Update entrypoint to use container**
 
-// Add at module level
-let serviceContainer: ServiceContainer | null = null;
+- Create a module-level `serviceContainer`.
+- Initialize container in `createServer()` and pass to `registerTools`.
+- Replace `clearDockerClients()` shutdown with `await serviceContainer.cleanup()`.
 
-/**
- * Create and configure the MCP server
- */
-function createServer(): McpServer {
-  const server = new McpServer({
-    name: SERVER_NAME,
-    version: SERVER_VERSION
-  });
-
-  // Create service container
-  serviceContainer = createDefaultContainer();
-
-  // Register all homelab tools with dependency injection
-  registerTools(server, serviceContainer);
-
-  return server;
-}
-
-/**
- * Graceful shutdown handler
- */
-async function shutdown(signal: string): Promise<void> {
-  console.error(`\nReceived ${signal}, shutting down gracefully...`);
-
-  // Cleanup services
-  if (serviceContainer) {
-    await serviceContainer.cleanup();
-  }
-
-  // Legacy cleanup (will be removed after migration)
-  clearDockerClients();
-
-  console.error("Cleanup complete");
-  process.exit(0);
-}
-
-// Update signal handlers to be async
-process.on("SIGINT", () => void shutdown("SIGINT"));
-process.on("SIGTERM", () => void shutdown("SIGTERM"));
-```
-
-**Step 2: Run build and verify**
+**Step 3: Run build**
 
 Run: `pnpm run build`
 
 Expected: No TypeScript errors
 
-**Step 3: Run full test suite**
-
-Run: `pnpm test`
-
-Expected: All tests pass (419+ tests)
-
-**Step 4: Create architecture documentation**
-
-Create: `docs/architecture/dependency-injection.md`
-
-```markdown
-# Dependency Injection Architecture
-
-## Overview
-
-The homelab-mcp-server uses a lightweight dependency injection (DI) pattern to manage service dependencies and improve testability.
-
-## Pattern
-
-**Constructor Injection with Service Container**
-
-- Services define interfaces (`IDockerService`, `ISSHService`, `IComposeService`)
-- Concrete implementations accept dependencies via constructor
-- `ServiceContainer` manages service lifecycle and provides instances
-- Tool handlers receive services via container injection
-- No heavy DI frameworks (YAGNI principle)
-
-## Architecture
-
-```
-ServiceContainer
-├── DockerService (implements IDockerService)
-│   └── creates Docker clients
-├── SSHConnectionPool (implements ISSHConnectionPool)
-│   └── manages SSH connections
-├── SSHService (implements ISSHService)
-│   └── depends on: SSHConnectionPool
-└── ComposeService (implements IComposeService)
-    └── depends on: SSHService
-```
-
-## Benefits
-
-1. **Testability**: Mock services easily without global state
-2. **Flexibility**: Swap implementations (e.g., local vs remote Docker)
-3. **Clarity**: Explicit dependency graph
-4. **Type Safety**: TypeScript interfaces enforce contracts
-5. **No Lock-in**: No heavy framework dependencies
-
-## Usage
-
-### Production Code
-
-```typescript
-import { createDefaultContainer } from "./services/container.js";
-
-const container = createDefaultContainer();
-const dockerService = container.getDockerService();
-
-const containers = await dockerService.listContainers(hosts);
-```
-
-### Testing
-
-```typescript
-import { ServiceContainer } from "./services/container.js";
-import type { IDockerService } from "./services/interfaces.js";
-
-const container = new ServiceContainer();
-
-const mockDockerService: IDockerService = {
-  listContainers: vi.fn().mockResolvedValue([]),
-  // ... other methods
-};
-
-container.setDockerService(mockDockerService);
-
-// Test code using container.getDockerService()
-```
-
-### Tool Registration
-
-```typescript
-import { registerTools } from "./tools/index.js";
-import { createDefaultContainer } from "./services/container.js";
-
-const server = new McpServer({ name: "homelab", version: "1.0.0" });
-const container = createDefaultContainer();
-
-registerTools(server, container);
-```
-
-## Service Interfaces
-
-### IDockerService
-
-Docker API operations across multiple hosts.
-
-**Methods:**
-- `getDockerClient(config)` - Get/create Docker client
-- `listContainers(hosts, options)` - List containers
-- `containerAction(id, action, host)` - Start/stop/restart/pause/unpause
-- `getContainerLogs(id, host, options)` - Fetch logs
-- `getContainerStats(id, host)` - Get resource usage
-- ... (see `src/services/interfaces.ts` for full list)
-
-### ISSHService
-
-SSH command execution and resource monitoring.
-
-**Methods:**
-- `executeCommand(host, command, args, options)` - Execute SSH command
-- `getHostResources(host)` - Get CPU/memory/disk stats
-
-### IComposeService
-
-Docker Compose operations.
-
-**Methods:**
-- `composeExec(host, project, action, args)` - Execute compose command
-- `listComposeProjects(host)` - List all projects
-- `getComposeStatus(host, project)` - Get project status
-- `composeUp/Down/Restart/Logs/Build/Pull/Recreate` - Compose operations
-
-### ISSHConnectionPool
-
-SSH connection pooling and lifecycle management.
-
-**Methods:**
-- `getConnection(host)` - Acquire connection from pool
-- `releaseConnection(host, connection)` - Return connection to pool
-- `closeConnection(host)` - Close specific host connections
-- `closeAll()` - Close all connections
-- `getStats()` - Get pool statistics
-
-## Migration Path
-
-### Phase 1: Interfaces (✓ Complete)
-- Define service interfaces
-- Add comprehensive tests
-
-### Phase 2-4: Service Classes (✓ Complete)
-- Create `DockerService`, `SSHService`, `ComposeService` classes
-- Implement interfaces with constructor injection
-- Maintain backward compatibility
-
-### Phase 5: Container (✓ Complete)
-- Create `ServiceContainer` for managing lifecycle
-- Lazy initialization of services
-- Support custom service injection for testing
-
-### Phase 6: Tool Refactoring (✓ Complete)
-- Update `unified.ts` to accept container
-- Replace direct imports with injected services
-- All tests passing
-
-### Phase 7: Cleanup (Current)
-- Update entry point to use container
-- Add documentation
-- Remove deprecated code
-
-## Best Practices
-
-### 1. Always Define Interfaces
-
-```typescript
-// Good
-export interface IMyService {
-  doSomething(arg: string): Promise<Result>;
-}
-
-export class MyService implements IMyService {
-  async doSomething(arg: string): Promise<Result> {
-    // ...
-  }
-}
-
-// Bad (no interface)
-export class MyService {
-  async doSomething(arg: string): Promise<Result> {
-    // ...
-  }
-}
-```
-
-### 2. Constructor Injection
-
-```typescript
-// Good
-export class ComposeService implements IComposeService {
-  constructor(private sshService: ISSHService) {}
-}
-
-// Bad (global dependency)
-import { executeSSHCommand } from "./ssh.js";
-
-export class ComposeService {
-  async exec() {
-    await executeSSHCommand(...); // Hard to test
-  }
-}
-```
-
-### 3. Use Container in Tests
-
-```typescript
-// Good
-const container = new ServiceContainer();
-container.setDockerService(mockDockerService);
-
-const service = container.getComposeService();
-// ComposeService receives mocked dependencies
-
-// Bad
-vi.mock("./docker.js"); // Global mocking, fragile
-```
-
-### 4. Lazy Initialization
-
-```typescript
-// Good (container pattern)
-getDockerService(): IDockerService {
-  if (!this.dockerService) {
-    this.dockerService = new DockerService();
-  }
-  return this.dockerService;
-}
-
-// Bad (eager initialization)
-constructor() {
-  this.dockerService = new DockerService(); // Created even if never used
-}
-```
-
-## Future Enhancements
-
-- [ ] Add service lifecycle hooks (onInit, onDestroy)
-- [ ] Implement service health checks
-- [ ] Add metrics collection for service calls
-- [ ] Consider scoped containers for request isolation
-- [ ] Add configuration injection (environment-based)
-```
-
-**Step 5: Commit**
+**Step 4: Commit**
 
 ```bash
-git add src/index.ts docs/architecture/dependency-injection.md
-git commit -m "feat(di): integrate service container in entry point
-
-- Initialize ServiceContainer in createServer
-- Pass container to registerTools
-- Add async cleanup on shutdown
-- Create comprehensive architecture documentation
-- All tests passing (419+)"
+git add src/index.ts
+git commit -m "refactor(di): wire service container into server lifecycle"
 ```
 
 ---
 
-## Verification & Validation
+## Phase 8: Documentation
 
-### Task 8: Final Verification
+**Goal:** Document the new DI architecture (no legacy APIs).
 
-**Step 1: Build the project**
+### Task 11: Add architecture doc
+
+**Files:**
+- Create: `docs/architecture/dependency-injection.md`
+
+**Step 1: Write doc**
+
+Include:
+- Overview
+- ServiceContainer dependency graph
+- Example usage in tools
+- Testing example with mocked services
+- Explicit note that globals are removed and classes are required
+
+**Step 2: Commit**
+
+```bash
+git add docs/architecture/dependency-injection.md
+git commit -m "docs(di): document new dependency injection architecture"
+```
+
+---
+
+## Phase 9: Final Verification
+
+### Task 12: Full verification
+
+**Step 1: Run build**
 
 Run: `pnpm run build`
 
-Expected: Clean build with no TypeScript errors
+Expected: PASS
 
 **Step 2: Run full test suite**
 
 Run: `pnpm test`
 
-Expected: All tests passing (419+ tests)
+Expected: All tests pass
 
-**Step 3: Run integration tests specifically**
+**Step 3: Run integration tests**
 
 Run: `pnpm test src/tools/unified.integration.test.ts`
 
-Expected: All 85 integration tests passing
+Expected: PASS
 
-**Step 4: Start the server**
+**Step 4: Start server**
 
-Run: `node dist/index.js`
+Run: `node dist/index.js --stdio`
 
-Expected: Server starts successfully, loads hosts, no errors
+Expected: Server starts without errors
 
-**Step 5: Test with real operation**
-
-Use MCP client to test a simple operation like listing containers or getting host status.
-
-Expected: Operations work correctly with new DI architecture
-
-**Step 6: Final commit**
+**Step 5: Commit (if needed)**
 
 ```bash
 git add .
-git commit -m "feat(di): complete dependency injection architecture
-
-SUMMARY:
-- Introduce lightweight DI pattern with service container
-- Create interfaces for all services (Docker, SSH, Compose)
-- Implement service classes with constructor injection
-- Refactor tool handlers to use injected services
-- Maintain 100% backward compatibility
-- All 419+ tests passing
-
-BENEFITS:
-- Improved testability (no global state)
-- Clear dependency graph
-- Service composition enabled
-- Type-safe service contracts
-- No heavy DI framework dependencies
-
-FILES CHANGED:
-- src/services/interfaces.ts (NEW)
-- src/services/docker.ts (add DockerService class)
-- src/services/ssh.ts (add SSHService class)
-- src/services/compose.ts (add ComposeService class)
-- src/services/container.ts (NEW)
-- src/tools/unified.ts (refactor to use container)
-- src/tools/index.ts (accept container parameter)
-- src/index.ts (initialize container, async cleanup)
-- docs/architecture/dependency-injection.md (NEW)
-- tests: +50 new unit tests"
+git commit -m "feat(di): complete non-legacy dependency injection refactor"
 ```
-
----
-
-## Summary
-
-This plan introduces a lightweight dependency injection architecture to the homelab-mcp-server codebase following these principles:
-
-**DRY (Don't Repeat Yourself)**
-- Service interfaces defined once
-- Container pattern reused across all services
-- No duplicate service creation logic
-
-**YAGNI (You Aren't Gonna Need It)**
-- No heavy DI frameworks (TSyringe, InversifyJS, etc.)
-- Simple constructor injection
-- Minimal abstraction overhead
-
-**TDD (Test-Driven Development)**
-- Tests written before implementation
-- Interfaces validated through tests first
-- Incremental verification at each step
-
-**KISS (Keep It Simple, Stupid)**
-- TypeScript-native patterns
-- Explicit dependencies via constructor
-- Straightforward container implementation
-
-**Migration Strategy:**
-- Incremental (7 phases)
-- Backward compatible throughout
-- No breaking changes to API
-- Tests pass at every step
-
-**Expected Outcome:**
-- 419+ tests still passing
-- Improved testability (can inject mocks)
-- Clear dependency graph
-- No global singleton issues
-- Foundation for future service composition
 
 ---
 
 ## Execution Options
 
-Plan complete and saved to `docs/plans/2025-12-24-dependency-injection-architecture.md`.
-
-**Two execution options:**
+Plan complete and saved to `docs/plans/2025-12-24-dependency-injection-architecture.md`. Two execution options:
 
 **1. Subagent-Driven (this session)** - I dispatch fresh subagent per task, review between tasks, fast iteration
 
