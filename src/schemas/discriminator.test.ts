@@ -19,7 +19,7 @@ describe("Discriminator transform", () => {
     });
   });
 
-  it("should handle all 28 action/subaction combinations", () => {
+  it("should handle all 30 action/subaction combinations", () => {
     const combinations = [
       { action: "container", subaction: "list" },
       { action: "container", subaction: "start" },
