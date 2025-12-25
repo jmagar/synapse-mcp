@@ -533,7 +533,9 @@ export function formatComposeListMarkdown(
 
   if (hasMore) {
     lines.push("");
-    lines.push(`*More results available. Use offset=${(offset || 0) + projects.length} to see next page.*`);
+    lines.push(
+      `*More results available. Use offset=${(offset || 0) + projects.length} to see next page.*`
+    );
   }
 
   return lines.join("\n");

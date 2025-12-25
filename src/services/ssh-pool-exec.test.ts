@@ -103,18 +103,12 @@ describe("ssh-pool-exec", () => {
     });
 
     it("should handle commands with multiple arguments", async () => {
-      const result = await executeSSHCommand(
-        testHost,
-        "echo",
-        ["hello", "world"]
-      );
+      const result = await executeSSHCommand(testHost, "echo", ["hello", "world"]);
       expect(result).toContain("hello world");
     });
 
     it("should throw error on command failure", async () => {
-      await expect(
-        executeSSHCommand(testHost, "false")
-      ).rejects.toThrow();
+      await expect(executeSSHCommand(testHost, "false")).rejects.toThrow();
     });
 
     it("should trim whitespace from output", async () => {
@@ -168,9 +162,9 @@ describe("ssh-pool-exec", () => {
   describe("timeout handling", () => {
     it("should respect command timeout", async () => {
       // Command that takes longer than timeout should fail
-      await expect(
-        executeSSHCommand(testHost, "sleep 10", [], { timeoutMs: 100 })
-      ).rejects.toThrow(/timeout/i);
+      await expect(executeSSHCommand(testHost, "sleep 10", [], { timeoutMs: 100 })).rejects.toThrow(
+        /timeout/i
+      );
     });
 
     it("should use default timeout when not specified", async () => {
@@ -181,12 +175,9 @@ describe("ssh-pool-exec", () => {
 
     it("should allow custom timeout for long operations", async () => {
       // This would timeout with default, but should work with extended timeout
-      const result = await executeSSHCommand(
-        testHost,
-        "sleep 1 && echo done",
-        [],
-        { timeoutMs: 5000 }
-      );
+      const result = await executeSSHCommand(testHost, "sleep 1 && echo done", [], {
+        timeoutMs: 5000
+      });
       expect(result).toBe("done");
     });
   });
@@ -212,9 +203,7 @@ describe("ssh-pool-exec", () => {
     it("should provide clear error message on connection failure", async () => {
       // Mock throws error for bad connection (simulated in mock)
       // Since mock always succeeds connect(), test that command failures work
-      await expect(
-        executeSSHCommand(testHost, "false")
-      ).rejects.toThrow(/SSH command failed/);
+      await expect(executeSSHCommand(testHost, "false")).rejects.toThrow(/SSH command failed/);
     });
 
     it("should include command context in error messages", async () => {
@@ -240,21 +229,15 @@ describe("ssh-pool-exec", () => {
         })
       } as unknown as NodeSSH;
 
-      const getConnectionSpy = vi
-        .spyOn(pool, "getConnection")
-        .mockResolvedValue(mockConnection);
-      const releaseConnectionSpy = vi
-        .spyOn(pool, "releaseConnection")
-        .mockResolvedValue(undefined);
+      const getConnectionSpy = vi.spyOn(pool, "getConnection").mockResolvedValue(mockConnection);
+      const releaseConnectionSpy = vi.spyOn(pool, "releaseConnection").mockResolvedValue(undefined);
 
       try {
-        await expect(
-          executeSSHCommand(testHost, "nonexistent-command")
-        ).rejects.toThrow(SSHCommandError);
+        await expect(executeSSHCommand(testHost, "nonexistent-command")).rejects.toThrow(
+          SSHCommandError
+        );
 
-        await expect(
-          executeSSHCommand(testHost, "nonexistent-command")
-        ).rejects.toMatchObject({
+        await expect(executeSSHCommand(testHost, "nonexistent-command")).rejects.toMatchObject({
           hostName: testHost.name,
           command: "nonexistent-command",
           exitCode: 127,
@@ -273,17 +256,11 @@ describe("ssh-pool-exec", () => {
         execCommand: vi.fn().mockRejectedValue(rootError)
       } as unknown as NodeSSH;
 
-      const getConnectionSpy = vi
-        .spyOn(pool, "getConnection")
-        .mockResolvedValue(mockConnection);
-      const releaseConnectionSpy = vi
-        .spyOn(pool, "releaseConnection")
-        .mockResolvedValue(undefined);
+      const getConnectionSpy = vi.spyOn(pool, "getConnection").mockResolvedValue(mockConnection);
+      const releaseConnectionSpy = vi.spyOn(pool, "releaseConnection").mockResolvedValue(undefined);
 
       try {
-        await expect(
-          executeSSHCommand(testHost, "test-command")
-        ).rejects.toMatchObject({
+        await expect(executeSSHCommand(testHost, "test-command")).rejects.toMatchObject({
           name: "SSHCommandError",
           hostName: testHost.name,
           command: "test-command",

@@ -225,17 +225,14 @@ export async function getComposeStatus(host: HostConfig, project: string): Promi
             }))
           });
         } catch {
-          logError(
-            new Error("Failed to parse compose service line"),
-            {
-              operation: "getComposeStatus",
-              metadata: {
-                host: host.name,
-                project,
-                line: line.substring(0, 100)
-              }
+          logError(new Error("Failed to parse compose service line"), {
+            operation: "getComposeStatus",
+            metadata: {
+              host: host.name,
+              project,
+              line: line.substring(0, 100)
             }
-          );
+          });
         }
       }
     }

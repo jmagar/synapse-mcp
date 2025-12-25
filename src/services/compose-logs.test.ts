@@ -269,13 +269,11 @@ describe("composeLogs", () => {
     });
 
     it("should pass correct project name validation", async () => {
-      await expect(
-        composeLogs(mockHostConfig, "invalid;project")
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(composeLogs(mockHostConfig, "invalid;project")).rejects.toThrow(
+        /Invalid project name/
+      );
 
-      await expect(
-        composeLogs(mockHostConfig, "")
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(composeLogs(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
 
       expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
     });
@@ -283,9 +281,9 @@ describe("composeLogs", () => {
     it("should propagate SSH errors", async () => {
       mockSSHError("Connection failed");
 
-      await expect(
-        composeLogs(mockHostConfig, "myproject")
-      ).rejects.toThrow(/Compose command failed.*Connection failed/);
+      await expect(composeLogs(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*Connection failed/
+      );
     });
 
     it("should use 30 second timeout", async () => {

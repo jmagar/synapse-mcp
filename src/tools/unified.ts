@@ -401,11 +401,13 @@ async function handleContainerAction(
           ports: Object.keys(info.NetworkSettings?.Ports || {}).filter(
             (p) => info.NetworkSettings?.Ports?.[p]
           ),
-          mounts: (info.Mounts || []).map((m: { Source?: string; Destination?: string; Type?: string }) => ({
-            src: m.Source,
-            dst: m.Destination,
-            type: m.Type
-          })),
+          mounts: (info.Mounts || []).map(
+            (m: { Source?: string; Destination?: string; Type?: string }) => ({
+              src: m.Source,
+              dst: m.Destination,
+              type: m.Type
+            })
+          ),
           networks: Object.keys(info.NetworkSettings?.Networks || {}),
           env_count: (info.Config?.Env || []).length,
           labels_count: Object.keys(info.Config?.Labels || {}).length,

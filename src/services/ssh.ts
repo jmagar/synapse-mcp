@@ -60,7 +60,6 @@ export interface HostResources {
   }>;
 }
 
-
 /**
  * Get host resource usage via SSH using connection pool
  */

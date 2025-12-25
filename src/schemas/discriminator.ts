@@ -25,12 +25,7 @@ export function addDiscriminator(input: DiscriminatedInput): DiscriminatedInput 
  * Use with z.preprocess() to transparently transform inputs
  */
 export function preprocessWithDiscriminator(input: unknown): unknown {
-  if (
-    typeof input === "object" &&
-    input !== null &&
-    "action" in input &&
-    "subaction" in input
-  ) {
+  if (typeof input === "object" && input !== null && "action" in input && "subaction" in input) {
     return addDiscriminator(input as DiscriminatedInput);
   }
   return input;

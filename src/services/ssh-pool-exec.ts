@@ -11,7 +11,7 @@ let globalPool: SSHConnectionPool | null = null;
  * Options for SSH command execution
  */
 export interface SSHCommandOptions {
-  timeoutMs?: number;  // Command timeout (default: 30000)
+  timeoutMs?: number; // Command timeout (default: 30000)
 }
 
 /**
@@ -66,12 +66,9 @@ export async function executeSSHCommand(
   const connection = await pool.getConnection(host);
 
   // Build full command
-  const fullCommand = args.length > 0
-    ? `${command} ${args.join(" ")}`
-    : command;
+  const fullCommand = args.length > 0 ? `${command} ${args.join(" ")}` : command;
 
   try {
-
     // Execute with timeout
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {

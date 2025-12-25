@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  HostOperationError,
-  SSHCommandError,
-  ComposeOperationError,
-  logError
-} from "./errors.js";
+import { HostOperationError, SSHCommandError, ComposeOperationError, logError } from "./errors.js";
 
 describe("HostOperationError", () => {
   it("should chain error causes and preserve stack", () => {
@@ -25,12 +20,7 @@ describe("HostOperationError", () => {
   });
 
   it("should handle non-Error cause types", () => {
-    const wrapped = new HostOperationError(
-      "Operation failed",
-      "host-1",
-      "test",
-      "string error"
-    );
+    const wrapped = new HostOperationError("Operation failed", "host-1", "test", "string error");
 
     expect(wrapped.message).toContain("Operation failed");
     expect(wrapped.cause).toBe("string error");
@@ -114,34 +104,22 @@ describe("logError", () => {
 
     logError(error, { requestId: "req-123" });
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("HostOperationError")
-    );
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("docker-01")
-    );
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("listContainers")
-    );
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("req-123")
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("HostOperationError"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("docker-01"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("listContainers"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("req-123"));
   });
 
   it("should handle non-Error types", () => {
     logError("string error", { operation: "test" });
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("string error")
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("string error"));
   });
 
   it("should include stack trace for Error instances", () => {
     const error = new Error("Test error");
     logError(error);
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining(error.stack || "")
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(error.stack || ""));
   });
 });

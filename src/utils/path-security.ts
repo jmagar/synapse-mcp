@@ -38,28 +38,22 @@ export function validateSecurePath(path: string, paramName: string): void {
 
   // 2. Character validation - only allow alphanumeric, dots, hyphens, underscores, forward slashes
   if (!/^[a-zA-Z0-9._\-/]+$/.test(path)) {
-    throw new Error(
-      `${paramName}: Invalid characters in path: ${path}`
-    );
+    throw new Error(`${paramName}: Invalid characters in path: ${path}`);
   }
 
   // 3. Split path into components and check for ".." traversal first
-  const components = path.split("/").filter(c => c.length > 0);
+  const components = path.split("/").filter((c) => c.length > 0);
 
   for (const component of components) {
     // Reject ".." (parent directory traversal) - check this first
     if (component === "..") {
-      throw new Error(
-        `${paramName}: directory traversal (..) not allowed in path: ${path}`
-      );
+      throw new Error(`${paramName}: directory traversal (..) not allowed in path: ${path}`);
     }
   }
 
   // 4. Must be absolute path (starts with /) - checked after .. but before .
   if (!path.startsWith("/")) {
-    throw new Error(
-      `${paramName}: absolute path required, got: ${path}`
-    );
+    throw new Error(`${paramName}: absolute path required, got: ${path}`);
   }
 
   // 5. Check for "." as standalone component (only in absolute paths)
@@ -67,9 +61,7 @@ export function validateSecurePath(path: string, paramName: string): void {
     // Reject "." as standalone component (current directory)
     // BUT allow dots in filenames like "file.txt" or "config.prod"
     if (component === ".") {
-      throw new Error(
-        `${paramName}: directory traversal (.) not allowed in path: ${path}`
-      );
+      throw new Error(`${paramName}: directory traversal (.) not allowed in path: ${path}`);
     }
   }
 
@@ -77,8 +69,6 @@ export function validateSecurePath(path: string, paramName: string): void {
   // This catches cases like /valid/path/../../etc that might slip through
   const resolved = resolve(path);
   if (!resolved.startsWith(path.split("/")[1] ? `/${path.split("/")[1]}` : "/")) {
-    throw new Error(
-      `${paramName}: Path resolution resulted in directory traversal: ${path}`
-    );
+    throw new Error(`${paramName}: Path resolution resulted in directory traversal: ${path}`);
   }
 }

@@ -16,9 +16,7 @@ export function setupComposeMocks(): void {
   ]);
   mockGetComposeStatus.mockResolvedValue({
     project: "project1",
-    services: [
-      { name: "web", state: "running", containers: 1 }
-    ]
+    services: [{ name: "web", state: "running", containers: 1 }]
   });
   mockComposeUp.mockResolvedValue(undefined);
   mockComposeDown.mockResolvedValue(undefined);

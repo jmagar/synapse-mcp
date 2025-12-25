@@ -119,7 +119,10 @@ const containerInspectSchema = z.object({
   subaction: z.literal("inspect"),
   container_id: z.string().min(1),
   host: z.string().optional(),
-  summary: z.boolean().default(true).describe("Return summary instead of full inspect (reduces output size)"),
+  summary: z
+    .boolean()
+    .default(true)
+    .describe("Return summary instead of full inspect (reduces output size)"),
   response_format: responseFormatSchema
 });
 
@@ -156,7 +159,10 @@ const composeListSchema = z.object({
   action: z.literal("compose"),
   subaction: z.literal("list"),
   host: z.string().min(1),
-  name_filter: z.string().optional().describe("Filter projects by name (case-insensitive substring match)"),
+  name_filter: z
+    .string()
+    .optional()
+    .describe("Filter projects by name (case-insensitive substring match)"),
   ...paginationSchema,
   response_format: responseFormatSchema
 });
@@ -361,10 +367,7 @@ const UnifiedHomelabUnion = z.discriminatedUnion("action_subaction", [
 ]);
 
 // Export with preprocess wrapper to automatically inject discriminator
-export const UnifiedHomelabSchema = z.preprocess(
-  preprocessWithDiscriminator,
-  UnifiedHomelabUnion
-);
+export const UnifiedHomelabSchema = z.preprocess(preprocessWithDiscriminator, UnifiedHomelabUnion);
 
 export type UnifiedHomelabInput = z.infer<typeof UnifiedHomelabSchema>;
 

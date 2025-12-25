@@ -6,11 +6,11 @@ import { HostOperationError, logError } from "../utils/errors.js";
  * SSH connection pool configuration
  */
 export interface SSHPoolConfig {
-  maxConnections: number;        // Max connections per host (default: 5)
-  idleTimeoutMs: number;          // Idle timeout before closing (default: 60000)
-  connectionTimeoutMs: number;    // Connection timeout (default: 5000)
-  enableHealthChecks: boolean;    // Enable periodic health checks (default: true)
-  healthCheckIntervalMs: number;  // Health check interval (default: 30000)
+  maxConnections: number; // Max connections per host (default: 5)
+  idleTimeoutMs: number; // Idle timeout before closing (default: 60000)
+  connectionTimeoutMs: number; // Connection timeout (default: 5000)
+  enableHealthChecks: boolean; // Enable periodic health checks (default: true)
+  healthCheckIntervalMs: number; // Health check interval (default: 30000)
 }
 
 /**
@@ -28,11 +28,11 @@ export const DEFAULT_POOL_CONFIG: SSHPoolConfig = {
  * Pool statistics for monitoring
  */
 export interface PoolStats {
-  poolHits: number;           // Successful connection reuse
-  poolMisses: number;         // New connections created
-  activeConnections: number;  // Currently active
-  idleConnections: number;    // Currently idle
-  totalConnections: number;   // Total in pool
+  poolHits: number; // Successful connection reuse
+  poolMisses: number; // New connections created
+  activeConnections: number; // Currently active
+  idleConnections: number; // Currently idle
+  totalConnections: number; // Total in pool
   healthChecksPassed: number; // Successful health checks
   healthCheckFailures: number; // Failed health checks
 }
@@ -114,9 +114,7 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
       for (const metadata of connections) {
         // Only check idle connections
         if (!metadata.isActive) {
-          healthCheckPromises.push(
-            this.checkConnectionHealth(poolKey, metadata)
-          );
+          healthCheckPromises.push(this.checkConnectionHealth(poolKey, metadata));
         }
       }
     }
@@ -142,12 +140,7 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
       }
     } catch (error) {
       logError(
-        new HostOperationError(
-          "Health check failed",
-          metadata.host.name,
-          "healthCheck",
-          error
-        ),
+        new HostOperationError("Health check failed", metadata.host.name, "healthCheck", error),
         {
           metadata: {
             poolKey,
@@ -168,7 +161,7 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
     const connections = this.pool.get(poolKey) || [];
 
     // Try to find idle connection
-    const idleConnection = connections.find(c => !c.isActive);
+    const idleConnection = connections.find((c) => !c.isActive);
 
     if (idleConnection) {
       // Reuse existing connection (pool hit)
@@ -219,7 +212,9 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
       readyTimeout: this.config.connectionTimeoutMs
     };
 
-    console.error(`[SSH Pool] Attempting connection to ${host.name} (${connectionConfig.host}:${connectionConfig.port})`);
+    console.error(
+      `[SSH Pool] Attempting connection to ${host.name} (${connectionConfig.host}:${connectionConfig.port})`
+    );
     console.error(`[SSH Pool] - Username: ${connectionConfig.username}`);
     console.error(`[SSH Pool] - Private key: ${connectionConfig.privateKeyPath}`);
     console.error(`[SSH Pool] - Ready timeout: ${connectionConfig.readyTimeout}ms`);
@@ -229,7 +224,9 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
       console.error(`[SSH Pool] Successfully connected to ${host.name}`);
       return ssh;
     } catch (error) {
-      console.error(`[SSH Pool] Connection failed to ${host.name}: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `[SSH Pool] Connection failed to ${host.name}: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }
@@ -263,7 +260,7 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
       return;
     }
 
-    const metadata = connections.find(c => c.connection === connection);
+    const metadata = connections.find((c) => c.connection === connection);
     if (metadata) {
       metadata.isActive = false;
       metadata.lastUsed = Date.now();

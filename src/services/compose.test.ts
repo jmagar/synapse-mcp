@@ -260,9 +260,9 @@ describe("composeExec - Security", () => {
   };
 
   it("should reject semicolon in extraArgs (prevents command chaining)", async () => {
-    await expect(
-      composeExec(testHost, "myproject", "up", ["--detach; rm -rf /"])
-    ).rejects.toThrow(/Invalid character/);
+    await expect(composeExec(testHost, "myproject", "up", ["--detach; rm -rf /"])).rejects.toThrow(
+      /Invalid character/
+    );
   });
 
   it("should reject pipe in extraArgs (prevents command piping)", async () => {
@@ -278,15 +278,15 @@ describe("composeExec - Security", () => {
   });
 
   it("should reject backticks in extraArgs (prevents command substitution)", async () => {
-    await expect(
-      composeExec(testHost, "myproject", "up", ["`whoami`"])
-    ).rejects.toThrow(/Invalid character/);
+    await expect(composeExec(testHost, "myproject", "up", ["`whoami`"])).rejects.toThrow(
+      /Invalid character/
+    );
   });
 
   it("should reject dollar sign in extraArgs (prevents variable expansion)", async () => {
-    await expect(
-      composeExec(testHost, "myproject", "up", ["$(malicious)"])
-    ).rejects.toThrow(/Invalid character/);
+    await expect(composeExec(testHost, "myproject", "up", ["$(malicious)"])).rejects.toThrow(
+      /Invalid character/
+    );
   });
 
   it("should reject greater-than in extraArgs (prevents file redirection)", async () => {
@@ -296,9 +296,9 @@ describe("composeExec - Security", () => {
   });
 
   it("should reject less-than in extraArgs (prevents file input)", async () => {
-    await expect(
-      composeExec(testHost, "myproject", "up", ["< /etc/passwd"])
-    ).rejects.toThrow(/Invalid character/);
+    await expect(composeExec(testHost, "myproject", "up", ["< /etc/passwd"])).rejects.toThrow(
+      /Invalid character/
+    );
   });
 
   it("should reject newline in extraArgs (prevents multi-line injection)", async () => {
@@ -340,17 +340,15 @@ describe("composeExec - Edge Cases", () => {
   it("should handle empty extraArgs array", async () => {
     mockSSHError("Connection refused");
 
-    await expect(
-      composeExec(testHost, "myproject", "ps", [])
-    ).rejects.toThrow(/SSH failed|Compose command failed/);
+    await expect(composeExec(testHost, "myproject", "ps", [])).rejects.toThrow(
+      /SSH failed|Compose command failed/
+    );
     // Should NOT throw validation error
   });
 
   it("should reject argument longer than 500 chars", async () => {
     const longArg = "a".repeat(501);
-    await expect(
-      composeExec(testHost, "myproject", "up", [longArg])
-    ).rejects.toThrow(/too long/);
+    await expect(composeExec(testHost, "myproject", "up", [longArg])).rejects.toThrow(/too long/);
   });
 
   it("should accept arguments with hyphens and underscores", async () => {
@@ -365,9 +363,9 @@ describe("composeExec - Edge Cases", () => {
   it("should accept arguments with dots and equals", async () => {
     mockSSHError("Connection refused");
 
-    await expect(
-      composeExec(testHost, "myproject", "up", ["--scale", "web=3"])
-    ).rejects.toThrow(/SSH failed|Compose command failed/);
+    await expect(composeExec(testHost, "myproject", "up", ["--scale", "web=3"])).rejects.toThrow(
+      /SSH failed|Compose command failed/
+    );
     // Should NOT throw validation error
   });
 });
@@ -439,12 +437,9 @@ describe("composeExec", () => {
       await composeExec(mockHostConfig, "myproject", "ps", []);
 
       // Verify timeout is passed to executeSSHCommand
-      expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
-        [],
-        { timeoutMs: 30000 }
-      );
+      expect(mockExecuteSSHCommand).toHaveBeenCalledWith(expect.anything(), expect.anything(), [], {
+        timeoutMs: 30000
+      });
     });
 
     // Step 13: composeExec should sanitize projectName (no special chars)
@@ -466,9 +461,9 @@ describe("composeExec", () => {
   describe("error handling", () => {
     // Step 14-16: composeExec with empty projectName should throw validation error
     it("should throw validation error for empty projectName", async () => {
-      await expect(
-        composeExec(mockHostConfig, "", "up", [])
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(composeExec(mockHostConfig, "", "up", [])).rejects.toThrow(
+        /Invalid project name/
+      );
 
       // SSH should not be called if validation fails
       expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
@@ -477,21 +472,21 @@ describe("composeExec", () => {
     // Step 17: composeExec with invalid projectName (special chars) should throw
     it("should throw validation error for projectName with special characters", async () => {
       // Test various invalid characters
-      await expect(
-        composeExec(mockHostConfig, "project;rm-rf", "up", [])
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(composeExec(mockHostConfig, "project;rm-rf", "up", [])).rejects.toThrow(
+        /Invalid project name/
+      );
 
-      await expect(
-        composeExec(mockHostConfig, "project name", "up", [])
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(composeExec(mockHostConfig, "project name", "up", [])).rejects.toThrow(
+        /Invalid project name/
+      );
 
-      await expect(
-        composeExec(mockHostConfig, "project$var", "up", [])
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(composeExec(mockHostConfig, "project$var", "up", [])).rejects.toThrow(
+        /Invalid project name/
+      );
 
-      await expect(
-        composeExec(mockHostConfig, "project.test", "up", [])
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(composeExec(mockHostConfig, "project.test", "up", [])).rejects.toThrow(
+        /Invalid project name/
+      );
 
       expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
     });
@@ -500,18 +495,18 @@ describe("composeExec", () => {
     it("should propagate SSH execution errors", async () => {
       mockSSHError("Connection refused");
 
-      await expect(
-        composeExec(mockHostConfig, "myproject", "up", ["-d"])
-      ).rejects.toThrow(/Compose command failed.*Connection refused/);
+      await expect(composeExec(mockHostConfig, "myproject", "up", ["-d"])).rejects.toThrow(
+        /Compose command failed.*Connection refused/
+      );
     });
 
     // Step 19: composeExec with timeout error should propagate timeout
     it("should propagate SSH timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(
-        composeExec(mockHostConfig, "myproject", "up", ["-d"])
-      ).rejects.toThrow(/Compose command failed.*timed out/);
+      await expect(composeExec(mockHostConfig, "myproject", "up", ["-d"])).rejects.toThrow(
+        /Compose command failed.*timed out/
+      );
     });
   });
 
@@ -639,13 +634,11 @@ describe("composeExec error handling", () => {
   it("should throw ComposeOperationError with project and action context", async () => {
     mockExecuteSSHCommand.mockRejectedValue(new Error("Connection refused"));
 
-    await expect(
-      composeExec(testHost, "my-project", "up", ["-d"])
-    ).rejects.toThrow(ComposeOperationError);
+    await expect(composeExec(testHost, "my-project", "up", ["-d"])).rejects.toThrow(
+      ComposeOperationError
+    );
 
-    await expect(
-      composeExec(testHost, "my-project", "up", ["-d"])
-    ).rejects.toMatchObject({
+    await expect(composeExec(testHost, "my-project", "up", ["-d"])).rejects.toMatchObject({
       hostName: testHost.name,
       project: "my-project",
       action: "up",
@@ -758,18 +751,18 @@ describe("listComposeProjects", () => {
 
       mockSSHSuccess(invalidJSON);
 
-      await expect(
-        listComposeProjects(mockHostConfig)
-      ).rejects.toThrow(/Failed to list compose projects/);
+      await expect(listComposeProjects(mockHostConfig)).rejects.toThrow(
+        /Failed to list compose projects/
+      );
     });
 
     // Step 33: listComposeProjects with SSH error should propagate error
     it("should propagate SSH errors with descriptive message", async () => {
       mockSSHError("Connection timeout");
 
-      await expect(
-        listComposeProjects(mockHostConfig)
-      ).rejects.toThrow(/Failed to list compose projects.*Connection timeout/);
+      await expect(listComposeProjects(mockHostConfig)).rejects.toThrow(
+        /Failed to list compose projects.*Connection timeout/
+      );
     });
   });
 
@@ -937,9 +930,7 @@ describe("listComposeProjects error handling", () => {
   it("should throw ComposeOperationError on SSH failure", async () => {
     mockExecuteSSHCommand.mockRejectedValue(new Error("SSH timeout"));
 
-    await expect(
-      listComposeProjects(testHost)
-    ).rejects.toMatchObject({
+    await expect(listComposeProjects(testHost)).rejects.toMatchObject({
       name: "ComposeOperationError",
       hostName: testHost.name,
       action: "ls"
@@ -1057,9 +1048,7 @@ describe("getComposeStatus", () => {
   describe("error handling", () => {
     // Step 45-47: getComposeStatus with invalid project name should throw validation error
     it("should throw validation error for empty project name", async () => {
-      await expect(
-        getComposeStatus(mockHostConfig, "")
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(getComposeStatus(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
 
       expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
     });
@@ -1068,9 +1057,9 @@ describe("getComposeStatus", () => {
     it("should propagate SSH errors with descriptive message", async () => {
       mockSSHError("Connection failed");
 
-      await expect(
-        getComposeStatus(mockHostConfig, "myapp")
-      ).rejects.toThrow(/Failed to get compose status.*Connection failed/);
+      await expect(getComposeStatus(mockHostConfig, "myapp")).rejects.toThrow(
+        /Failed to get compose status.*Connection failed/
+      );
     });
 
     // Step 49: getComposeStatus with invalid JSON should throw parse error
@@ -1096,9 +1085,9 @@ describe("getComposeStatus", () => {
     it("should propagate SSH timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(
-        getComposeStatus(mockHostConfig, "myapp")
-      ).rejects.toThrow(/Failed to get compose status.*timed out/);
+      await expect(getComposeStatus(mockHostConfig, "myapp")).rejects.toThrow(
+        /Failed to get compose status.*timed out/
+      );
     });
   });
 
@@ -1303,17 +1292,17 @@ describe("getComposeStatus", () => {
 
     // Additional edge case: Project name validation with special chars
     it("should throw validation error for project name with special characters", async () => {
-      await expect(
-        getComposeStatus(mockHostConfig, "project; rm -rf /")
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(getComposeStatus(mockHostConfig, "project; rm -rf /")).rejects.toThrow(
+        /Invalid project name/
+      );
 
-      await expect(
-        getComposeStatus(mockHostConfig, "project name with spaces")
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(getComposeStatus(mockHostConfig, "project name with spaces")).rejects.toThrow(
+        /Invalid project name/
+      );
 
-      await expect(
-        getComposeStatus(mockHostConfig, "project.with.dots")
-      ).rejects.toThrow(/Invalid project name/);
+      await expect(getComposeStatus(mockHostConfig, "project.with.dots")).rejects.toThrow(
+        /Invalid project name/
+      );
 
       expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
     });
@@ -1335,9 +1324,7 @@ describe("getComposeStatus error handling", () => {
   it("should throw ComposeOperationError with project context", async () => {
     mockExecuteSSHCommand.mockRejectedValue(new Error("Project not found"));
 
-    await expect(
-      getComposeStatus(testHost, "web-stack")
-    ).rejects.toMatchObject({
+    await expect(getComposeStatus(testHost, "web-stack")).rejects.toMatchObject({
       name: "ComposeOperationError",
       hostName: testHost.name,
       project: "web-stack",
@@ -1403,19 +1390,33 @@ describe("edge cases and error scenarios", () => {
 
   describe("project name validation with special chars - Step 92", () => {
     it("composeUp should reject project names with special characters", async () => {
-      await expect(composeUp(mockHostConfig, "project;rm-rf")).rejects.toThrow(/Invalid project name/);
-      await expect(composeUp(mockHostConfig, "project name")).rejects.toThrow(/Invalid project name/);
-      await expect(composeUp(mockHostConfig, "project.test")).rejects.toThrow(/Invalid project name/);
+      await expect(composeUp(mockHostConfig, "project;rm-rf")).rejects.toThrow(
+        /Invalid project name/
+      );
+      await expect(composeUp(mockHostConfig, "project name")).rejects.toThrow(
+        /Invalid project name/
+      );
+      await expect(composeUp(mockHostConfig, "project.test")).rejects.toThrow(
+        /Invalid project name/
+      );
     });
 
     it("composeDown should reject project names with special characters", async () => {
-      await expect(composeDown(mockHostConfig, "project;rm-rf")).rejects.toThrow(/Invalid project name/);
-      await expect(composeDown(mockHostConfig, "project$var")).rejects.toThrow(/Invalid project name/);
+      await expect(composeDown(mockHostConfig, "project;rm-rf")).rejects.toThrow(
+        /Invalid project name/
+      );
+      await expect(composeDown(mockHostConfig, "project$var")).rejects.toThrow(
+        /Invalid project name/
+      );
     });
 
     it("getComposeStatus should reject project names with special characters", async () => {
-      await expect(getComposeStatus(mockHostConfig, "project;rm-rf")).rejects.toThrow(/Invalid project name/);
-      await expect(getComposeStatus(mockHostConfig, "project name")).rejects.toThrow(/Invalid project name/);
+      await expect(getComposeStatus(mockHostConfig, "project;rm-rf")).rejects.toThrow(
+        /Invalid project name/
+      );
+      await expect(getComposeStatus(mockHostConfig, "project name")).rejects.toThrow(
+        /Invalid project name/
+      );
     });
   });
 
@@ -1423,55 +1424,73 @@ describe("edge cases and error scenarios", () => {
     it("composeUp should propagate SSH errors", async () => {
       mockSSHError("Connection refused");
 
-      await expect(composeUp(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Connection refused/);
+      await expect(composeUp(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*Connection refused/
+      );
     });
 
     it("composeDown should propagate SSH errors", async () => {
       mockSSHError("Authentication failed");
 
-      await expect(composeDown(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Authentication failed/);
+      await expect(composeDown(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*Authentication failed/
+      );
     });
 
     it("composeRestart should propagate SSH errors", async () => {
       mockSSHError("Host unreachable");
 
-      await expect(composeRestart(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Host unreachable/);
+      await expect(composeRestart(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*Host unreachable/
+      );
     });
 
     it("composeLogs should propagate SSH errors", async () => {
       mockSSHError("Connection timed out");
 
-      await expect(composeLogs(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Connection timed out/);
+      await expect(composeLogs(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*Connection timed out/
+      );
     });
 
     it("composeBuild should propagate SSH errors", async () => {
       mockSSHError("Network error");
 
-      await expect(composeBuild(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Network error/);
+      await expect(composeBuild(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*Network error/
+      );
     });
 
     it("composePull should propagate SSH errors", async () => {
       mockSSHError("SSH key not found");
 
-      await expect(composePull(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*SSH key not found/);
+      await expect(composePull(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*SSH key not found/
+      );
     });
 
     it("composeRecreate should propagate SSH errors", async () => {
       mockSSHError("Connection reset");
 
-      await expect(composeRecreate(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*Connection reset/);
+      await expect(composeRecreate(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*Connection reset/
+      );
     });
 
     it("listComposeProjects should propagate SSH errors", async () => {
       mockSSHError("Unreachable host");
 
-      await expect(listComposeProjects(mockHostConfig)).rejects.toThrow(/Failed to list compose projects.*Unreachable host/);
+      await expect(listComposeProjects(mockHostConfig)).rejects.toThrow(
+        /Failed to list compose projects.*Unreachable host/
+      );
     });
 
     it("getComposeStatus should propagate SSH errors", async () => {
       mockSSHError("Connection refused");
 
-      await expect(getComposeStatus(mockHostConfig, "myproject")).rejects.toThrow(/Failed to get compose status.*Connection refused/);
+      await expect(getComposeStatus(mockHostConfig, "myproject")).rejects.toThrow(
+        /Failed to get compose status.*Connection refused/
+      );
     });
   });
 
@@ -1479,55 +1498,73 @@ describe("edge cases and error scenarios", () => {
     it("composeUp should propagate timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(composeUp(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+      await expect(composeUp(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*timed out/
+      );
     });
 
     it("composeDown should propagate timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(composeDown(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+      await expect(composeDown(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*timed out/
+      );
     });
 
     it("composeRestart should propagate timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(composeRestart(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+      await expect(composeRestart(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*timed out/
+      );
     });
 
     it("composeLogs should propagate timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(composeLogs(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+      await expect(composeLogs(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*timed out/
+      );
     });
 
     it("composeBuild should propagate timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(composeBuild(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+      await expect(composeBuild(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*timed out/
+      );
     });
 
     it("composePull should propagate timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(composePull(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+      await expect(composePull(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*timed out/
+      );
     });
 
     it("composeRecreate should propagate timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(composeRecreate(mockHostConfig, "myproject")).rejects.toThrow(/Compose command failed.*timed out/);
+      await expect(composeRecreate(mockHostConfig, "myproject")).rejects.toThrow(
+        /Compose command failed.*timed out/
+      );
     });
 
     it("listComposeProjects should propagate timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(listComposeProjects(mockHostConfig)).rejects.toThrow(/Failed to list compose projects.*timed out/);
+      await expect(listComposeProjects(mockHostConfig)).rejects.toThrow(
+        /Failed to list compose projects.*timed out/
+      );
     });
 
     it("getComposeStatus should propagate timeout errors", async () => {
       mockSSHTimeout();
 
-      await expect(getComposeStatus(mockHostConfig, "myproject")).rejects.toThrow(/Failed to get compose status.*timed out/);
+      await expect(getComposeStatus(mockHostConfig, "myproject")).rejects.toThrow(
+        /Failed to get compose status.*timed out/
+      );
     });
   });
 
@@ -1566,19 +1603,25 @@ describe("edge cases and error scenarios", () => {
     });
 
     it("should reject project names containing pipes before execution", async () => {
-      await expect(composeDown(mockHostConfig, "project|cat")).rejects.toThrow(/Invalid project name/);
+      await expect(composeDown(mockHostConfig, "project|cat")).rejects.toThrow(
+        /Invalid project name/
+      );
 
       expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
     });
 
     it("should reject project names containing dollar signs before execution", async () => {
-      await expect(composeRestart(mockHostConfig, "project$var")).rejects.toThrow(/Invalid project name/);
+      await expect(composeRestart(mockHostConfig, "project$var")).rejects.toThrow(
+        /Invalid project name/
+      );
 
       expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
     });
 
     it("should reject project names containing backticks before execution", async () => {
-      await expect(composeLogs(mockHostConfig, "project`whoami`")).rejects.toThrow(/Invalid project name/);
+      await expect(composeLogs(mockHostConfig, "project`whoami`")).rejects.toThrow(
+        /Invalid project name/
+      );
 
       expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
     });
@@ -1586,7 +1629,7 @@ describe("edge cases and error scenarios", () => {
 
   describe("empty project name rejection - Step 96", () => {
     it("should reject empty strings for all lifecycle functions before SSH", async () => {
-      const functions = [
+      const functions: Array<() => Promise<unknown>> = [
         () => composeUp(mockHostConfig, ""),
         () => composeDown(mockHostConfig, ""),
         () => composeRestart(mockHostConfig, ""),
@@ -1615,7 +1658,7 @@ describe("edge cases and error scenarios", () => {
 
     it("should validate project names before calling SSH for all functions", async () => {
       const invalidNames = ["", " ", "project;ls", "project|cat", "project$var"];
-      const functions = [
+      const functions: Array<(name: string) => Promise<unknown>> = [
         (name: string) => composeUp(mockHostConfig, name),
         (name: string) => composeDown(mockHostConfig, name),
         (name: string) => getComposeStatus(mockHostConfig, name)
@@ -1726,7 +1769,9 @@ describe("parseComposeStatus - JSON parsing", () => {
       ]);
 
       // Helper function to parse container status JSON
-      const parseContainerStatusJSON = (jsonString: string): Array<{
+      const parseContainerStatusJSON = (
+        jsonString: string
+      ): Array<{
         Name: string;
         Service: string;
         State: string;
@@ -1756,7 +1801,9 @@ describe("parseComposeStatus - JSON parsing", () => {
     it("should handle empty container array", () => {
       const emptyJSON = "[]";
 
-      const parseContainerStatusJSON = (jsonString: string): Array<{
+      const parseContainerStatusJSON = (
+        jsonString: string
+      ): Array<{
         Name: string;
         Service: string;
         State: string;
@@ -1777,7 +1824,9 @@ describe("parseComposeStatus - JSON parsing", () => {
     it("should throw descriptive error for invalid JSON", () => {
       const invalidJSON = "not valid json";
 
-      const parseContainerStatusJSON = (jsonString: string): Array<{
+      const parseContainerStatusJSON = (
+        jsonString: string
+      ): Array<{
         Name: string;
         Service: string;
         State: string;
@@ -1802,7 +1851,9 @@ describe("parseComposeStatus - JSON parsing", () => {
         { Name: "incomplete-container" } // missing Service, State, Status
       ]);
 
-      const parseContainerStatusJSON = (jsonString: string): Array<{
+      const parseContainerStatusJSON = (
+        jsonString: string
+      ): Array<{
         Name: string;
         Service: string;
         State: string;
@@ -1822,7 +1873,9 @@ describe("parseComposeStatus - JSON parsing", () => {
     it("should throw error for invalid JSON syntax", () => {
       const invalidJSON = "[{Name: 'test'} "; // Missing closing bracket
 
-      const parseContainerStatusJSON = (jsonString: string): Array<{
+      const parseContainerStatusJSON = (
+        jsonString: string
+      ): Array<{
         Name: string;
         Service: string;
         State: string;
@@ -1853,7 +1906,9 @@ describe("parseComposeStatus - JSON parsing", () => {
         }
       ]);
 
-      const parseContainerStatusJSON = (jsonString: string): Array<{
+      const parseContainerStatusJSON = (
+        jsonString: string
+      ): Array<{
         Name: string;
         Service: string;
         State: string;
@@ -1893,7 +1948,9 @@ describe("parseComposeStatus - JSON parsing", () => {
         }
       ]);
 
-      const parseContainerStatusJSON = (jsonString: string): Array<{
+      const parseContainerStatusJSON = (
+        jsonString: string
+      ): Array<{
         Name: string;
         Service: string;
         State: string;
@@ -1922,7 +1979,9 @@ describe("parseComposeStatus - JSON parsing", () => {
         }
       ]`;
 
-      const parseContainerStatusJSON = (jsonString: string): Array<{
+      const parseContainerStatusJSON = (
+        jsonString: string
+      ): Array<{
         Name: string;
         Service: string;
         State: string;
@@ -2024,15 +2083,15 @@ describe("composeUp", () => {
   it("should propagate SSH errors", async () => {
     mockSSHError("Connection failed");
 
-    await expect(
-      composeUp(mockHostConfig, "myproject")
-    ).rejects.toThrow(/Compose command failed.*Connection failed/);
+    await expect(composeUp(mockHostConfig, "myproject")).rejects.toThrow(
+      /Compose command failed.*Connection failed/
+    );
   });
 
   it("should validate project name", async () => {
-    await expect(
-      composeUp(mockHostConfig, "invalid project")
-    ).rejects.toThrow(/Invalid project name/);
+    await expect(composeUp(mockHostConfig, "invalid project")).rejects.toThrow(
+      /Invalid project name/
+    );
 
     expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
   });
@@ -2111,15 +2170,15 @@ describe("composeDown", () => {
   it("should propagate SSH errors", async () => {
     mockSSHError("Network error");
 
-    await expect(
-      composeDown(mockHostConfig, "myproject")
-    ).rejects.toThrow(/Compose command failed.*Network error/);
+    await expect(composeDown(mockHostConfig, "myproject")).rejects.toThrow(
+      /Compose command failed.*Network error/
+    );
   });
 
   it("should validate project name", async () => {
-    await expect(
-      composeDown(mockHostConfig, "project; rm -rf /")
-    ).rejects.toThrow(/Invalid project name/);
+    await expect(composeDown(mockHostConfig, "project; rm -rf /")).rejects.toThrow(
+      /Invalid project name/
+    );
 
     expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
   });
@@ -2176,23 +2235,21 @@ describe("composeRestart", () => {
   it("should propagate SSH errors", async () => {
     mockSSHError("Timeout error");
 
-    await expect(
-      composeRestart(mockHostConfig, "myproject")
-    ).rejects.toThrow(/Compose command failed.*Timeout error/);
+    await expect(composeRestart(mockHostConfig, "myproject")).rejects.toThrow(
+      /Compose command failed.*Timeout error/
+    );
   });
 
   it("should validate project name", async () => {
-    await expect(
-      composeRestart(mockHostConfig, "")
-    ).rejects.toThrow(/Invalid project name/);
+    await expect(composeRestart(mockHostConfig, "")).rejects.toThrow(/Invalid project name/);
 
     expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
   });
 
   it("should handle special characters in project name correctly", async () => {
-    await expect(
-      composeRestart(mockHostConfig, "project$test")
-    ).rejects.toThrow(/Invalid project name/);
+    await expect(composeRestart(mockHostConfig, "project$test")).rejects.toThrow(
+      /Invalid project name/
+    );
 
     expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
   });

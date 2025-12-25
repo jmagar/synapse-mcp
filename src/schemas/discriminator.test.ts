@@ -59,7 +59,7 @@ describe("Discriminator transform", () => {
     }
 
     // Verify we have exactly 30 unique discriminators
-    const discriminators = new Set(combinations.map(c => `${c.action}:${c.subaction}`));
+    const discriminators = new Set(combinations.map((c) => `${c.action}:${c.subaction}`));
     expect(discriminators.size).toBe(30);
   });
 

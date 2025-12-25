@@ -24,8 +24,17 @@ vi.mock("../services/compose.js", () => ({
     status: "running",
     configFiles: ["/opt/myapp/docker-compose.yaml"],
     services: [
-      { name: "web", status: "running", health: "healthy", publishers: [{ publishedPort: 8080, targetPort: 80, protocol: "tcp" }] },
-      { name: "db", status: "running", publishers: [{ publishedPort: 5432, targetPort: 5432, protocol: "tcp" }] }
+      {
+        name: "web",
+        status: "running",
+        health: "healthy",
+        publishers: [{ publishedPort: 8080, targetPort: 80, protocol: "tcp" }]
+      },
+      {
+        name: "db",
+        status: "running",
+        publishers: [{ publishedPort: 5432, targetPort: 5432, protocol: "tcp" }]
+      }
     ]
   }),
   composeUp: vi.fn().mockResolvedValue("Started project"),
@@ -39,9 +48,8 @@ vi.mock("../services/compose.js", () => ({
 
 // Mock the docker service
 vi.mock("../services/docker.js", async () => {
-  const actual = await vi.importActual<typeof import("../services/docker.js")>(
-    "../services/docker.js"
-  );
+  const actual =
+    await vi.importActual<typeof import("../services/docker.js")>("../services/docker.js");
   return {
     ...actual,
     containerAction: vi.fn().mockResolvedValue(undefined),
@@ -72,7 +80,9 @@ vi.mock("../services/docker.js", async () => {
       Mounts: []
     }),
     pullImage: vi.fn().mockResolvedValue({ status: "Image pulled successfully" }),
-    recreateContainer: vi.fn().mockResolvedValue({ status: "Container recreated", containerId: "new-abc123456789" }),
+    recreateContainer: vi
+      .fn()
+      .mockResolvedValue({ status: "Container recreated", containerId: "new-abc123456789" }),
     listImages: vi.fn().mockImplementation(async () => [
       {
         id: "sha256:abc123",
@@ -94,9 +104,11 @@ vi.mock("../services/docker.js", async () => {
     buildImage: vi.fn().mockResolvedValue(undefined),
     removeImage: vi.fn().mockResolvedValue(undefined),
     listContainers: vi.fn().mockImplementation(async () => []),
-    loadHostConfigs: vi.fn().mockReturnValue([
-      { name: "testhost", host: "localhost", port: 2375, protocol: "http" }
-    ] as HostConfig[]),
+    loadHostConfigs: vi
+      .fn()
+      .mockReturnValue([
+        { name: "testhost", host: "localhost", port: 2375, protocol: "http" }
+      ] as HostConfig[]),
     findContainerHost: vi.fn().mockResolvedValue({
       host: { name: "testhost", host: "localhost", port: 2375, protocol: "http" },
       container: { Id: "abc123", Names: ["/my-container"] }
@@ -315,8 +327,6 @@ describe("unified tool integration", () => {
       });
 
       it("should get stats for all containers when container_id not specified", async () => {
-        const dockerService = await import("../services/docker.js");
-
         const result = (await toolHandler({
           action: "container",
           subaction: "stats",
@@ -340,7 +350,7 @@ describe("unified tool integration", () => {
           Config: {
             Image: "nginx:latest",
             Env: ["NODE_ENV=production", "PORT=3000", "API_KEY=secret123"],
-            Labels: { "com.docker.compose.project": "myapp", "version": "1.0" }
+            Labels: { "com.docker.compose.project": "myapp", version: "1.0" }
           },
           State: {
             Status: "running",
@@ -357,9 +367,7 @@ describe("unified tool integration", () => {
               bridge: {}
             }
           },
-          Mounts: [
-            { Source: "/data", Destination: "/app/data", Type: "bind", Mode: "rw" }
-          ]
+          Mounts: [{ Source: "/data", Destination: "/app/data", Type: "bind", Mode: "rw" }]
         });
 
         const result = (await toolHandler({
@@ -1062,9 +1070,21 @@ describe("unified tool integration", () => {
       it("should get Docker disk usage", async () => {
         const dockerService = await import("../services/docker.js");
         vi.spyOn(dockerService, "getDockerDiskUsage").mockResolvedValue({
-          images: { active: 10, size: 5.2 * 1024 * 1024 * 1024, reclaimable: 1 * 1024 * 1024 * 1024 },
-          containers: { active: 5, size: 1.5 * 1024 * 1024 * 1024, reclaimable: 0.5 * 1024 * 1024 * 1024 },
-          volumes: { active: 3, size: 10 * 1024 * 1024 * 1024, reclaimable: 2 * 1024 * 1024 * 1024 },
+          images: {
+            active: 10,
+            size: 5.2 * 1024 * 1024 * 1024,
+            reclaimable: 1 * 1024 * 1024 * 1024
+          },
+          containers: {
+            active: 5,
+            size: 1.5 * 1024 * 1024 * 1024,
+            reclaimable: 0.5 * 1024 * 1024 * 1024
+          },
+          volumes: {
+            active: 3,
+            size: 10 * 1024 * 1024 * 1024,
+            reclaimable: 2 * 1024 * 1024 * 1024
+          },
           buildCache: { active: 2, size: 500 * 1024 * 1024, reclaimable: 250 * 1024 * 1024 }
         });
 
@@ -1258,7 +1278,9 @@ describe("unified tool integration", () => {
 
       it("should handle errors during prune operation", async () => {
         const dockerService = await import("../services/docker.js");
-        vi.spyOn(dockerService, "pruneDocker").mockRejectedValue(new Error("Docker daemon not available"));
+        vi.spyOn(dockerService, "pruneDocker").mockRejectedValue(
+          new Error("Docker daemon not available")
+        );
 
         const result = (await toolHandler({
           action: "docker",
@@ -1279,7 +1301,7 @@ describe("unified tool integration", () => {
       it("should return error for unknown docker subaction", async () => {
         const result = (await toolHandler({
           action: "docker",
-          subaction: "invalid_action" as any
+          subaction: "invalid_action" as unknown
         })) as { isError: boolean; content: Array<{ text: string }> };
 
         expect(result.isError).toBe(true);
@@ -1333,8 +1355,22 @@ describe("unified tool integration", () => {
 
       it("should list images with pagination", async () => {
         vi.spyOn(dockerService, "listImages").mockResolvedValue([
-          { id: "sha256:abc123", tags: ["nginx:latest"], size: 142 * 1024 * 1024, created: "2024-01-01T10:00:00Z", containers: 1, hostName: "testhost" },
-          { id: "sha256:def456", tags: ["<none>:<none>"], size: 1.2 * 1024 * 1024 * 1024, created: "2024-01-02T10:00:00Z", containers: 0, hostName: "testhost" }
+          {
+            id: "sha256:abc123",
+            tags: ["nginx:latest"],
+            size: 142 * 1024 * 1024,
+            created: "2024-01-01T10:00:00Z",
+            containers: 1,
+            hostName: "testhost"
+          },
+          {
+            id: "sha256:def456",
+            tags: ["<none>:<none>"],
+            size: 1.2 * 1024 * 1024 * 1024,
+            created: "2024-01-02T10:00:00Z",
+            containers: 0,
+            hostName: "testhost"
+          }
         ]);
 
         const result = (await toolHandler({
@@ -1359,7 +1395,14 @@ describe("unified tool integration", () => {
 
       it("should list only dangling images", async () => {
         vi.spyOn(dockerService, "listImages").mockResolvedValue([
-          { id: "sha256:def456", tags: ["<none>:<none>"], size: 1.2 * 1024 * 1024 * 1024, created: "2024-01-02T10:00:00Z", containers: 0, hostName: "testhost" }
+          {
+            id: "sha256:def456",
+            tags: ["<none>:<none>"],
+            size: 1.2 * 1024 * 1024 * 1024,
+            created: "2024-01-02T10:00:00Z",
+            containers: 0,
+            hostName: "testhost"
+          }
         ]);
 
         const result = (await toolHandler({
@@ -1486,7 +1529,7 @@ describe("unified tool integration", () => {
       it("should return error for unknown image subaction", async () => {
         const result = (await toolHandler({
           action: "image",
-          subaction: "invalid_action" as any,
+          subaction: "invalid_action" as unknown,
           host: "testhost"
         })) as { isError: boolean; content: Array<{ text: string }> };
 
@@ -1536,23 +1579,21 @@ describe("Container stats collection performance", () => {
   beforeEach(async () => {
     // Mock getContainerStats to simulate 500ms delay
     const dockerService = await import("../services/docker.js");
-    vi.spyOn(dockerService, "getContainerStats").mockImplementation(
-      async (id, _host) => {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        return {
-          containerId: id,
-          containerName: `container-${id}`,
-          cpuPercent: 10.5,
-          memoryUsage: 1024 * 1024 * 100,
-          memoryLimit: 1024 * 1024 * 500,
-          memoryPercent: 20.0,
-          networkRx: 1024,
-          networkTx: 2048,
-          blockRead: 512,
-          blockWrite: 256
-        };
-      }
-    );
+    vi.spyOn(dockerService, "getContainerStats").mockImplementation(async (id, _host) => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return {
+        containerId: id,
+        containerName: `container-${id}`,
+        cpuPercent: 10.5,
+        memoryUsage: 1024 * 1024 * 100,
+        memoryLimit: 1024 * 1024 * 500,
+        memoryPercent: 20.0,
+        networkRx: 1024,
+        networkTx: 2048,
+        blockRead: 512,
+        blockWrite: 256
+      };
+    });
 
     // Mock listContainers to return 5 containers (reduced for faster testing)
     vi.spyOn(dockerService, "listContainers").mockResolvedValue(

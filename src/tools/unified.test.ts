@@ -41,7 +41,6 @@ vi.mock("../services/ssh.js", () => ({
 }));
 
 import { loadHostConfigs, listContainers } from "../services/docker.js";
-import { getHostResources } from "../services/ssh.js";
 
 describe("registerUnifiedTool", () => {
   let mockServer: McpServer;
@@ -113,9 +112,7 @@ describe("collectStatsParallel error handling", () => {
 
   it("should log errors when stats collection fails", async () => {
     // Setup mock hosts
-    const mockHosts = [
-      { name: "test-host", host: "localhost", port: 2375 }
-    ];
+    const mockHosts = [{ name: "test-host", host: "localhost", port: 2375 }];
     vi.mocked(loadHostConfigs).mockReturnValue(mockHosts);
 
     // Mock listContainers to throw an error to trigger catch block

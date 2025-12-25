@@ -71,9 +71,7 @@ export function setupDockerMocks(): void {
   mockRemoveImage.mockResolvedValue(undefined);
   mockBuildImage.mockResolvedValue(undefined);
   mockRecreateContainer.mockResolvedValue({ status: "Recreated", containerId: "new123" });
-  mockGetHostStatus.mockResolvedValue([
-    { host: "host1", status: "ok", error: null }
-  ]);
+  mockGetHostStatus.mockResolvedValue([{ host: "host1", status: "ok", error: null }]);
 }
 
 export function resetDockerMocks(): void {

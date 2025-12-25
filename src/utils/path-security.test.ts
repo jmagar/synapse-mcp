@@ -54,9 +54,7 @@ describe("validateSecurePath", () => {
     });
 
     it("should reject single dot path", () => {
-      expect(() => validateSecurePath(".", "context")).toThrow(
-        /absolute path required/i
-      );
+      expect(() => validateSecurePath(".", "context")).toThrow(/absolute path required/i);
     });
   });
 
@@ -78,7 +76,9 @@ describe("validateSecurePath", () => {
     });
 
     it("should accept deep nested path", () => {
-      expect(() => validateSecurePath("/very/deep/nested/directory/structure/build", "context")).not.toThrow();
+      expect(() =>
+        validateSecurePath("/very/deep/nested/directory/structure/build", "context")
+      ).not.toThrow();
     });
 
     it("should accept single character directories", () => {
@@ -100,29 +100,21 @@ describe("validateSecurePath", () => {
     });
 
     it("should reject paths with semicolons", () => {
-      expect(() => validateSecurePath("/path;rm -rf /", "context")).toThrow(
-        /invalid characters/i
-      );
+      expect(() => validateSecurePath("/path;rm -rf /", "context")).toThrow(/invalid characters/i);
     });
 
     it("should reject paths with backticks", () => {
-      expect(() => validateSecurePath("/path/`whoami`", "context")).toThrow(
-        /invalid characters/i
-      );
+      expect(() => validateSecurePath("/path/`whoami`", "context")).toThrow(/invalid characters/i);
     });
   });
 
   describe("error messages", () => {
     it("should include parameter name in error message", () => {
-      expect(() => validateSecurePath("../etc/passwd", "buildContext")).toThrow(
-        /buildContext/
-      );
+      expect(() => validateSecurePath("../etc/passwd", "buildContext")).toThrow(/buildContext/);
     });
 
     it("should include parameter name for character errors", () => {
-      expect(() => validateSecurePath("/path with spaces", "dockerfile")).toThrow(
-        /dockerfile/
-      );
+      expect(() => validateSecurePath("/path with spaces", "dockerfile")).toThrow(/dockerfile/);
     });
   });
 

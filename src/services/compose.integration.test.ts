@@ -13,9 +13,9 @@ describe("Compose Security - Integration", () => {
     // Attempt realistic attack: stop legitimate service, then delete data
     const attackVector = ["down", "-v;", "rm", "-rf", "/var/lib/docker"];
 
-    await expect(
-      composeExec(maliciousHost, "production-db", "up", attackVector)
-    ).rejects.toThrow(/Invalid character/);
+    await expect(composeExec(maliciousHost, "production-db", "up", attackVector)).rejects.toThrow(
+      /Invalid character/
+    );
 
     // Verify error message contains security context
     try {

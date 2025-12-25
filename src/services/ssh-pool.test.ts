@@ -156,7 +156,7 @@ describe("SSHConnectionPoolImpl - connection management", () => {
     expect(conn1).toBe(conn2); // Same connection object
     const stats = pool.getStats();
     expect(stats.poolMisses).toBe(1); // Only one creation
-    expect(stats.poolHits).toBe(1);   // One reuse
+    expect(stats.poolHits).toBe(1); // One reuse
     expect(stats.activeConnections).toBe(1);
     expect(stats.totalConnections).toBe(1);
   });
