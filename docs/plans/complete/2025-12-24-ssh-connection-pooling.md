@@ -1235,18 +1235,25 @@ export async function executeSSHCommand(
     });
 
     if (result.code !== 0) {
+      // Non-zero exit code is a command failure, not a connection failure
+      // Release connection since it's still healthy
+      await pool.releaseConnection(host, connection);
       throw new Error(`Command failed with code ${result.code}: ${result.stderr}`);
     }
 
+    // Success - release connection back to pool
+    await pool.releaseConnection(host, connection);
     return result.stdout.trim();
   } catch (error) {
-    // Don't release connection if it failed - it will be removed by health check
+    // Connection-level failures (network errors, timeouts, etc.)
+    // Don't release - connection will be removed by health check
+    if (error instanceof Error && error.message.startsWith("Command failed with code")) {
+      // Re-throw command failures (connection already released above)
+      throw error;
+    }
     throw new Error(
       `SSH command failed: ${error instanceof Error ? error.message : "Unknown error"}`
     );
-  } finally {
-    // Release connection back to pool
-    await pool.releaseConnection(host, connection);
   }
 }
 ```
