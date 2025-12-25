@@ -341,7 +341,7 @@ Size: 142 MB
 
 ### Path Traversal Protection (CWE-22)
 
-The `image_build` tool implements strict path validation to prevent directory traversal attacks:
+The image build operation (`action="image"`, `subaction="build"`) implements strict path validation to prevent directory traversal attacks:
 
 - **Absolute paths required**: All paths (context, dockerfile) must start with `/`
 - **Traversal blocked**: Paths containing `..` or `.` components are rejected
