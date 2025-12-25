@@ -6,11 +6,14 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { registerTools } from "./tools/index.js";
-import { clearDockerClients } from "./services/docker.js";
+import { createDefaultContainer, type ServiceContainer } from "./services/container.js";
 
 // Server metadata
 const SERVER_NAME = "homelab-mcp-server";
 const SERVER_VERSION = "1.0.0";
+
+// Global service container instance
+let globalContainer: ServiceContainer | undefined;
 
 /**
  * Create and configure the MCP server
@@ -21,8 +24,11 @@ function createServer(): McpServer {
     version: SERVER_VERSION
   });
 
+  // Create and register service container
+  globalContainer = createDefaultContainer();
+
   // Register all homelab tools
-  registerTools(server);
+  registerTools(server, globalContainer);
 
   return server;
 }
@@ -143,16 +149,28 @@ CLAUDE CODE CONFIG (~/.claude/claude_code_config.json):
 /**
  * Graceful shutdown handler
  */
-function shutdown(signal: string): void {
+async function shutdown(signal: string): Promise<void> {
   console.error(`\nReceived ${signal}, shutting down gracefully...`);
-  clearDockerClients();
+  if (globalContainer) {
+    await globalContainer.cleanup();
+  }
   console.error("Cleanup complete");
   process.exit(0);
 }
 
 // Register signal handlers for graceful shutdown
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => {
+  shutdown("SIGINT").catch((error) => {
+    console.error("Error during shutdown:", error);
+    process.exit(1);
+  });
+});
+process.on("SIGTERM", () => {
+  shutdown("SIGTERM").catch((error) => {
+    console.error("Error during shutdown:", error);
+    process.exit(1);
+  });
+});
 
 // Main entry point
 const args = process.argv.slice(2);

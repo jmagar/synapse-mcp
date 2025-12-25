@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { logError } from "../utils/errors.js";
+import { ServiceContainer } from "../services/container.js";
 
 vi.mock("../utils/errors.js", () => ({
   logError: vi.fn(),
@@ -18,33 +19,15 @@ vi.mock("../utils/errors.js", () => ({
 }));
 
 vi.mock("../services/docker.js", () => ({
-  loadHostConfigs: vi.fn(),
-  listContainers: vi.fn(),
-  containerAction: vi.fn(),
-  getContainerLogs: vi.fn(),
-  getContainerStats: vi.fn(),
-  getHostStatus: vi.fn(),
-  inspectContainer: vi.fn(),
-  findContainerHost: vi.fn(),
-  getDockerInfo: vi.fn(),
-  getDockerDiskUsage: vi.fn(),
-  pruneDocker: vi.fn(),
-  listImages: vi.fn(),
-  pullImage: vi.fn(),
-  recreateContainer: vi.fn(),
-  removeImage: vi.fn(),
-  buildImage: vi.fn()
+  loadHostConfigs: vi.fn()
 }));
 
-vi.mock("../services/ssh.js", () => ({
-  getHostResources: vi.fn()
-}));
-
-import { loadHostConfigs, listContainers } from "../services/docker.js";
+import { loadHostConfigs } from "../services/docker.js";
 
 describe("registerUnifiedTool", () => {
   let mockServer: McpServer;
   let registeredTools: Map<string, unknown>;
+  let mockContainer: ServiceContainer;
 
   beforeEach(() => {
     registeredTools = new Map();
@@ -53,11 +36,12 @@ describe("registerUnifiedTool", () => {
         registeredTools.set(name, { config, handler });
       })
     } as unknown as McpServer;
+    mockContainer = new ServiceContainer();
   });
 
   it("should register a single 'homelab' tool", async () => {
     const { registerUnifiedTool } = await import("./unified.js");
-    registerUnifiedTool(mockServer);
+    registerUnifiedTool(mockServer, mockContainer);
 
     expect(mockServer.registerTool).toHaveBeenCalledTimes(1);
     expect(registeredTools.has("homelab")).toBe(true);
@@ -65,7 +49,7 @@ describe("registerUnifiedTool", () => {
 
   it("should register tool with correct title and description", async () => {
     const { registerUnifiedTool } = await import("./unified.js");
-    registerUnifiedTool(mockServer);
+    registerUnifiedTool(mockServer, mockContainer);
 
     const tool = registeredTools.get("homelab") as {
       config: { title: string; description: string };
@@ -80,7 +64,7 @@ describe("registerUnifiedTool", () => {
 
   it("should have a handler function", async () => {
     const { registerUnifiedTool } = await import("./unified.js");
-    registerUnifiedTool(mockServer);
+    registerUnifiedTool(mockServer, mockContainer);
 
     const tool = registeredTools.get("homelab") as { handler: unknown };
     expect(typeof tool.handler).toBe("function");
@@ -93,8 +77,9 @@ describe("routeAction", () => {
     const mockServer = {
       registerTool: vi.fn()
     } as unknown as McpServer;
+    const mockContainer = new ServiceContainer();
 
-    registerUnifiedTool(mockServer);
+    registerUnifiedTool(mockServer, mockContainer);
 
     const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
     const result = await handler({ action: "invalid", subaction: "list" });
@@ -115,8 +100,12 @@ describe("collectStatsParallel error handling", () => {
     const mockHosts = [{ name: "test-host", host: "localhost", port: 2375 }];
     vi.mocked(loadHostConfigs).mockReturnValue(mockHosts);
 
-    // Mock listContainers to throw an error to trigger catch block
-    vi.mocked(listContainers).mockRejectedValueOnce(new Error("Connection timeout"));
+    // Create mock container with mocked docker service
+    const mockContainer = new ServiceContainer();
+    const mockDockerService = {
+      listContainers: vi.fn().mockRejectedValueOnce(new Error("Connection timeout"))
+    };
+    mockContainer.setDockerService(mockDockerService as never);
 
     // Dynamically import to access collectStatsParallel through tool handler
     const { registerUnifiedTool } = await import("./unified.js");
@@ -124,7 +113,7 @@ describe("collectStatsParallel error handling", () => {
       registerTool: vi.fn()
     } as unknown as McpServer;
 
-    registerUnifiedTool(mockServer);
+    registerUnifiedTool(mockServer, mockContainer);
 
     const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
 
