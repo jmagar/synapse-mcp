@@ -74,202 +74,36 @@ No commit for recon.
 
 **Goal:** Define service contracts for DI usage.
 
-### Task 1: Add interfaces + tests
+**Status:** ✅ COMPLETE (with revisions based on code review)
+- Test file removed per code review feedback (TypeScript compiler validates interfaces)
+- Comprehensive JSDoc documentation added to all interfaces
+
+### Task 1: Add interfaces with JSDoc documentation
 
 **Files:**
 - Create: `src/services/interfaces.ts`
-- Create: `src/services/interfaces.test.ts`
 
-**Step 1: Write failing interface tests**
-
-Create: `src/services/interfaces.test.ts`
-
-```typescript
-import { describe, it, expect } from "vitest";
-import type {
-  IDockerService,
-  ISSHService,
-  IComposeService,
-  ISSHConnectionPool,
-  IServiceFactory
-} from "./interfaces.js";
-
-describe("Service Interfaces", () => {
-  it("should define IDockerService interface", () => {
-    const mockService: IDockerService = {
-      getDockerClient: () => ({}) as never,
-      listContainers: async () => [],
-      containerAction: async () => {},
-      getContainerLogs: async () => [],
-      getContainerStats: async () => ({}) as never,
-      findContainerHost: async () => null,
-      getHostStatus: async () => [],
-      listImages: async () => [],
-      inspectContainer: async () => ({}) as never,
-      getDockerInfo: async () => ({}) as never,
-      getDockerDiskUsage: async () => ({}) as never,
-      pruneDocker: async () => [],
-      pullImage: async () => ({ status: "ok" }),
-      recreateContainer: async () => ({ status: "ok", containerId: "id" }),
-      removeImage: async () => ({ status: "ok" }),
-      buildImage: async () => ({ status: "ok" })
-    };
-
-    expect(mockService).toBeDefined();
-  });
-
-  it("should define ISSHService interface", () => {
-    const mockService: ISSHService = {
-      executeCommand: async () => "",
-      getHostResources: async () => ({}) as never
-    };
-
-    expect(mockService).toBeDefined();
-  });
-
-  it("should define IComposeService interface", () => {
-    const mockService: IComposeService = {
-      composeExec: async () => "",
-      listComposeProjects: async () => [],
-      getComposeStatus: async () => ({}) as never,
-      composeUp: async () => "",
-      composeDown: async () => "",
-      composeRestart: async () => "",
-      composeLogs: async () => "",
-      composeBuild: async () => "",
-      composePull: async () => "",
-      composeRecreate: async () => ""
-    };
-
-    expect(mockService).toBeDefined();
-  });
-
-  it("should define ISSHConnectionPool interface", () => {
-    const mockPool: ISSHConnectionPool = {
-      getConnection: async () => ({}) as never,
-      releaseConnection: async () => {},
-      closeConnection: async () => {},
-      closeAll: async () => {},
-      getStats: () => ({}) as never
-    };
-
-    expect(mockPool).toBeDefined();
-  });
-
-  it("should define IServiceFactory interface", () => {
-    const mockFactory: IServiceFactory = {
-      createDockerService: () => ({}) as never,
-      createSSHConnectionPool: () => ({}) as never,
-      createSSHService: () => ({}) as never,
-      createComposeService: () => ({}) as never
-    };
-
-    expect(mockFactory).toBeDefined();
-  });
-});
-```
-
-**Step 2: Run test to verify it fails**
-
-Run: `pnpm test src/services/interfaces.test.ts`
-
-Expected: FAIL with "Cannot find module './interfaces.js'"
-
-**Step 3: Create interfaces**
+**Step 1: Create interfaces with documentation**
 
 Create: `src/services/interfaces.ts`
 
-```typescript
-import type { HostConfig, ContainerInfo, ContainerStats, HostStatus, LogEntry, ImageInfo, ComposeProject } from "../types.js";
-import type Docker from "dockerode";
-import type { NodeSSH } from "node-ssh";
-import type { HostResources } from "./ssh.js";
-import type { DockerSystemInfo, DockerDiskUsage, PruneResult, ListImagesOptions } from "./docker.js";
-import type { PoolStats } from "./ssh-pool.js";
+> **Note:** Originally planned to include `interfaces.test.ts`, but removed based on code review feedback.
+> Pure type definitions have no runtime behavior to test - TypeScript compiler validates them.
+> JSDoc documentation added instead to explain purpose and usage.
 
-export interface IDockerService {
-  getDockerClient(config: HostConfig): Docker;
-  listContainers(
-    hosts: HostConfig[],
-    options?: {
-      state?: "all" | "running" | "stopped" | "paused";
-      nameFilter?: string;
-      imageFilter?: string;
-      labelFilter?: string;
-    }
-  ): Promise<ContainerInfo[]>;
-  containerAction(containerId: string, action: "start" | "stop" | "restart" | "pause" | "unpause", host: HostConfig): Promise<void>;
-  getContainerLogs(
-    containerId: string,
-    host: HostConfig,
-    options?: { lines?: number; since?: string; until?: string; stream?: "all" | "stdout" | "stderr" }
-  ): Promise<LogEntry[]>;
-  getContainerStats(containerId: string, host: HostConfig): Promise<ContainerStats>;
-  findContainerHost(containerId: string, hosts: HostConfig[]): Promise<{ host: HostConfig; container: Docker.ContainerInfo } | null>;
-  getHostStatus(hosts: HostConfig[]): Promise<HostStatus[]>;
-  listImages(hosts: HostConfig[], options?: ListImagesOptions): Promise<ImageInfo[]>;
-  inspectContainer(containerId: string, host: HostConfig): Promise<Docker.ContainerInspectInfo>;
-  getDockerInfo(host: HostConfig): Promise<DockerSystemInfo>;
-  getDockerDiskUsage(host: HostConfig): Promise<DockerDiskUsage>;
-  pruneDocker(host: HostConfig, target: "containers" | "images" | "volumes" | "networks" | "buildcache" | "all"): Promise<PruneResult[]>;
-  pullImage(imageName: string, host: HostConfig): Promise<{ status: string }>;
-  recreateContainer(containerId: string, host: HostConfig, options?: { pull?: boolean }): Promise<{ status: string; containerId: string }>;
-  removeImage(imageId: string, host: HostConfig, options?: { force?: boolean }): Promise<{ status: string }>;
-  buildImage(
-    host: HostConfig,
-    options: { context: string; tag: string; dockerfile?: string; noCache?: boolean }
-  ): Promise<{ status: string }>;
-}
+See `src/services/interfaces.ts` for complete interface definitions with JSDoc documentation.
 
-export interface ISSHService {
-  executeCommand(host: HostConfig, command: string, args?: string[], options?: { timeoutMs?: number }): Promise<string>;
-  getHostResources(host: HostConfig): Promise<HostResources>;
-}
+**Step 2: Verify TypeScript compilation**
 
-export interface IComposeService {
-  composeExec(host: HostConfig, project: string, action: string, extraArgs?: string[]): Promise<string>;
-  listComposeProjects(host: HostConfig): Promise<ComposeProject[]>;
-  getComposeStatus(host: HostConfig, project: string): Promise<ComposeProject>;
-  composeUp(host: HostConfig, project: string, detach?: boolean): Promise<string>;
-  composeDown(host: HostConfig, project: string, removeVolumes?: boolean): Promise<string>;
-  composeRestart(host: HostConfig, project: string): Promise<string>;
-  composeLogs(
-    host: HostConfig,
-    project: string,
-    options?: { tail?: number; follow?: boolean; timestamps?: boolean; since?: string; until?: string; services?: string[] }
-  ): Promise<string>;
-  composeBuild(host: HostConfig, project: string, options?: { service?: string; noCache?: boolean; pull?: boolean }): Promise<string>;
-  composePull(host: HostConfig, project: string, options?: { service?: string; ignorePullFailures?: boolean; quiet?: boolean }): Promise<string>;
-  composeRecreate(host: HostConfig, project: string, options?: { service?: string; forceRecreate?: boolean; noDeps?: boolean }): Promise<string>;
-}
+Run: `pnpm run build`
 
-export interface ISSHConnectionPool {
-  getConnection(host: HostConfig): Promise<NodeSSH>;
-  releaseConnection(host: HostConfig, connection: NodeSSH): Promise<void>;
-  closeConnection(host: HostConfig): Promise<void>;
-  closeAll(): Promise<void>;
-  getStats(): PoolStats;
-}
+Expected: Compiles successfully (TypeScript validates interface structure)
 
-export interface IServiceFactory {
-  createDockerService(): IDockerService;
-  createSSHConnectionPool(config?: Partial<{ maxConnections: number }>): ISSHConnectionPool;
-  createSSHService(pool: ISSHConnectionPool): ISSHService;
-  createComposeService(sshService: ISSHService): IComposeService;
-}
-```
-
-**Step 4: Run test to verify it passes**
-
-Run: `pnpm test src/services/interfaces.test.ts`
-
-Expected: PASS
-
-**Step 5: Commit**
+**Step 3: Commit**
 
 ```bash
-git add src/services/interfaces.ts src/services/interfaces.test.ts
-git commit -m "feat(di): add service interfaces"
+git add src/services/interfaces.ts
+git commit -m "feat(di): add service interfaces with JSDoc documentation"
 ```
 
 ---
