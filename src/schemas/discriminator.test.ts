@@ -63,6 +63,18 @@ describe("Discriminator transform", () => {
     expect(discriminators.size).toBe(30);
   });
 
+  it("should override existing action_subaction with computed value", () => {
+    const input = {
+      action: "container",
+      subaction: "list",
+      action_subaction: "malicious:override"
+    };
+
+    const result = addDiscriminator(input);
+
+    expect(result.action_subaction).toBe("container:list");
+  });
+
   it("should preserve all original fields", () => {
     const input = {
       action: "container",

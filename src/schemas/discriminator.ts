@@ -15,8 +15,8 @@ export type DiscriminatedInput = Record<string, unknown> & {
  */
 export function addDiscriminator(input: DiscriminatedInput): DiscriminatedInput {
   return {
-    action_subaction: `${input.action}:${input.subaction}`,
-    ...input
+    ...input,
+    action_subaction: `${input.action}:${input.subaction}`
   };
 }
 
