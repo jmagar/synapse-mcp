@@ -195,15 +195,27 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
   private async createConnection(host: HostConfig): Promise<NodeSSH> {
     const ssh = new NodeSSH();
 
-    await ssh.connect({
+    const connectionConfig = {
       host: host.host,
       port: host.port || 22,
       username: host.sshUser || process.env.USER || "root",
       privateKeyPath: host.sshKeyPath,
       readyTimeout: this.config.connectionTimeoutMs
-    });
+    };
 
-    return ssh;
+    console.error(`[SSH Pool] Attempting connection to ${host.name} (${connectionConfig.host}:${connectionConfig.port})`);
+    console.error(`[SSH Pool] - Username: ${connectionConfig.username}`);
+    console.error(`[SSH Pool] - Private key: ${connectionConfig.privateKeyPath}`);
+    console.error(`[SSH Pool] - Ready timeout: ${connectionConfig.readyTimeout}ms`);
+
+    try {
+      await ssh.connect(connectionConfig);
+      console.error(`[SSH Pool] Successfully connected to ${host.name}`);
+      return ssh;
+    } catch (error) {
+      console.error(`[SSH Pool] Connection failed to ${host.name}: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
   }
 
   private updateConnectionStats(): void {
