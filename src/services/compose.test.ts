@@ -12,6 +12,7 @@ import {
   composeRestart,
   composeLogs
 } from "./compose.js";
+import { ComposeOperationError } from "../utils/errors.js";
 
 // Mock ssh-pool-exec module using vi.hoisted
 const { mockExecuteSSHCommand } = vi.hoisted(() => {
@@ -623,6 +624,36 @@ describe("composeExec", () => {
   });
 });
 
+describe("composeExec error handling", () => {
+  const testHost = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should throw ComposeOperationError with project and action context", async () => {
+    mockExecuteSSHCommand.mockRejectedValue(new Error("Connection refused"));
+
+    await expect(
+      composeExec(testHost, "my-project", "up", ["-d"])
+    ).rejects.toThrow(ComposeOperationError);
+
+    await expect(
+      composeExec(testHost, "my-project", "up", ["-d"])
+    ).rejects.toMatchObject({
+      hostName: testHost.name,
+      project: "my-project",
+      action: "up",
+      cause: expect.any(Error)
+    });
+  });
+});
+
 /**
  * PHASE 3: Comprehensive tests for listComposeProjects()
  *
@@ -887,6 +918,31 @@ describe("listComposeProjects", () => {
         expect.anything(),
         { timeoutMs: 15000 }
       );
+    });
+  });
+});
+
+describe("listComposeProjects error handling", () => {
+  const testHost = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should throw ComposeOperationError on SSH failure", async () => {
+    mockExecuteSSHCommand.mockRejectedValue(new Error("SSH timeout"));
+
+    await expect(
+      listComposeProjects(testHost)
+    ).rejects.toMatchObject({
+      name: "ComposeOperationError",
+      hostName: testHost.name,
+      action: "ls"
     });
   });
 });
@@ -1260,6 +1316,32 @@ describe("getComposeStatus", () => {
       ).rejects.toThrow(/Invalid project name/);
 
       expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("getComposeStatus error handling", () => {
+  const testHost = {
+    name: "test",
+    host: "localhost",
+    protocol: "http" as const,
+    port: 2375
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should throw ComposeOperationError with project context", async () => {
+    mockExecuteSSHCommand.mockRejectedValue(new Error("Project not found"));
+
+    await expect(
+      getComposeStatus(testHost, "web-stack")
+    ).rejects.toMatchObject({
+      name: "ComposeOperationError",
+      hostName: testHost.name,
+      project: "web-stack",
+      action: "ps"
     });
   });
 });

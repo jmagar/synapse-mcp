@@ -1,6 +1,7 @@
 import { HostConfig } from "../types.js";
 import { validateHostForSsh } from "./ssh.js";
 import { executeSSHCommand } from "./ssh-pool-exec.js";
+import { ComposeOperationError, logError } from "../utils/errors.js";
 
 /**
  * Validate Docker Compose project name
@@ -114,8 +115,13 @@ export async function composeExec(
   try {
     return await executeSSHCommand(host, command, [], { timeoutMs: 30000 });
   } catch (error) {
-    throw new Error(
-      `Compose command failed: ${error instanceof Error ? error.message : "Unknown error"}`
+    const detail = error instanceof Error ? error.message : "Unknown error";
+    throw new ComposeOperationError(
+      `Docker Compose command failed: ${detail}`,
+      host.name,
+      project,
+      action,
+      error
     );
   }
 }
@@ -148,8 +154,13 @@ export async function listComposeProjects(host: HostConfig): Promise<ComposeProj
       services: []
     }));
   } catch (error) {
-    throw new Error(
-      `Failed to list compose projects: ${error instanceof Error ? error.message : "Unknown error"}`
+    const detail = error instanceof Error ? error.message : "Unknown error";
+    throw new ComposeOperationError(
+      `Failed to list compose projects: ${detail}`,
+      host.name,
+      "*",
+      "ls",
+      error
     );
   }
 }
@@ -214,7 +225,17 @@ export async function getComposeStatus(host: HostConfig, project: string): Promi
             }))
           });
         } catch {
-          // Skip malformed lines
+          logError(
+            new Error("Failed to parse compose service line"),
+            {
+              operation: "getComposeStatus",
+              metadata: {
+                host: host.name,
+                project,
+                line: line.substring(0, 100)
+              }
+            }
+          );
         }
       }
     }
@@ -241,8 +262,13 @@ export async function getComposeStatus(host: HostConfig, project: string): Promi
       services
     };
   } catch (error) {
-    throw new Error(
-      `Failed to get compose status: ${error instanceof Error ? error.message : "Unknown error"}`
+    const detail = error instanceof Error ? error.message : "Unknown error";
+    throw new ComposeOperationError(
+      `Failed to get compose status: ${detail}`,
+      host.name,
+      project,
+      "ps",
+      error
     );
   }
 }
