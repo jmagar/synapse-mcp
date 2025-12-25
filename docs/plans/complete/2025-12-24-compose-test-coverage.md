@@ -100,7 +100,7 @@ import { promisify } from "util";
 
 // Test that mock is properly configured
 describe("mock setup", () => {
-  it("should successfully mock execFile from child_process", async () => {
+  it("should successfully mock execFile from child_process", () => {
     const { execFile } = await import("child_process");
     expect(execFile).toBeDefined();
     expect(vi.isMockFunction(execFile)).toBe(true);
