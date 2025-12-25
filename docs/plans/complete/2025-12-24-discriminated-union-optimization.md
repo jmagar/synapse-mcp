@@ -264,9 +264,9 @@ describe("Discriminator transform", () => {
       expect(result.action_subaction).toBe(`${combo.action}:${combo.subaction}`);
     }
 
-    // Verify we have exactly 28 unique discriminators (30 combinations but 2 duplicates)
+    // Verify we have exactly 30 unique discriminators
     const discriminators = new Set(combinations.map(c => `${c.action}:${c.subaction}`));
-    expect(discriminators.size).toBe(28);
+    expect(discriminators.size).toBe(30);
   });
 
   it("should preserve all original fields", () => {
