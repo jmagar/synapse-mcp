@@ -1,6 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { SSHPoolConfig } from "./ssh-pool.js";
 import { generatePoolKey, SSHConnectionPoolImpl } from "./ssh-pool.js";
+import { logError } from "../utils/errors.js";
+
+vi.mock("../utils/errors.js", () => ({
+  logError: vi.fn(),
+  HostOperationError: class HostOperationError extends Error {
+    constructor(
+      message: string,
+      public hostName: string,
+      public operation: string,
+      public cause?: unknown
+    ) {
+      super(message);
+      this.name = "HostOperationError";
+    }
+  }
+}));
 
 // Mock node-ssh module
 vi.mock("node-ssh", () => {
@@ -284,6 +300,35 @@ describe("SSHConnectionPoolImpl - health checks", () => {
     const statsAfter = pool.getStats();
     expect(statsAfter.healthCheckFailures).toBeGreaterThan(0);
     expect(statsAfter.totalConnections).toBe(0); // Connection removed
+
+    await pool.closeAll();
+    vi.useRealTimers();
+  });
+
+  it("should log structured error when health check fails", async () => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+
+    const pool = new SSHConnectionPoolImpl({
+      enableHealthChecks: true,
+      healthCheckIntervalMs: 10000
+    });
+
+    const host = {
+      name: "testhost",
+      host: "localhost",
+      protocol: "ssh" as const
+    };
+
+    const connection = await pool.getConnection(host);
+    connection.execCommand = vi.fn().mockRejectedValue(new Error("Health check failed"));
+    connection.isConnected = vi.fn().mockReturnValue(false);
+
+    await pool.releaseConnection(host, connection);
+
+    await vi.advanceTimersByTimeAsync(10000);
+
+    expect(vi.mocked(logError)).toHaveBeenCalled();
 
     await pool.closeAll();
     vi.useRealTimers();

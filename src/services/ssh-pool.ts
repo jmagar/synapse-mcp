@@ -1,5 +1,6 @@
 import { HostConfig } from "../types.js";
 import { NodeSSH } from "node-ssh";
+import { HostOperationError, logError } from "../utils/errors.js";
 
 /**
  * SSH connection pool configuration
@@ -139,8 +140,23 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
         // Command failed
         throw new Error("Health check command failed");
       }
-    } catch {
-      // Health check failed - remove unhealthy connection
+    } catch (error) {
+      logError(
+        new HostOperationError(
+          "Health check failed",
+          metadata.host.name,
+          "healthCheck",
+          error
+        ),
+        {
+          metadata: {
+            poolKey,
+            failureCount: metadata.healthChecksFailed + 1,
+            lastUsed: new Date(metadata.lastUsed).toISOString()
+          }
+        }
+      );
+
       metadata.healthChecksFailed++;
       this.stats.healthCheckFailures++;
       await this.removeConnection(poolKey, metadata);
@@ -278,8 +294,16 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
     if (index !== -1) {
       try {
         await metadata.connection.dispose();
-      } catch {
-        // Ignore disposal errors
+      } catch (error) {
+        logError(
+          new HostOperationError(
+            "Failed to dispose SSH connection",
+            metadata.host.name,
+            "dispose",
+            error
+          ),
+          { metadata: { poolKey } }
+        );
       }
 
       connections.splice(index, 1);
@@ -303,8 +327,16 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
     const closePromises = connections.map(async (metadata) => {
       try {
         await metadata.connection.dispose();
-      } catch {
-        // Ignore disposal errors
+      } catch (error) {
+        logError(
+          new HostOperationError(
+            "Failed to dispose SSH connection during closeConnection",
+            metadata.host.name,
+            "closeConnection",
+            error
+          ),
+          { metadata: { poolKey } }
+        );
       }
     });
 
@@ -328,8 +360,16 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
           (async (): Promise<void> => {
             try {
               await metadata.connection.dispose();
-            } catch {
-              // Ignore disposal errors
+            } catch (error) {
+              logError(
+                new HostOperationError(
+                  "Failed to dispose SSH connection during closeAll",
+                  metadata.host.name,
+                  "closeAll",
+                  error
+                ),
+                { operation: "closeAll" }
+              );
             }
           })()
         );
