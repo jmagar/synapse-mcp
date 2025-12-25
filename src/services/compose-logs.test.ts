@@ -76,16 +76,6 @@ describe("composeLogs", () => {
       expect(command).toContain("--tail 100");
     });
 
-    // Step 72: composeLogs with follow option should pass -f flag
-    it("should pass -f flag when follow option provided", async () => {
-      mockSSHSuccess("streaming logs");
-
-      await composeLogs(mockHostConfig, "myproject", { follow: true });
-
-      const command = mockExecuteSSHCommand.mock.calls[0][1];
-      expect(command).toContain("-f");
-    });
-
     // Step 73: composeLogs with timestamps should pass -t flag
     it("should pass -t flag when timestamps option provided", async () => {
       mockSSHSuccess("timestamped logs");
@@ -140,14 +130,12 @@ describe("composeLogs", () => {
 
       await composeLogs(mockHostConfig, "myproject", {
         tail: 50,
-        timestamps: true,
-        follow: true
+        timestamps: true
       });
 
       const command = mockExecuteSSHCommand.mock.calls[0][1];
       expect(command).toContain("--tail 50");
       expect(command).toContain("-t");
-      expect(command).toContain("-f");
     });
 
     // Step 78: composeLogs with since option should pass --since flag
@@ -176,7 +164,6 @@ describe("composeLogs", () => {
 
       await composeLogs(mockHostConfig, "web-stack", {
         tail: 200,
-        follow: true,
         timestamps: true,
         since: "1h",
         until: "now",
@@ -185,7 +172,7 @@ describe("composeLogs", () => {
 
       expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
         mockHostConfig,
-        "docker compose -p web-stack logs --no-color --tail 200 -f -t --since 1h --until now nginx app",
+        "docker compose -p web-stack logs --no-color --tail 200 -t --since 1h --until now nginx app",
         [],
         { timeoutMs: 30000 }
       );
@@ -316,14 +303,13 @@ describe("composeLogs", () => {
 
       await composeLogs(mockHostConfig, "stack", {
         tail: 10,
-        follow: true,
         timestamps: true,
         services: ["web"]
       });
 
       expect(mockExecuteSSHCommand).toHaveBeenCalledWith(
         mockHostConfig,
-        "docker compose -p stack logs --no-color --tail 10 -f -t web",
+        "docker compose -p stack logs --no-color --tail 10 -t web",
         [],
         { timeoutMs: 30000 }
       );

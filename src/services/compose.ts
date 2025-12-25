@@ -276,13 +276,22 @@ export async function composeRestart(host: HostConfig, project: string): Promise
 
 /**
  * Get logs from a compose project
+ *
+ * NOTE: The `follow` option is intentionally not supported because Docker's `-f` flag
+ * streams logs indefinitely, which is incompatible with this function's synchronous
+ * `Promise<string>` return type. The SSH command has a 30-second timeout, so follow
+ * mode would just timeout and return partial results.
+ *
+ * For continuous log monitoring, consider:
+ * - Polling this function with the `since` parameter
+ * - Using `tail` to limit results and calling repeatedly
+ * - Implementing a separate streaming API if real-time logs are required
  */
 export async function composeLogs(
   host: HostConfig,
   project: string,
   options: {
     tail?: number;
-    follow?: boolean;
     timestamps?: boolean;
     since?: string;
     until?: string;
@@ -293,10 +302,6 @@ export async function composeLogs(
 
   if (options.tail !== undefined) {
     args.push("--tail", String(options.tail));
-  }
-
-  if (options.follow) {
-    args.push("-f");
   }
 
   if (options.timestamps) {
