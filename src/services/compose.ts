@@ -1,7 +1,28 @@
 import { HostConfig } from "../types.js";
 import { validateHostForSsh } from "./ssh.js";
-import { executeSSHCommand } from "./ssh-pool-exec.js";
+import { SSHService } from "./ssh-service.js";
+import { SSHConnectionPoolImpl } from "./ssh-pool.js";
 import { ComposeOperationError, logError } from "../utils/errors.js";
+
+/**
+ * Temporary global SSH service for compose operations
+ * TODO: Remove when ComposeService class is implemented with DI
+ */
+let globalSSHService: SSHService | null = null;
+
+function getSSHService(): SSHService {
+  if (!globalSSHService) {
+    const pool = new SSHConnectionPoolImpl({
+      maxConnections: parseInt(process.env.SSH_POOL_MAX_CONNECTIONS || "5", 10),
+      idleTimeoutMs: parseInt(process.env.SSH_POOL_IDLE_TIMEOUT_MS || "60000", 10),
+      connectionTimeoutMs: parseInt(process.env.SSH_POOL_CONNECTION_TIMEOUT_MS || "5000", 10),
+      enableHealthChecks: process.env.SSH_POOL_ENABLE_HEALTH_CHECKS !== "false",
+      healthCheckIntervalMs: parseInt(process.env.SSH_POOL_HEALTH_CHECK_INTERVAL_MS || "30000", 10)
+    });
+    globalSSHService = new SSHService(pool);
+  }
+  return globalSSHService;
+}
 
 /**
  * Validate Docker Compose project name
@@ -113,7 +134,7 @@ export async function composeExec(
   const command = buildComposeCommand(project, action, extraArgs);
 
   try {
-    return await executeSSHCommand(host, command, [], { timeoutMs: 30000 });
+    return await getSSHService().executeSSHCommand(host, command, [], { timeoutMs: 30000 });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown error";
     throw new ComposeOperationError(
@@ -135,7 +156,7 @@ export async function listComposeProjects(host: HostConfig): Promise<ComposeProj
   const command = buildComposeCommand(null, "ls", ["--format", "json"]);
 
   try {
-    const stdout = await executeSSHCommand(host, command, [], { timeoutMs: 15000 });
+    const stdout = await getSSHService().executeSSHCommand(host, command, [], { timeoutMs: 15000 });
 
     if (!stdout.trim()) {
       return [];
@@ -192,7 +213,7 @@ export async function getComposeStatus(host: HostConfig, project: string): Promi
   const command = buildComposeCommand(project, "ps", ["--format", "json"]);
 
   try {
-    const stdout = await executeSSHCommand(host, command, [], { timeoutMs: 15000 });
+    const stdout = await getSSHService().executeSSHCommand(host, command, [], { timeoutMs: 15000 });
 
     const services: ComposeService[] = [];
 

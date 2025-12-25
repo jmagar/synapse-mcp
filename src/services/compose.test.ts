@@ -14,16 +14,39 @@ import {
 } from "./compose.js";
 import { ComposeOperationError } from "../utils/errors.js";
 
-// Mock ssh-pool-exec module using vi.hoisted
-const { mockExecuteSSHCommand } = vi.hoisted(() => {
+// Mock SSHService module using vi.hoisted
+const { mockExecuteSSHCommand, MockSSHService, MockSSHConnectionPool } = vi.hoisted(() => {
+  const mockExecute = vi.fn();
+
+  class MockSSHConnectionPool {
+    getConnection = vi.fn();
+    releaseConnection = vi.fn();
+    closeConnection = vi.fn();
+    closeAll = vi.fn();
+    getStats = vi.fn();
+  }
+
+  class MockSSHService {
+    executeSSHCommand = mockExecute;
+    getHostResources = vi.fn();
+  }
+
   return {
-    mockExecuteSSHCommand: vi.fn()
+    mockExecuteSSHCommand: mockExecute,
+    MockSSHService,
+    MockSSHConnectionPool
   };
 });
 
-vi.mock("./ssh-pool-exec.js", () => {
+vi.mock("./ssh-service.js", () => {
   return {
-    executeSSHCommand: mockExecuteSSHCommand
+    SSHService: MockSSHService
+  };
+});
+
+vi.mock("./ssh-pool.js", () => {
+  return {
+    SSHConnectionPoolImpl: MockSSHConnectionPool
   };
 });
 

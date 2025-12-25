@@ -1,5 +1,26 @@
 import { HostConfig } from "../types.js";
-import { executeSSHCommand } from "./ssh-pool-exec.js";
+import { SSHService } from "./ssh-service.js";
+import { SSHConnectionPoolImpl } from "./ssh-pool.js";
+
+/**
+ * Temporary global SSH service for backward compatibility
+ * TODO: Remove when all callers use DI
+ */
+let globalSSHService: SSHService | null = null;
+
+function getGlobalSSHService(): SSHService {
+  if (!globalSSHService) {
+    const pool = new SSHConnectionPoolImpl({
+      maxConnections: parseInt(process.env.SSH_POOL_MAX_CONNECTIONS || "5", 10),
+      idleTimeoutMs: parseInt(process.env.SSH_POOL_IDLE_TIMEOUT_MS || "60000", 10),
+      connectionTimeoutMs: parseInt(process.env.SSH_POOL_CONNECTION_TIMEOUT_MS || "5000", 10),
+      enableHealthChecks: process.env.SSH_POOL_ENABLE_HEALTH_CHECKS !== "false",
+      healthCheckIntervalMs: parseInt(process.env.SSH_POOL_HEALTH_CHECK_INTERVAL_MS || "30000", 10)
+    });
+    globalSSHService = new SSHService(pool);
+  }
+  return globalSSHService;
+}
 
 /**
  * Sanitize string for safe shell usage
@@ -62,88 +83,10 @@ export interface HostResources {
 
 /**
  * Get host resource usage via SSH using connection pool
+ *
+ * @deprecated Use SSHService.getHostResources() instead
+ * This is a temporary backward-compatibility wrapper
  */
 export async function getHostResources(host: HostConfig): Promise<HostResources> {
-  // Run all commands in one SSH session for efficiency
-  const script = `
-    hostname
-    echo "---"
-    uptime -p 2>/dev/null || uptime | sed 's/.*up/up/'
-    echo "---"
-    cat /proc/loadavg | awk '{print $1,$2,$3}'
-    echo "---"
-    nproc
-    echo "---"
-    top -bn1 | grep "Cpu(s)" | awk '{print 100-$8}' 2>/dev/null || echo "0"
-    echo "---"
-    free -m | awk '/^Mem:/ {print $2,$3,$4}'
-    echo "---"
-    df -BG --output=source,target,size,used,avail,pcent 2>/dev/null | grep -E '^/dev' || df -h | grep -E '^/dev'
-  `
-    .trim()
-    .replace(/\n/g, "; ");
-
-  const output = await executeSSHCommand(host, script);
-  const sections = output.split("---").map((s) => s.trim());
-
-  // Parse hostname
-  const hostname = sections[0] || host.name;
-
-  // Parse uptime
-  const uptime = sections[1] || "unknown";
-
-  // Parse load average
-  const loadParts = (sections[2] || "0 0 0").split(" ").map(Number);
-  const loadAverage: [number, number, number] = [
-    loadParts[0] || 0,
-    loadParts[1] || 0,
-    loadParts[2] || 0
-  ];
-
-  // Parse CPU
-  const cores = parseInt(sections[3] || "1", 10);
-  const cpuUsage = parseFloat(sections[4] || "0");
-
-  // Parse memory
-  const memParts = (sections[5] || "0 0 0").split(" ").map(Number);
-  const totalMB = memParts[0] || 0;
-  const usedMB = memParts[1] || 0;
-  const freeMB = memParts[2] || 0;
-  const memUsagePercent = totalMB > 0 ? (usedMB / totalMB) * 100 : 0;
-
-  // Parse disk
-  const diskLines = (sections[6] || "").split("\n").filter((l) => l.trim());
-  const disk = diskLines
-    .map((line) => {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length >= 6) {
-        return {
-          filesystem: parts[0],
-          mount: parts[1],
-          totalGB: parseFloat(parts[2].replace("G", "")) || 0,
-          usedGB: parseFloat(parts[3].replace("G", "")) || 0,
-          availGB: parseFloat(parts[4].replace("G", "")) || 0,
-          usagePercent: parseFloat(parts[5].replace("%", "")) || 0
-        };
-      }
-      return null;
-    })
-    .filter((d): d is NonNullable<typeof d> => d !== null);
-
-  return {
-    hostname,
-    uptime,
-    loadAverage,
-    cpu: {
-      cores,
-      usagePercent: Math.round(cpuUsage * 10) / 10
-    },
-    memory: {
-      totalMB,
-      usedMB,
-      freeMB,
-      usagePercent: Math.round(memUsagePercent * 10) / 10
-    },
-    disk
-  };
+  return getGlobalSSHService().getHostResources(host);
 }
