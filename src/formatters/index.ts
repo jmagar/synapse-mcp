@@ -633,3 +633,165 @@ export function formatInspectSummaryMarkdown(summary: ContainerInspectSummary): 
 
   return lines.join("\n");
 }
+
+// ===== Scout Formatters =====
+
+/**
+ * Format file read result as markdown
+ */
+export function formatScoutReadMarkdown(
+  host: string,
+  path: string,
+  content: string,
+  size: number,
+  truncated: boolean
+): string {
+  const lines = [
+    `## 📄 ${host}:${path}`,
+    "",
+    `**Size:** ${formatBytes(size)}${truncated ? " (truncated)" : ""}`,
+    "",
+    "```",
+    content,
+    "```"
+  ];
+
+  if (truncated) {
+    lines.push("");
+    lines.push("⚠️ *File was truncated to fit size limit*");
+  }
+
+  return truncateIfNeeded(lines.join("\n"));
+}
+
+/**
+ * Format directory listing as markdown
+ */
+export function formatScoutListMarkdown(
+  host: string,
+  path: string,
+  listing: string
+): string {
+  return truncateIfNeeded([
+    `## 📁 ${host}:${path}`,
+    "",
+    "```",
+    listing,
+    "```"
+  ].join("\n"));
+}
+
+/**
+ * Format tree output as markdown
+ */
+export function formatScoutTreeMarkdown(
+  host: string,
+  path: string,
+  tree: string,
+  depth: number
+): string {
+  return truncateIfNeeded([
+    `## 🌳 ${host}:${path} (depth: ${depth})`,
+    "",
+    "```",
+    tree,
+    "```"
+  ].join("\n"));
+}
+
+/**
+ * Format command execution result as markdown
+ */
+export function formatScoutExecMarkdown(
+  host: string,
+  path: string,
+  command: string,
+  stdout: string,
+  exitCode: number
+): string {
+  const statusEmoji = exitCode === 0 ? "✅" : "❌";
+
+  return truncateIfNeeded([
+    `## ${statusEmoji} Command: ${host}:${path}`,
+    "",
+    `**Command:** \`${command}\``,
+    `**Exit:** ${exitCode}`,
+    "",
+    "**Output:**",
+    "```",
+    stdout,
+    "```"
+  ].join("\n"));
+}
+
+/**
+ * Format find results as markdown
+ */
+export function formatScoutFindMarkdown(
+  host: string,
+  path: string,
+  pattern: string,
+  results: string
+): string {
+  const lines = results.split("\n").filter(l => l.trim());
+
+  return truncateIfNeeded([
+    `## 🔍 Find: ${host}:${path}`,
+    "",
+    `**Pattern:** \`${pattern}\``,
+    `**Results:** ${lines.length} files`,
+    "",
+    "```",
+    results,
+    "```"
+  ].join("\n"));
+}
+
+/**
+ * Format file transfer result as markdown
+ */
+export function formatScoutTransferMarkdown(
+  sourceHost: string,
+  sourcePath: string,
+  targetHost: string,
+  targetPath: string,
+  bytesTransferred: number,
+  warning?: string
+): string {
+  const lines = [
+    `## 📦 Transfer Complete`,
+    "",
+    `**From:** ${sourceHost}:${sourcePath}`,
+    `**To:** ${targetHost}:${targetPath}`,
+    `**Size:** ${formatBytes(bytesTransferred)}`
+  ];
+
+  if (warning) {
+    lines.push("");
+    lines.push(`⚠️ ${warning}`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Format file diff result as markdown
+ */
+export function formatScoutDiffMarkdown(
+  host1: string,
+  path1: string,
+  host2: string,
+  path2: string,
+  diff: string
+): string {
+  return truncateIfNeeded([
+    `## 📊 Diff`,
+    "",
+    `**File 1:** ${host1}:${path1}`,
+    `**File 2:** ${host2}:${path2}`,
+    "",
+    "```diff",
+    diff,
+    "```"
+  ].join("\n"));
+}
