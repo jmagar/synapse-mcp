@@ -7,7 +7,7 @@ Two MCP tools with discriminated union pattern for O(1) validation:
 | Tool    | Actions | Subactions | Help Handler | Purpose                                      |
 |---------|---------|------------|--------------|----------------------------------------------|
 | `flux`  | 4       | 39         | ✅           | Docker infrastructure management (read/write) |
-| `scout` | 11      | 16         | ✅           | SSH remote operations (read-mostly)           |
+| `scout` | 11      | 7          | ✅           | SSH remote operations (read-mostly)           |
 
 **Total: 15 actions, 55 operations (discriminator keys) + auto-generated help handlers**
 
