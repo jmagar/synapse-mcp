@@ -492,4 +492,125 @@ export interface IServiceFactory {
    * @returns Compose service instance
    */
   createComposeService(sshService: ISSHService): IComposeService;
+
+  /**
+   * Create a File service instance.
+   * File service requires SSH service for remote file operations.
+   *
+   * @param sshService - SSH service to use for remote command execution
+   * @returns File service instance
+   */
+  createFileService(sshService: ISSHService): IFileService;
+}
+
+/**
+ * File service interface for remote file operations via SSH.
+ * Provides secure file reading, directory listing, command execution,
+ * and file transfer capabilities across hosts.
+ */
+export interface IFileService {
+  /**
+   * Read content from a file on a remote host.
+   *
+   * @param host - Host configuration where the file is located
+   * @param path - Absolute path to the file to read
+   * @param maxSize - Maximum bytes to read (content truncated if exceeded)
+   * @returns Object containing file content, size, and truncation status
+   */
+  readFile(
+    host: HostConfig,
+    path: string,
+    maxSize: number
+  ): Promise<{ content: string; size: number; truncated: boolean }>;
+
+  /**
+   * List contents of a directory on a remote host.
+   *
+   * @param host - Host configuration where the directory is located
+   * @param path - Absolute path to the directory
+   * @param showHidden - Whether to show hidden files (prefixed with .)
+   * @returns Directory listing as string (ls output)
+   */
+  listDirectory(host: HostConfig, path: string, showHidden: boolean): Promise<string>;
+
+  /**
+   * Get tree representation of a directory structure.
+   *
+   * @param host - Host configuration where the directory is located
+   * @param path - Absolute path to the directory
+   * @param depth - Maximum depth to traverse
+   * @returns Tree output as string
+   */
+  treeDirectory(host: HostConfig, path: string, depth: number): Promise<string>;
+
+  /**
+   * Execute a command in a working directory on a remote host.
+   * SECURITY: Commands are validated against an allowlist by default.
+   *
+   * @param host - Host configuration where to execute
+   * @param path - Working directory for command execution
+   * @param command - Command to execute (must be in allowlist unless env override)
+   * @param timeout - Command timeout in milliseconds
+   * @returns Object containing stdout and exit code
+   */
+  executeCommand(
+    host: HostConfig,
+    path: string,
+    command: string,
+    timeout: number
+  ): Promise<{ stdout: string; exitCode: number }>;
+
+  /**
+   * Find files matching a pattern on a remote host.
+   *
+   * @param host - Host configuration to search
+   * @param path - Base directory to search from
+   * @param pattern - Glob pattern to match (e.g., "*.log")
+   * @param options - Search options
+   * @param options.type - File type filter (f=file, d=directory, l=symlink)
+   * @param options.maxDepth - Maximum search depth
+   * @param options.limit - Maximum number of results
+   * @returns Newline-separated list of matching paths
+   */
+  findFiles(
+    host: HostConfig,
+    path: string,
+    pattern: string,
+    options: { type?: "f" | "d" | "l"; maxDepth?: number; limit?: number }
+  ): Promise<string>;
+
+  /**
+   * Transfer a file between hosts via SCP.
+   *
+   * @param sourceHost - Source host configuration
+   * @param sourcePath - Path to source file
+   * @param targetHost - Target host configuration
+   * @param targetPath - Destination path
+   * @returns Transfer result with bytes transferred and optional warning
+   */
+  transferFile(
+    sourceHost: HostConfig,
+    sourcePath: string,
+    targetHost: HostConfig,
+    targetPath: string
+  ): Promise<{ bytesTransferred: number; warning?: string }>;
+
+  /**
+   * Compare two files and return diff output.
+   * Supports comparing files on the same host or across different hosts.
+   *
+   * @param host1 - First host configuration
+   * @param path1 - Path to first file
+   * @param host2 - Second host configuration
+   * @param path2 - Path to second file
+   * @param contextLines - Number of context lines in diff output
+   * @returns Unified diff output string
+   */
+  diffFiles(
+    host1: HostConfig,
+    path1: string,
+    host2: HostConfig,
+    path2: string,
+    contextLines: number
+  ): Promise<string>;
 }
