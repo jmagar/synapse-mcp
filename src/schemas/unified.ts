@@ -4,12 +4,12 @@
  * Performance characteristics:
  * - Validation time: O(1) constant time via discriminated union
  * - Average latency: <0.005ms per validation (3-4μs typical)
- * - Improvement: Consistent performance across all 30 schemas (no worst-case degradation)
+ * - Improvement: Consistent performance across all 37 schemas (no worst-case degradation)
  *
  * Architecture:
  * - Uses composite discriminator key: action_subaction (e.g., "container:list")
  * - Automatically injected via z.preprocess() for backward compatibility
- * - Supports all 30 action/subaction combinations across 5 action types
+ * - Supports all 37 action/subaction combinations across 6 action types
  *
  * Action types:
  * - container: 12 subactions (list, start, stop, restart, pause, unpause, logs, stats, inspect, search, pull, recreate)
@@ -17,11 +17,25 @@
  * - host: 2 subactions (status, resources)
  * - docker: 3 subactions (info, df, prune)
  * - image: 4 subactions (list, pull, build, remove)
+ * - scout: 7 subactions (read, list, tree, exec, find, transfer, diff)
  */
 
 import { z } from "zod";
 import { ResponseFormat } from "../types.js";
-import { DEFAULT_LIMIT, MAX_LIMIT, DEFAULT_LOG_LINES, MAX_LOG_LINES } from "../constants.js";
+import {
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
+  DEFAULT_LOG_LINES,
+  MAX_LOG_LINES,
+  DEFAULT_MAX_FILE_SIZE,
+  MAX_FILE_SIZE_LIMIT,
+  DEFAULT_COMMAND_TIMEOUT,
+  MAX_COMMAND_TIMEOUT,
+  DEFAULT_TREE_DEPTH,
+  MAX_TREE_DEPTH,
+  DEFAULT_FIND_LIMIT,
+  MAX_FIND_LIMIT
+} from "../constants.js";
 import { preprocessWithDiscriminator } from "./discriminator.js";
 
 // ===== Base schemas =====
@@ -325,6 +339,119 @@ const imageRemoveSchema = z.object({
   force: z.boolean().default(false)
 });
 
+// ===== Scout subactions =====
+const scoutReadSchema = z.object({
+  action_subaction: z.literal("scout:read"),
+  action: z.literal("scout"),
+  subaction: z.literal("read"),
+  host: z.string().min(1).describe("Target host name"),
+  path: z.string().min(1).describe("Absolute path to file"),
+  max_size: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_FILE_SIZE_LIMIT)
+    .default(DEFAULT_MAX_FILE_SIZE)
+    .describe("Maximum file size to read in bytes"),
+  response_format: responseFormatSchema
+});
+
+const scoutListSchema = z.object({
+  action_subaction: z.literal("scout:list"),
+  action: z.literal("scout"),
+  subaction: z.literal("list"),
+  host: z.string().min(1).describe("Target host name"),
+  path: z.string().min(1).describe("Absolute path to directory"),
+  all: z.boolean().default(false).describe("Include hidden files"),
+  response_format: responseFormatSchema
+});
+
+const scoutTreeSchema = z.object({
+  action_subaction: z.literal("scout:tree"),
+  action: z.literal("scout"),
+  subaction: z.literal("tree"),
+  host: z.string().min(1).describe("Target host name"),
+  path: z.string().min(1).describe("Absolute path to directory"),
+  depth: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_TREE_DEPTH)
+    .default(DEFAULT_TREE_DEPTH)
+    .describe("Maximum depth to traverse"),
+  response_format: responseFormatSchema
+});
+
+const scoutExecSchema = z.object({
+  action_subaction: z.literal("scout:exec"),
+  action: z.literal("scout"),
+  subaction: z.literal("exec"),
+  host: z.string().min(1).describe("Target host name"),
+  path: z.string().min(1).describe("Working directory for command"),
+  command: z.string().min(1).describe("Command to execute"),
+  timeout: z
+    .number()
+    .int()
+    .min(1000)
+    .max(MAX_COMMAND_TIMEOUT)
+    .default(DEFAULT_COMMAND_TIMEOUT)
+    .describe("Command timeout in milliseconds"),
+  response_format: responseFormatSchema
+});
+
+const scoutFindSchema = z.object({
+  action_subaction: z.literal("scout:find"),
+  action: z.literal("scout"),
+  subaction: z.literal("find"),
+  host: z.string().min(1).describe("Target host name"),
+  path: z.string().min(1).describe("Starting directory for search"),
+  pattern: z.string().min(1).describe("Filename pattern (glob)"),
+  type: z.enum(["f", "d", "l"]).optional().describe("File type: f=file, d=directory, l=symlink"),
+  max_depth: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_TREE_DEPTH)
+    .optional()
+    .describe("Maximum search depth"),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_FIND_LIMIT)
+    .default(DEFAULT_FIND_LIMIT)
+    .describe("Maximum results to return"),
+  response_format: responseFormatSchema
+});
+
+const scoutTransferSchema = z.object({
+  action_subaction: z.literal("scout:transfer"),
+  action: z.literal("scout"),
+  subaction: z.literal("transfer"),
+  source_host: z.string().min(1).describe("Source host name"),
+  source_path: z.string().min(1).describe("Source file path"),
+  target_host: z.string().min(1).describe("Target host name"),
+  target_path: z.string().min(1).describe("Target file path or directory")
+});
+
+const scoutDiffSchema = z.object({
+  action_subaction: z.literal("scout:diff"),
+  action: z.literal("scout"),
+  subaction: z.literal("diff"),
+  host1: z.string().min(1).describe("First host name"),
+  path1: z.string().min(1).describe("First file path"),
+  host2: z.string().min(1).describe("Second host name"),
+  path2: z.string().min(1).describe("Second file path"),
+  context_lines: z
+    .number()
+    .int()
+    .min(0)
+    .max(20)
+    .default(3)
+    .describe("Context lines around changes"),
+  response_format: responseFormatSchema
+});
+
 // ===== Unified schema using z.discriminatedUnion for O(1) lookup =====
 // Uses action_subaction composite key as discriminator for constant-time schema lookup
 // instead of O(n) sequential validation with z.union()
@@ -363,7 +490,15 @@ const UnifiedHomelabUnion = z.discriminatedUnion("action_subaction", [
   imageListSchema,
   imagePullSchema,
   imageBuildSchema,
-  imageRemoveSchema
+  imageRemoveSchema,
+  // Scout actions (7 schemas)
+  scoutReadSchema,
+  scoutListSchema,
+  scoutTreeSchema,
+  scoutExecSchema,
+  scoutFindSchema,
+  scoutTransferSchema,
+  scoutDiffSchema
 ]);
 
 // Export with preprocess wrapper to automatically inject discriminator
@@ -402,5 +537,12 @@ export {
   imageListSchema,
   imagePullSchema,
   imageBuildSchema,
-  imageRemoveSchema
+  imageRemoveSchema,
+  scoutReadSchema,
+  scoutListSchema,
+  scoutTreeSchema,
+  scoutExecSchema,
+  scoutFindSchema,
+  scoutTransferSchema,
+  scoutDiffSchema
 };

@@ -215,3 +215,185 @@ describe("Individual schema discriminators", () => {
     expect(result.action_subaction).toBe("image:list");
   });
 });
+
+describe("scout action schemas", () => {
+  describe("scout:read", () => {
+    it("validates required host and path", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "read",
+        host: "tootie",
+        path: "/etc/hosts"
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts optional max_size", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "read",
+        host: "tootie",
+        path: "/var/log/syslog",
+        max_size: 512000
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects missing host", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "read",
+        path: "/etc/hosts"
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects missing path", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "read",
+        host: "tootie"
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("scout:list", () => {
+    it("validates host and path", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "list",
+        host: "tootie",
+        path: "/var/log"
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe("scout:tree", () => {
+    it("validates with optional depth", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "tree",
+        host: "tootie",
+        path: "/home",
+        depth: 3
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects depth > MAX_TREE_DEPTH", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "tree",
+        host: "tootie",
+        path: "/home",
+        depth: 15
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("scout:exec", () => {
+    it("validates with command", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "exec",
+        host: "tootie",
+        path: "/tmp",
+        command: "ls -la"
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts optional timeout", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "exec",
+        host: "tootie",
+        path: "/tmp",
+        command: "find . -name '*.log'",
+        timeout: 60000
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe("scout:find", () => {
+    it("validates with pattern", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "find",
+        host: "tootie",
+        path: "/var",
+        pattern: "*.log"
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts optional type and max_depth", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "find",
+        host: "tootie",
+        path: "/var",
+        pattern: "*.log",
+        type: "f",
+        max_depth: 5
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe("scout:transfer", () => {
+    it("validates source and target", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "transfer",
+        source_host: "tootie",
+        source_path: "/tmp/file.txt",
+        target_host: "shart",
+        target_path: "/backup/"
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects missing target_host", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "transfer",
+        source_host: "tootie",
+        source_path: "/tmp/file.txt",
+        target_path: "/backup/"
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("scout:diff", () => {
+    it("validates two paths on different hosts", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "diff",
+        host1: "tootie",
+        path1: "/etc/hosts",
+        host2: "shart",
+        path2: "/etc/hosts"
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts context_lines option", () => {
+      const result = UnifiedHomelabSchema.safeParse({
+        action: "scout",
+        subaction: "diff",
+        host1: "tootie",
+        path1: "/etc/hosts",
+        host2: "shart",
+        path2: "/etc/hosts",
+        context_lines: 5
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+});
