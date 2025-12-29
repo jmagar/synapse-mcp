@@ -2,7 +2,14 @@ import { DockerService } from "./docker.js";
 import { SSHConnectionPoolImpl } from "./ssh-pool.js";
 import { SSHService } from "./ssh-service.js";
 import { ComposeService } from "./compose.js";
-import type { IDockerService, ISSHService, IComposeService, ISSHConnectionPool } from "./interfaces.js";
+import { FileService } from "./file-service.js";
+import type {
+  IDockerService,
+  ISSHService,
+  IComposeService,
+  ISSHConnectionPool,
+  IFileService
+} from "./interfaces.js";
 
 /**
  * Service container for dependency injection.
@@ -12,6 +19,7 @@ import type { IDockerService, ISSHService, IComposeService, ISSHConnectionPool }
  * - SSHConnectionPool (no dependencies)
  * - SSHService (requires SSHConnectionPool)
  * - ComposeService (requires SSHService)
+ * - FileService (requires SSHService)
  * - DockerService (no dependencies)
  */
 export class ServiceContainer {
@@ -19,6 +27,7 @@ export class ServiceContainer {
   private sshService?: ISSHService;
   private composeService?: IComposeService;
   private sshPool?: ISSHConnectionPool;
+  private fileService?: IFileService;
 
   /**
    * Get Docker service instance (lazy initialization)
@@ -78,6 +87,21 @@ export class ServiceContainer {
    */
   setComposeService(service: IComposeService): void {
     this.composeService = service;
+  }
+
+  /**
+   * Get File service instance (lazy initialization with dependencies)
+   */
+  getFileService(): IFileService {
+    if (!this.fileService) this.fileService = new FileService(this.getSSHService());
+    return this.fileService;
+  }
+
+  /**
+   * Set File service instance (for testing/overrides)
+   */
+  setFileService(service: IFileService): void {
+    this.fileService = service;
   }
 
   /**
