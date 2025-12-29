@@ -2,6 +2,81 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerUnifiedTool } from "./unified.js";
 import type { HostConfig } from "../types.js";
+import type { ServiceContainer } from "../services/container.js";
+import type { IDockerService, IComposeService, ISSHService, IFileService } from "../services/interfaces.js";
+
+// Create mock services
+const createMockDockerService = (): IDockerService => ({
+  listContainers: vi.fn().mockResolvedValue([]),
+  getContainerStats: vi.fn(),
+  inspectContainer: vi.fn(),
+  containerAction: vi.fn(),
+  getContainerLogs: vi.fn().mockResolvedValue([]),
+  pullImageForContainer: vi.fn(),
+  recreateContainer: vi.fn(),
+  getDockerInfo: vi.fn(),
+  getDockerDiskUsage: vi.fn(),
+  pruneDocker: vi.fn(),
+  listImages: vi.fn().mockResolvedValue([]),
+  pullImage: vi.fn(),
+  buildImage: vi.fn(),
+  removeImage: vi.fn(),
+  clearClients: vi.fn()
+});
+
+const createMockComposeService = (): IComposeService => ({
+  listProjects: vi.fn().mockResolvedValue([]),
+  getStatus: vi.fn(),
+  up: vi.fn(),
+  down: vi.fn(),
+  restart: vi.fn(),
+  logs: vi.fn(),
+  build: vi.fn(),
+  pull: vi.fn(),
+  recreate: vi.fn()
+});
+
+const createMockSSHService = (): ISSHService => ({
+  executeSSHCommand: vi.fn().mockResolvedValue(""),
+  getHostResources: vi.fn()
+});
+
+const createMockFileService = (): IFileService => ({
+  readFile: vi.fn().mockResolvedValue({ content: "", size: 0, truncated: false }),
+  listDirectory: vi.fn().mockResolvedValue(""),
+  treeDirectory: vi.fn().mockResolvedValue(""),
+  executeCommand: vi.fn().mockResolvedValue({ stdout: "", exitCode: 0 }),
+  findFiles: vi.fn().mockResolvedValue(""),
+  transferFile: vi.fn().mockResolvedValue({ bytesTransferred: 0 }),
+  diffFiles: vi.fn().mockResolvedValue("")
+});
+
+// Mock services stored at module level for test access
+let mockDockerService: IDockerService;
+let mockComposeService: IComposeService;
+let mockSSHService: ISSHService;
+let mockFileService: IFileService;
+
+const createMockContainer = (): ServiceContainer => {
+  mockDockerService = createMockDockerService();
+  mockComposeService = createMockComposeService();
+  mockSSHService = createMockSSHService();
+  mockFileService = createMockFileService();
+
+  return {
+    getDockerService: () => mockDockerService,
+    setDockerService: vi.fn(),
+    getSSHConnectionPool: vi.fn(),
+    setSSHConnectionPool: vi.fn(),
+    getSSHService: () => mockSSHService,
+    setSSHService: vi.fn(),
+    getComposeService: () => mockComposeService,
+    setComposeService: vi.fn(),
+    getFileService: () => mockFileService,
+    setFileService: vi.fn(),
+    cleanup: vi.fn().mockResolvedValue(undefined)
+  } as unknown as ServiceContainer;
+};
 
 // Mock the compose service
 vi.mock("../services/compose.js", () => ({
@@ -119,9 +194,12 @@ vi.mock("../services/docker.js", async () => {
 describe("unified tool integration", () => {
   let mockServer: McpServer;
   let toolHandler: (params: unknown) => Promise<unknown>;
+  let mockContainer: ServiceContainer;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+
+    mockContainer = createMockContainer();
 
     const registeredTools = new Map<string, (params: unknown) => Promise<unknown>>();
     mockServer = {
@@ -130,7 +208,7 @@ describe("unified tool integration", () => {
       })
     } as unknown as McpServer;
 
-    registerUnifiedTool(mockServer);
+    registerUnifiedTool(mockServer, mockContainer);
     const handler = registeredTools.get("homelab");
     if (!handler) throw new Error("Tool handler not registered");
     toolHandler = handler;
@@ -1633,7 +1711,8 @@ describe("Container stats collection performance", () => {
       registerTool: vi.fn()
     } as unknown as McpServer;
 
-    registerUnifiedTool(mockServer);
+    const container = createMockContainer();
+    registerUnifiedTool(mockServer, container);
 
     const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
 
@@ -1663,7 +1742,8 @@ describe("Container stats collection performance", () => {
       registerTool: vi.fn()
     } as unknown as McpServer;
 
-    registerUnifiedTool(mockServer);
+    const container = createMockContainer();
+    registerUnifiedTool(mockServer, container);
 
     const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
 
@@ -1717,7 +1797,8 @@ describe("Container stats collection performance", () => {
       registerTool: vi.fn()
     } as unknown as McpServer;
 
-    registerUnifiedTool(mockServer);
+    const container = createMockContainer();
+    registerUnifiedTool(mockServer, container);
 
     const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
 
@@ -1744,6 +1825,8 @@ describe("Error handling: unknown subactions", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
 
+    const container = createMockContainer();
+
     const registeredTools = new Map<string, (params: unknown) => Promise<unknown>>();
     mockServer = {
       registerTool: vi.fn((name, _config, handler) => {
@@ -1751,7 +1834,7 @@ describe("Error handling: unknown subactions", () => {
       })
     } as unknown as McpServer;
 
-    registerUnifiedTool(mockServer);
+    registerUnifiedTool(mockServer, container);
     const handler = registeredTools.get("homelab");
     if (!handler) throw new Error("Tool handler not registered");
     toolHandler = handler;
@@ -1825,6 +1908,8 @@ describe("Error handling: invalid hosts", () => {
 
     dockerService = await import("../services/docker.js");
 
+    const container = createMockContainer();
+
     const registeredTools = new Map<string, (params: unknown) => Promise<unknown>>();
     mockServer = {
       registerTool: vi.fn((name, _config, handler) => {
@@ -1832,7 +1917,7 @@ describe("Error handling: invalid hosts", () => {
       })
     } as unknown as McpServer;
 
-    registerUnifiedTool(mockServer);
+    registerUnifiedTool(mockServer, container);
     const handler = registeredTools.get("homelab");
     if (!handler) throw new Error("Tool handler not registered");
     toolHandler = handler;
@@ -1909,6 +1994,8 @@ describe("Edge cases: empty results", () => {
     dockerService = await import("../services/docker.js");
     composeService = await import("../services/compose.js");
 
+    const container = createMockContainer();
+
     const registeredTools = new Map<string, (params: unknown) => Promise<unknown>>();
     mockServer = {
       registerTool: vi.fn((name, _config, handler) => {
@@ -1916,7 +2003,7 @@ describe("Edge cases: empty results", () => {
       })
     } as unknown as McpServer;
 
-    registerUnifiedTool(mockServer);
+    registerUnifiedTool(mockServer, container);
     const handler = registeredTools.get("homelab");
     if (!handler) throw new Error("Tool handler not registered");
     toolHandler = handler;
@@ -1998,5 +2085,367 @@ describe("Edge cases: empty results", () => {
 
     expect(result.content).toBeDefined();
     expect(result.content[0].text).toContain("No logs");
+  });
+});
+
+describe("scout action integration", () => {
+  let mockServer: McpServer;
+  let toolHandler: (params: unknown) => Promise<unknown>;
+  let container: ServiceContainer;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    container = createMockContainer();
+
+    const registeredTools = new Map<string, (params: unknown) => Promise<unknown>>();
+    mockServer = {
+      registerTool: vi.fn((name, _config, handler) => {
+        registeredTools.set(name, handler);
+      })
+    } as unknown as McpServer;
+
+    registerUnifiedTool(mockServer, container);
+    const handler = registeredTools.get("homelab");
+    if (!handler) throw new Error("Tool handler not registered");
+    toolHandler = handler;
+  });
+
+  describe("scout action: read", () => {
+    it("should read file from configured host", async () => {
+      (mockFileService.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        content: "test file content",
+        size: 17,
+        truncated: false
+      });
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "read",
+        host: "testhost",
+        path: "/etc/hosts"
+      })) as { isError?: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain("test file content");
+      expect(mockFileService.readFile).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "testhost" }),
+        "/etc/hosts",
+        expect.any(Number)
+      );
+    });
+
+    it("should indicate truncation when file exceeds limit", async () => {
+      (mockFileService.readFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        content: "truncated content...",
+        size: 1048576,
+        truncated: true
+      });
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "read",
+        host: "testhost",
+        path: "/var/log/large.log"
+      })) as { content: Array<{ text: string }> };
+
+      expect(result.content[0].text).toContain("truncated");
+    });
+  });
+
+  describe("scout action: list", () => {
+    it("should list directory contents", async () => {
+      (mockFileService.listDirectory as ReturnType<typeof vi.fn>).mockResolvedValue(
+        "total 4\ndrwxr-xr-x 2 root root 4096 Jan 1 00:00 ."
+      );
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "list",
+        host: "testhost",
+        path: "/var/log"
+      })) as { isError?: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain("total 4");
+      expect(mockFileService.listDirectory).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "testhost" }),
+        "/var/log",
+        false // default all=false
+      );
+    });
+
+    it("should list hidden files when all=true", async () => {
+      (mockFileService.listDirectory as ReturnType<typeof vi.fn>).mockResolvedValue(
+        "total 8\n.hidden_file"
+      );
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "list",
+        host: "testhost",
+        path: "/home/user",
+        all: true
+      })) as { content: Array<{ text: string }> };
+
+      expect(mockFileService.listDirectory).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "testhost" }),
+        "/home/user",
+        true
+      );
+    });
+  });
+
+  describe("scout action: tree", () => {
+    it("should show directory tree", async () => {
+      (mockFileService.treeDirectory as ReturnType<typeof vi.fn>).mockResolvedValue(
+        ".\n├── dir1\n└── file.txt"
+      );
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "tree",
+        host: "testhost",
+        path: "/home",
+        depth: 3
+      })) as { isError?: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain("├── dir1");
+      expect(mockFileService.treeDirectory).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "testhost" }),
+        "/home",
+        3
+      );
+    });
+  });
+
+  describe("scout action: exec", () => {
+    it("should execute allowed command", async () => {
+      (mockFileService.executeCommand as ReturnType<typeof vi.fn>).mockResolvedValue({
+        stdout: "file1.txt\nfile2.txt",
+        exitCode: 0
+      });
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "exec",
+        host: "testhost",
+        path: "/tmp",
+        command: "ls"
+      })) as { isError?: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain("file1.txt");
+      expect(mockFileService.executeCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "testhost" }),
+        "/tmp",
+        "ls",
+        expect.any(Number)
+      );
+    });
+  });
+
+  describe("scout action: find", () => {
+    it("should find files by pattern", async () => {
+      (mockFileService.findFiles as ReturnType<typeof vi.fn>).mockResolvedValue(
+        "/var/log/syslog\n/var/log/auth.log"
+      );
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "find",
+        host: "testhost",
+        path: "/var",
+        pattern: "*.log"
+      })) as { isError?: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain("/var/log/syslog");
+      expect(mockFileService.findFiles).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "testhost" }),
+        "/var",
+        "*.log",
+        expect.objectContaining({})
+      );
+    });
+
+    it("should find files with type filter", async () => {
+      (mockFileService.findFiles as ReturnType<typeof vi.fn>).mockResolvedValue(
+        "/var/log\n/var/cache"
+      );
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "find",
+        host: "testhost",
+        path: "/var",
+        pattern: "*",
+        type: "d"
+      })) as { content: Array<{ text: string }> };
+
+      expect(mockFileService.findFiles).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "testhost" }),
+        "/var",
+        "*",
+        expect.objectContaining({ type: "d" })
+      );
+    });
+  });
+
+  describe("scout action: transfer", () => {
+    it("should transfer file between hosts", async () => {
+      (mockFileService.transferFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        bytesTransferred: 1024
+      });
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "transfer",
+        source_host: "testhost",
+        source_path: "/tmp/file.txt",
+        target_host: "testhost",
+        target_path: "/backup/file.txt"
+      })) as { isError?: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain("1.0 KB"); // 1024 bytes formatted as KB
+      expect(mockFileService.transferFile).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "testhost" }),
+        "/tmp/file.txt",
+        expect.objectContaining({ name: "testhost" }),
+        "/backup/file.txt"
+      );
+    });
+
+    it("should show warning for system path target", async () => {
+      (mockFileService.transferFile as ReturnType<typeof vi.fn>).mockResolvedValue({
+        bytesTransferred: 512,
+        warning: "Warning: target is a system path (/etc/config)"
+      });
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "transfer",
+        source_host: "testhost",
+        source_path: "/tmp/config",
+        target_host: "testhost",
+        target_path: "/etc/config"
+      })) as { content: Array<{ text: string }> };
+
+      expect(result.content[0].text).toContain("Warning");
+    });
+  });
+
+  describe("scout action: diff", () => {
+    it("should diff files on same host", async () => {
+      (mockFileService.diffFiles as ReturnType<typeof vi.fn>).mockResolvedValue(
+        "--- /etc/config.old\n+++ /etc/config.new\n@@ -1,3 +1,3 @@\n-old\n+new"
+      );
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "diff",
+        host1: "testhost",
+        path1: "/etc/config.old",
+        host2: "testhost",
+        path2: "/etc/config.new"
+      })) as { isError?: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain("-old");
+      expect(result.content[0].text).toContain("+new");
+      expect(mockFileService.diffFiles).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "testhost" }),
+        "/etc/config.old",
+        expect.objectContaining({ name: "testhost" }),
+        "/etc/config.new",
+        3 // default context lines
+      );
+    });
+
+    it("should report identical files", async () => {
+      (mockFileService.diffFiles as ReturnType<typeof vi.fn>).mockResolvedValue(
+        "(files are identical)"
+      );
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "diff",
+        host1: "testhost",
+        path1: "/etc/hosts",
+        host2: "testhost",
+        path2: "/etc/hosts.backup"
+      })) as { content: Array<{ text: string }> };
+
+      expect(result.content[0].text).toContain("identical");
+    });
+  });
+
+  describe("scout security validation", () => {
+    it("should reject path traversal attempts", async () => {
+      // The FileService validates paths before calling SSH
+      (mockFileService.readFile as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("path contains path traversal")
+      );
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "read",
+        host: "testhost",
+        path: "/../etc/passwd"
+      })) as { isError: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/traversal|invalid|error/i);
+    });
+
+    it("should reject blocked commands", async () => {
+      // The FileService validates commands before executing
+      (mockFileService.executeCommand as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("Command 'rm' not in allowed list")
+      );
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "exec",
+        host: "testhost",
+        path: "/tmp",
+        command: "rm -rf /"
+      })) as { isError: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("not in allowed list");
+    });
+  });
+
+  describe("scout error handling", () => {
+    it("should return error for unknown host", async () => {
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "read",
+        host: "nonexistent",
+        path: "/etc/hosts"
+      })) as { isError: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Host 'nonexistent' not found");
+    });
+
+    it("should handle SSH connection errors", async () => {
+      (mockFileService.readFile as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("SSH connection refused")
+      );
+
+      const result = (await toolHandler({
+        action: "scout",
+        subaction: "read",
+        host: "testhost",
+        path: "/etc/hosts"
+      })) as { isError: boolean; content: Array<{ text: string }> };
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("SSH connection refused");
+    });
   });
 });
