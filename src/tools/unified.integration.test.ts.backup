@@ -5,17 +5,6 @@ import type { HostConfig } from "../types.js";
 import type { ServiceContainer } from "../services/container.js";
 import type { IDockerService, IComposeService, ISSHService, IFileService } from "../services/interfaces.js";
 
-// Mock the loadHostConfigs module function
-vi.mock("../services/docker.js", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("../services/docker.js")>();
-  return {
-    ...mod,
-    loadHostConfigs: vi.fn().mockReturnValue([
-      { name: "testhost", host: "localhost", port: 2375, protocol: "http" }
-    ] as HostConfig[])
-  };
-});
-
 // Create mock services
 const createMockDockerService = (): IDockerService => ({
   listContainers: vi.fn().mockResolvedValue([]),
@@ -92,21 +81,11 @@ const createMockDockerService = (): IDockerService => ({
   pullImage: vi.fn().mockResolvedValue({ status: "Image pulled successfully" }),
   buildImage: vi.fn().mockResolvedValue(undefined),
   removeImage: vi.fn().mockResolvedValue(undefined),
-  clearClients: vi.fn(),
-  findContainerHost: vi.fn().mockResolvedValue({
-    host: { name: "testhost", host: "localhost", port: 2375, protocol: "http" },
-    container: { Id: "abc123", Names: ["/my-container"] }
-  }),
-  getHostStatus: vi.fn().mockResolvedValue([]),
-  loadHostConfigs: vi.fn().mockReturnValue([
-    { name: "testhost", host: "localhost", port: 2375, protocol: "http" } as HostConfig
-  ]),
-  getDockerClient: vi.fn()
+  clearClients: vi.fn()
 });
 
 const createMockComposeService = (): IComposeService => ({
-  composeExec: vi.fn().mockResolvedValue("command output"),
-  listComposeProjects: vi.fn().mockResolvedValue([
+  listProjects: vi.fn().mockResolvedValue([
     {
       name: "myapp",
       status: "running",
@@ -120,7 +99,7 @@ const createMockComposeService = (): IComposeService => ({
       services: ["frontend"]
     }
   ]),
-  getComposeStatus: vi.fn().mockResolvedValue({
+  getStatus: vi.fn().mockResolvedValue({
     name: "myapp",
     status: "running",
     configFiles: ["/opt/myapp/docker-compose.yaml"],
@@ -138,13 +117,13 @@ const createMockComposeService = (): IComposeService => ({
       }
     ]
   }),
-  composeUp: vi.fn().mockResolvedValue("Started project"),
-  composeDown: vi.fn().mockResolvedValue("Stopped project"),
-  composeRestart: vi.fn().mockResolvedValue("Restarted project"),
-  composeLogs: vi.fn().mockResolvedValue("log line 1\nlog line 2\nerror log line 3"),
-  composeBuild: vi.fn().mockResolvedValue("Built images"),
-  composePull: vi.fn().mockResolvedValue("Pulled images"),
-  composeRecreate: vi.fn().mockResolvedValue("Recreated containers")
+  up: vi.fn().mockResolvedValue("Started project"),
+  down: vi.fn().mockResolvedValue("Stopped project"),
+  restart: vi.fn().mockResolvedValue("Restarted project"),
+  logs: vi.fn().mockResolvedValue("log line 1\nlog line 2\nerror log line 3"),
+  build: vi.fn().mockResolvedValue("Built images"),
+  pull: vi.fn().mockResolvedValue("Pulled images"),
+  recreate: vi.fn().mockResolvedValue("Recreated containers")
 });
 
 const createMockSSHService = (): ISSHService => ({
@@ -259,6 +238,7 @@ describe("unified tool integration", () => {
 
     describe("container state control actions", () => {
       it("should start container by name", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -267,7 +247,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.containerAction).toHaveBeenCalledWith(
+        expect(dockerService.containerAction).toHaveBeenCalledWith(
           "my-container",
           "start",
           expect.objectContaining({ name: "testhost" })
@@ -278,6 +258,7 @@ describe("unified tool integration", () => {
       });
 
       it("should stop container by name", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -286,7 +267,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.containerAction).toHaveBeenCalledWith(
+        expect(dockerService.containerAction).toHaveBeenCalledWith(
           "my-container",
           "stop",
           expect.objectContaining({ name: "testhost" })
@@ -297,6 +278,7 @@ describe("unified tool integration", () => {
       });
 
       it("should restart container by name", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -305,7 +287,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.containerAction).toHaveBeenCalledWith(
+        expect(dockerService.containerAction).toHaveBeenCalledWith(
           "my-container",
           "restart",
           expect.objectContaining({ name: "testhost" })
@@ -316,6 +298,7 @@ describe("unified tool integration", () => {
       });
 
       it("should pause container by name", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -324,7 +307,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.containerAction).toHaveBeenCalledWith(
+        expect(dockerService.containerAction).toHaveBeenCalledWith(
           "my-container",
           "pause",
           expect.objectContaining({ name: "testhost" })
@@ -335,6 +318,7 @@ describe("unified tool integration", () => {
       });
 
       it("should unpause container by name", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -343,7 +327,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.containerAction).toHaveBeenCalledWith(
+        expect(dockerService.containerAction).toHaveBeenCalledWith(
           "my-container",
           "unpause",
           expect.objectContaining({ name: "testhost" })
@@ -356,7 +340,8 @@ describe("unified tool integration", () => {
 
     describe("container action: stats", () => {
       it("should get container stats for single host", async () => {
-        vi.spyOn(mockDockerService, "getContainerStats").mockResolvedValue({
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "getContainerStats").mockResolvedValue({
           containerId: "abc123",
           containerName: "my-container",
           cpuPercent: 25.5,
@@ -376,7 +361,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.getContainerStats).toHaveBeenCalledWith(
+        expect(dockerService.getContainerStats).toHaveBeenCalledWith(
           "my-container",
           expect.objectContaining({ name: "testhost" })
         );
@@ -386,6 +371,7 @@ describe("unified tool integration", () => {
       });
 
       it("should get container stats across all hosts when host not specified", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -394,7 +380,7 @@ describe("unified tool integration", () => {
           // No host specified - should search all hosts
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.findContainerHost).toHaveBeenCalledWith(
+        expect(dockerService.findContainerHost).toHaveBeenCalledWith(
           "my-container",
           expect.any(Array)
         );
@@ -418,7 +404,8 @@ describe("unified tool integration", () => {
 
     describe("container action: inspect", () => {
       it("should inspect container with summary mode (default)", async () => {
-        vi.spyOn(mockDockerService, "inspectContainer").mockResolvedValue({
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "inspectContainer").mockResolvedValue({
           Id: "abc123456789",
           Name: "/my-container",
           Config: {
@@ -451,7 +438,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.inspectContainer).toHaveBeenCalledWith(
+        expect(dockerService.inspectContainer).toHaveBeenCalledWith(
           "my-container",
           expect.objectContaining({ name: "testhost" })
         );
@@ -473,7 +460,8 @@ describe("unified tool integration", () => {
       });
 
       it("should inspect container with full detail mode", async () => {
-        vi.spyOn(mockDockerService, "inspectContainer").mockResolvedValue({
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "inspectContainer").mockResolvedValue({
           Id: "abc123456789",
           Name: "/my-container",
           Config: {
@@ -513,7 +501,7 @@ describe("unified tool integration", () => {
           summary: false // Full detail mode
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.inspectContainer).toHaveBeenCalledWith(
+        expect(dockerService.inspectContainer).toHaveBeenCalledWith(
           "my-container",
           expect.objectContaining({ name: "testhost" })
         );
@@ -541,6 +529,7 @@ describe("unified tool integration", () => {
 
     describe("container action: logs", () => {
       it("should get container logs without grep filter", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -549,7 +538,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.getContainerLogs).toHaveBeenCalledWith(
+        expect(dockerService.getContainerLogs).toHaveBeenCalledWith(
           "my-container",
           expect.objectContaining({ name: "testhost" }),
           expect.objectContaining({})
@@ -561,6 +550,7 @@ describe("unified tool integration", () => {
       });
 
       it("should get container logs with grep filter", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -570,7 +560,7 @@ describe("unified tool integration", () => {
           grep: "error"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.getContainerLogs).toHaveBeenCalledWith(
+        expect(dockerService.getContainerLogs).toHaveBeenCalledWith(
           "my-container",
           expect.objectContaining({ name: "testhost" }),
           expect.objectContaining({})
@@ -583,6 +573,7 @@ describe("unified tool integration", () => {
       });
 
       it("should get container logs with lines parameter", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -592,7 +583,7 @@ describe("unified tool integration", () => {
           lines: 100
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.getContainerLogs).toHaveBeenCalledWith(
+        expect(dockerService.getContainerLogs).toHaveBeenCalledWith(
           "my-container",
           expect.objectContaining({ name: "testhost" }),
           expect.objectContaining({ lines: 100 })
@@ -604,6 +595,7 @@ describe("unified tool integration", () => {
 
     describe("container action: pull", () => {
       it("should pull latest image for container", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -613,13 +605,13 @@ describe("unified tool integration", () => {
         })) as { content: Array<{ text: string }> };
 
         // Should first inspect container to get image name
-        expect(mockDockerService.inspectContainer).toHaveBeenCalledWith(
+        expect(dockerService.inspectContainer).toHaveBeenCalledWith(
           "my-container",
           expect.objectContaining({ name: "testhost" })
         );
 
         // Then pull the image (not the container name)
-        expect(mockDockerService.pullImage).toHaveBeenCalledWith(
+        expect(dockerService.pullImage).toHaveBeenCalledWith(
           "nginx:latest", // Image name from inspect
           expect.objectContaining({ name: "testhost" })
         );
@@ -633,6 +625,7 @@ describe("unified tool integration", () => {
 
     describe("container action: recreate", () => {
       it("should recreate container with latest image", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "container",
@@ -641,7 +634,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.recreateContainer).toHaveBeenCalledWith(
+        expect(dockerService.recreateContainer).toHaveBeenCalledWith(
           "my-container",
           expect.objectContaining({ name: "testhost" }),
           expect.objectContaining({})
@@ -679,7 +672,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.listComposeProjects).toHaveBeenCalledWith(
+        expect(composeService.listComposeProjects).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" })
         );
         expect(result.content).toBeDefined();
@@ -697,7 +690,7 @@ describe("unified tool integration", () => {
           response_format: "json"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.listComposeProjects).toHaveBeenCalledWith(
+        expect(composeService.listComposeProjects).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" })
         );
         expect(result.content).toBeDefined();
@@ -732,7 +725,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.getComposeStatus).toHaveBeenCalledWith(
+        expect(composeService.getComposeStatus).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp"
         );
@@ -751,7 +744,7 @@ describe("unified tool integration", () => {
           service_filter: "web"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.getComposeStatus).toHaveBeenCalled();
+        expect(composeService.getComposeStatus).toHaveBeenCalled();
         expect(result.content).toBeDefined();
         expect(result.content[0].text).toContain("web");
         // Should filter out db service
@@ -784,7 +777,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeUp).toHaveBeenCalledWith(
+        expect(composeService.composeUp).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           true // detach default
@@ -803,7 +796,7 @@ describe("unified tool integration", () => {
           detach: false
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeUp).toHaveBeenCalledWith(
+        expect(composeService.composeUp).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           false
@@ -819,7 +812,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeDown).toHaveBeenCalledWith(
+        expect(composeService.composeDown).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           false // remove_volumes default
@@ -838,7 +831,7 @@ describe("unified tool integration", () => {
           remove_volumes: true
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeDown).toHaveBeenCalledWith(
+        expect(composeService.composeDown).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           true
@@ -854,7 +847,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeRestart).toHaveBeenCalledWith(
+        expect(composeService.composeRestart).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp"
         );
@@ -873,7 +866,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeLogs).toHaveBeenCalledWith(
+        expect(composeService.composeLogs).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           expect.objectContaining({})
@@ -892,7 +885,7 @@ describe("unified tool integration", () => {
           service: "web"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeLogs).toHaveBeenCalledWith(
+        expect(composeService.composeLogs).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           expect.objectContaining({ services: ["web"] })
@@ -909,7 +902,7 @@ describe("unified tool integration", () => {
           lines: 100
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeLogs).toHaveBeenCalledWith(
+        expect(composeService.composeLogs).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           expect.objectContaining({ tail: 100 })
@@ -925,7 +918,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeBuild).toHaveBeenCalledWith(
+        expect(composeService.composeBuild).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           expect.objectContaining({})
@@ -944,7 +937,7 @@ describe("unified tool integration", () => {
           no_cache: true
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeBuild).toHaveBeenCalledWith(
+        expect(composeService.composeBuild).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           expect.objectContaining({ noCache: true })
@@ -961,7 +954,7 @@ describe("unified tool integration", () => {
           service: "web"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeBuild).toHaveBeenCalledWith(
+        expect(composeService.composeBuild).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           expect.objectContaining({ service: "web" })
@@ -977,7 +970,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composePull).toHaveBeenCalledWith(
+        expect(composeService.composePull).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           expect.objectContaining({})
@@ -996,7 +989,7 @@ describe("unified tool integration", () => {
           service: "web"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composePull).toHaveBeenCalledWith(
+        expect(composeService.composePull).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           expect.objectContaining({ service: "web" })
@@ -1012,7 +1005,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeRecreate).toHaveBeenCalledWith(
+        expect(composeService.composeRecreate).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           expect.objectContaining({})
@@ -1031,7 +1024,7 @@ describe("unified tool integration", () => {
           service: "web"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockComposeService.composeRecreate).toHaveBeenCalledWith(
+        expect(composeService.composeRecreate).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "myapp",
           expect.objectContaining({ service: "web" })
@@ -1053,7 +1046,7 @@ describe("unified tool integration", () => {
     describe("host action: resources", () => {
       it("should get host resources", async () => {
         const sshService = await import("../services/ssh.js");
-        vi.spyOn(mockSSHService, "getHostResources").mockResolvedValue({
+        vi.spyOn(sshService, "getHostResources").mockResolvedValue({
           hostname: "testhost.local",
           uptime: "up 5 days",
           loadAverage: [1.5, 1.2, 1.0],
@@ -1085,7 +1078,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockSSHService.getHostResources).toHaveBeenCalledWith(
+        expect(sshService.getHostResources).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" })
         );
         expect(result.content).toBeDefined();
@@ -1100,7 +1093,8 @@ describe("unified tool integration", () => {
   describe("docker actions", () => {
     describe("docker action: info", () => {
       it("should get Docker system info", async () => {
-        vi.spyOn(mockDockerService, "getDockerInfo").mockResolvedValue({
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "getDockerInfo").mockResolvedValue({
           dockerVersion: "24.0.5",
           apiVersion: "1.43",
           os: "linux",
@@ -1123,7 +1117,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.getDockerInfo).toHaveBeenCalledWith(
+        expect(dockerService.getDockerInfo).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" })
         );
         expect(result.content).toBeDefined();
@@ -1135,7 +1129,8 @@ describe("unified tool integration", () => {
 
     describe("docker action: df", () => {
       it("should get Docker disk usage", async () => {
-        vi.spyOn(mockDockerService, "getDockerDiskUsage").mockResolvedValue({
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "getDockerDiskUsage").mockResolvedValue({
           images: {
             active: 10,
             size: 5.2 * 1024 * 1024 * 1024,
@@ -1160,7 +1155,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.getDockerDiskUsage).toHaveBeenCalledWith(
+        expect(dockerService.getDockerDiskUsage).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" })
         );
         expect(result.content).toBeDefined();
@@ -1195,7 +1190,8 @@ describe("unified tool integration", () => {
       });
 
       it("should prune containers with force flag", async () => {
-        vi.spyOn(mockDockerService, "pruneDocker").mockResolvedValue([
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockResolvedValue([
           {
             type: "containers",
             spaceReclaimed: 500 * 1024 * 1024, // 500MB
@@ -1212,7 +1208,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.pruneDocker).toHaveBeenCalledWith(
+        expect(dockerService.pruneDocker).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "containers"
         );
@@ -1221,7 +1217,8 @@ describe("unified tool integration", () => {
       });
 
       it("should prune images with force flag", async () => {
-        vi.spyOn(mockDockerService, "pruneDocker").mockResolvedValue([
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockResolvedValue([
           {
             type: "images",
             spaceReclaimed: 1.2 * 1024 * 1024 * 1024, // 1.2GB
@@ -1238,7 +1235,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.pruneDocker).toHaveBeenCalledWith(
+        expect(dockerService.pruneDocker).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "images"
         );
@@ -1247,7 +1244,8 @@ describe("unified tool integration", () => {
       });
 
       it("should prune volumes with force flag", async () => {
-        vi.spyOn(mockDockerService, "pruneDocker").mockResolvedValue([
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockResolvedValue([
           {
             type: "volumes",
             spaceReclaimed: 2 * 1024 * 1024 * 1024, // 2GB
@@ -1264,7 +1262,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.pruneDocker).toHaveBeenCalledWith(
+        expect(dockerService.pruneDocker).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "volumes"
         );
@@ -1273,7 +1271,8 @@ describe("unified tool integration", () => {
       });
 
       it("should prune networks with force flag", async () => {
-        vi.spyOn(mockDockerService, "pruneDocker").mockResolvedValue([
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockResolvedValue([
           {
             type: "networks",
             spaceReclaimed: 0, // Networks don't reclaim space
@@ -1290,7 +1289,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.pruneDocker).toHaveBeenCalledWith(
+        expect(dockerService.pruneDocker).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "networks"
         );
@@ -1299,7 +1298,8 @@ describe("unified tool integration", () => {
       });
 
       it("should prune everything (all) with force flag", async () => {
-        vi.spyOn(mockDockerService, "pruneDocker").mockResolvedValue([
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockResolvedValue([
           {
             type: "all",
             spaceReclaimed: 3.7 * 1024 * 1024 * 1024, // 3.7GB total
@@ -1316,7 +1316,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.pruneDocker).toHaveBeenCalledWith(
+        expect(dockerService.pruneDocker).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           "all"
         );
@@ -1338,7 +1338,8 @@ describe("unified tool integration", () => {
       });
 
       it("should handle errors during prune operation", async () => {
-        vi.spyOn(mockDockerService, "pruneDocker").mockRejectedValue(
+        const dockerService = await import("../services/docker.js");
+        vi.spyOn(dockerService, "pruneDocker").mockRejectedValue(
           new Error("Docker daemon not available")
         );
 
@@ -1379,7 +1380,7 @@ describe("unified tool integration", () => {
 
     describe("image action: list", () => {
       it("should list all images", async () => {
-        vi.spyOn(mockDockerService, "listImages").mockResolvedValue([
+        vi.spyOn(dockerService, "listImages").mockResolvedValue([
           {
             id: "sha256:abc123",
             tags: ["nginx:latest"],
@@ -1404,7 +1405,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.listImages).toHaveBeenCalledWith(
+        expect(dockerService.listImages).toHaveBeenCalledWith(
           expect.any(Array),
           expect.any(Object)
         );
@@ -1414,7 +1415,7 @@ describe("unified tool integration", () => {
       });
 
       it("should list images with pagination", async () => {
-        vi.spyOn(mockDockerService, "listImages").mockResolvedValue([
+        vi.spyOn(dockerService, "listImages").mockResolvedValue([
           {
             id: "sha256:abc123",
             tags: ["nginx:latest"],
@@ -1442,7 +1443,7 @@ describe("unified tool integration", () => {
           response_format: "json"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.listImages).toHaveBeenCalledWith(
+        expect(dockerService.listImages).toHaveBeenCalledWith(
           expect.any(Array),
           expect.any(Object)
         );
@@ -1454,7 +1455,7 @@ describe("unified tool integration", () => {
       });
 
       it("should list only dangling images", async () => {
-        vi.spyOn(mockDockerService, "listImages").mockResolvedValue([
+        vi.spyOn(dockerService, "listImages").mockResolvedValue([
           {
             id: "sha256:def456",
             tags: ["<none>:<none>"],
@@ -1472,7 +1473,7 @@ describe("unified tool integration", () => {
           dangling_only: true
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.listImages).toHaveBeenCalledWith(
+        expect(dockerService.listImages).toHaveBeenCalledWith(
           expect.any(Array),
           expect.objectContaining({ danglingOnly: true })
         );
@@ -1482,6 +1483,7 @@ describe("unified tool integration", () => {
 
     describe("image action: pull", () => {
       it("should pull image by name", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "image",
@@ -1490,7 +1492,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.pullImage).toHaveBeenCalledWith(
+        expect(dockerService.pullImage).toHaveBeenCalledWith(
           "nginx:alpine",
           expect.objectContaining({ name: "testhost" })
         );
@@ -1514,6 +1516,7 @@ describe("unified tool integration", () => {
 
     describe("image action: build", () => {
       it("should build image from Dockerfile path", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "image",
@@ -1523,7 +1526,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.buildImage).toHaveBeenCalledWith(
+        expect(dockerService.buildImage).toHaveBeenCalledWith(
           expect.objectContaining({ name: "testhost" }),
           expect.objectContaining({
             context: "/app",
@@ -1551,6 +1554,7 @@ describe("unified tool integration", () => {
 
     describe("image action: remove", () => {
       it("should remove image by ID", async () => {
+        const dockerService = await import("../services/docker.js");
 
         const result = (await toolHandler({
           action: "image",
@@ -1559,7 +1563,7 @@ describe("unified tool integration", () => {
           host: "testhost"
         })) as { content: Array<{ text: string }> };
 
-        expect(mockDockerService.removeImage).toHaveBeenCalledWith(
+        expect(dockerService.removeImage).toHaveBeenCalledWith(
           "sha256:abc123",
           expect.objectContaining({ name: "testhost" }),
           expect.any(Object)
@@ -1633,10 +1637,10 @@ describe("unified tool integration", () => {
 });
 
 describe("Container stats collection performance", () => {
-  it("should measure baseline performance (was sequential, now parallel)", async () => {
-    // Create custom mock with performance test data
-    const perfMockDocker = createMockDockerService();
-    perfMockDocker.getContainerStats = vi.fn().mockImplementation(async (id, _host) => {
+  beforeEach(async () => {
+    // Mock getContainerStats to simulate 500ms delay
+    const dockerService = await import("../services/docker.js");
+    vi.spyOn(dockerService, "getContainerStats").mockImplementation(async (id, _host) => {
       await new Promise((resolve) => setTimeout(resolve, 500));
       return {
         containerId: id,
@@ -1648,12 +1652,12 @@ describe("Container stats collection performance", () => {
         networkRx: 1024,
         networkTx: 2048,
         blockRead: 512,
-        blockWrite: 256,
-        pids: 10
+        blockWrite: 256
       };
     });
 
-    perfMockDocker.listContainers = vi.fn().mockResolvedValue(
+    // Mock listContainers to return 5 containers (reduced for faster testing)
+    vi.spyOn(dockerService, "listContainers").mockResolvedValue(
       Array.from({ length: 5 }, (_, i) => ({
         id: `container-${i}`,
         name: `test-${i}`,
@@ -1667,7 +1671,8 @@ describe("Container stats collection performance", () => {
       }))
     );
 
-    perfMockDocker.loadHostConfigs = vi.fn().mockReturnValue([
+    // Mock loadHostConfigs to return 2 test hosts
+    vi.spyOn(dockerService, "loadHostConfigs").mockReturnValue([
       {
         name: "host1",
         host: "192.168.1.10",
@@ -1681,26 +1686,15 @@ describe("Container stats collection performance", () => {
         port: 2375
       }
     ]);
+  });
 
-    const container: ServiceContainer = {
-      getDockerService: () => perfMockDocker,
-      setDockerService: vi.fn(),
-      getSSHConnectionPool: vi.fn(),
-      setSSHConnectionPool: vi.fn(),
-      getSSHService: () => createMockSSHService(),
-      setSSHService: vi.fn(),
-      getComposeService: () => createMockComposeService(),
-      setComposeService: vi.fn(),
-      getFileService: () => createMockFileService(),
-      setFileService: vi.fn(),
-      cleanup: vi.fn().mockResolvedValue(undefined)
-    } as unknown as ServiceContainer;
-
+  it("should measure baseline performance (was sequential, now parallel)", async () => {
     const { registerUnifiedTool } = await import("./unified.js");
     const mockServer = {
       registerTool: vi.fn()
     } as unknown as McpServer;
 
+    const container = createMockContainer();
     registerUnifiedTool(mockServer, container);
 
     const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
@@ -1726,84 +1720,12 @@ describe("Container stats collection performance", () => {
   }, 10000);
 
   it("should collect stats in parallel across hosts and containers", async () => {
-    // Update module-level loadHostConfigs to return 2 hosts for this test
-    const { loadHostConfigs } = await import("../services/docker.js");
-    const originalMock = vi.mocked(loadHostConfigs).getMockImplementation();
-    vi.mocked(loadHostConfigs).mockReturnValue([
-      { name: "host1", host: "192.168.1.10", protocol: "http" as const, port: 2375 },
-      { name: "host2", host: "192.168.1.11", protocol: "http" as const, port: 2375 }
-    ]);
-
-    // Create custom mock with performance test data
-    const perfMockDocker = createMockDockerService();
-    perfMockDocker.getContainerStats = vi.fn().mockImplementation(async (id, _host) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return {
-        containerId: id,
-        containerName: `container-${id}`,
-        cpuPercent: 10.5,
-        memoryUsage: 1024 * 1024 * 100,
-        memoryLimit: 1024 * 1024 * 500,
-        memoryPercent: 20.0,
-        networkRx: 1024,
-        networkTx: 2048,
-        blockRead: 512,
-        blockWrite: 256,
-        pids: 10
-      };
-    });
-
-    perfMockDocker.listContainers = vi.fn().mockImplementation(async (hosts) => {
-      // Return 5 containers for each host (10 total across 2 hosts)
-      return hosts.flatMap((host) =>
-        Array.from({ length: 5 }, (_, i) => ({
-          id: `container-${host.name}-${i}`,
-          name: `test-${host.name}-${i}`,
-          image: "test:latest",
-          state: "running" as const,
-          status: "Up 1 hour",
-          created: new Date().toISOString(),
-          ports: [],
-          labels: {},
-          hostName: host.name
-        }))
-      );
-    });
-
-    perfMockDocker.loadHostConfigs = vi.fn().mockReturnValue([
-      {
-        name: "host1",
-        host: "192.168.1.10",
-        protocol: "http" as const,
-        port: 2375
-      },
-      {
-        name: "host2",
-        host: "192.168.1.11",
-        protocol: "http" as const,
-        port: 2375
-      }
-    ]);
-
-    const container: ServiceContainer = {
-      getDockerService: () => perfMockDocker,
-      setDockerService: vi.fn(),
-      getSSHConnectionPool: vi.fn(),
-      setSSHConnectionPool: vi.fn(),
-      getSSHService: () => createMockSSHService(),
-      setSSHService: vi.fn(),
-      getComposeService: () => createMockComposeService(),
-      setComposeService: vi.fn(),
-      getFileService: () => createMockFileService(),
-      setFileService: vi.fn(),
-      cleanup: vi.fn().mockResolvedValue(undefined)
-    } as unknown as ServiceContainer;
-
     const { registerUnifiedTool } = await import("./unified.js");
     const mockServer = {
       registerTool: vi.fn()
     } as unknown as McpServer;
 
+    const container = createMockContainer();
     registerUnifiedTool(mockServer, container);
 
     const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
@@ -1828,17 +1750,13 @@ describe("Container stats collection performance", () => {
 
     console.log(`Parallel optimized: ${duration}ms`);
     console.log(`Speedup: ${(5000 / duration).toFixed(1)}x`);
-
-    // Restore original mock
-    if (originalMock) {
-      vi.mocked(loadHostConfigs).mockImplementation(originalMock);
-    }
   }, 10000);
 
   it("should handle partial failures gracefully", async () => {
-    // Create custom mock with failure scenarios
-    const perfMockDocker = createMockDockerService();
-    perfMockDocker.getContainerStats = vi.fn().mockImplementation(async (id, _host) => {
+    const dockerService = await import("../services/docker.js");
+
+    // Mock some stats calls to fail
+    vi.spyOn(dockerService, "getContainerStats").mockImplementation(async (id, _host) => {
       if (id === "container-2") {
         throw new Error("Container not responding");
       }
@@ -1853,59 +1771,16 @@ describe("Container stats collection performance", () => {
         networkRx: 1024,
         networkTx: 2048,
         blockRead: 512,
-        blockWrite: 256,
-        pids: 10
+        blockWrite: 256
       };
     });
-
-    perfMockDocker.listContainers = vi.fn().mockResolvedValue(
-      Array.from({ length: 5 }, (_, i) => ({
-        id: `container-${i}`,
-        name: `test-${i}`,
-        image: "test:latest",
-        state: "running" as const,
-        status: "Up 1 hour",
-        created: new Date().toISOString(),
-        ports: [],
-        labels: {},
-        hostName: "test-host"
-      }))
-    );
-
-    perfMockDocker.loadHostConfigs = vi.fn().mockReturnValue([
-      {
-        name: "host1",
-        host: "192.168.1.10",
-        protocol: "http" as const,
-        port: 2375
-      },
-      {
-        name: "host2",
-        host: "192.168.1.11",
-        protocol: "http" as const,
-        port: 2375
-      }
-    ]);
-
-    const container: ServiceContainer = {
-      getDockerService: () => perfMockDocker,
-      setDockerService: vi.fn(),
-      getSSHConnectionPool: vi.fn(),
-      setSSHConnectionPool: vi.fn(),
-      getSSHService: () => createMockSSHService(),
-      setSSHService: vi.fn(),
-      getComposeService: () => createMockComposeService(),
-      setComposeService: vi.fn(),
-      getFileService: () => createMockFileService(),
-      setFileService: vi.fn(),
-      cleanup: vi.fn().mockResolvedValue(undefined)
-    } as unknown as ServiceContainer;
 
     const { registerUnifiedTool } = await import("./unified.js");
     const mockServer = {
       registerTool: vi.fn()
     } as unknown as McpServer;
 
+    const container = createMockContainer();
     registerUnifiedTool(mockServer, container);
 
     const handler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
@@ -2031,7 +1906,7 @@ describe("Error handling: invalid hosts", () => {
     toolHandler = handler;
 
     // Mock loadHostConfigs to return empty array (no hosts found)
-    vi.spyOn(mockDockerService, "loadHostConfigs").mockReturnValue([]);
+    vi.spyOn(dockerService, "loadHostConfigs").mockReturnValue([]);
   });
 
   it("should handle container action with invalid host", async () => {
@@ -2117,14 +1992,14 @@ describe("Edge cases: empty results", () => {
     toolHandler = handler;
 
     // Restore default host config
-    vi.spyOn(mockDockerService, "loadHostConfigs").mockReturnValue([
+    vi.spyOn(dockerService, "loadHostConfigs").mockReturnValue([
       { name: "testhost", host: "localhost", port: 2375, protocol: "http" }
     ]);
   });
 
   it("should handle container search with no results", async () => {
     // Mock findContainerHost to return null (container not found on any host)
-    vi.spyOn(mockDockerService, "findContainerHost").mockResolvedValue(null);
+    vi.spyOn(dockerService, "findContainerHost").mockResolvedValue(null);
 
     const result = (await toolHandler({
       action: "container",
@@ -2138,7 +2013,7 @@ describe("Edge cases: empty results", () => {
   });
 
   it("should handle empty compose project list", async () => {
-    vi.spyOn(mockComposeService, "listComposeProjects").mockResolvedValue([]);
+    vi.spyOn(composeService, "listComposeProjects").mockResolvedValue([]);
 
     const result = (await toolHandler({
       action: "compose",
@@ -2151,7 +2026,7 @@ describe("Edge cases: empty results", () => {
   });
 
   it("should handle pagination with offset beyond results", async () => {
-    vi.spyOn(mockDockerService, "listContainers").mockResolvedValue([
+    vi.spyOn(dockerService, "listContainers").mockResolvedValue([
       {
         id: "abc123",
         name: "test-container",
@@ -2182,7 +2057,7 @@ describe("Edge cases: empty results", () => {
   });
 
   it("should handle empty logs output", async () => {
-    vi.spyOn(mockDockerService, "getContainerLogs").mockResolvedValue([]);
+    vi.spyOn(dockerService, "getContainerLogs").mockResolvedValue([]);
 
     const result = (await toolHandler({
       action: "container",

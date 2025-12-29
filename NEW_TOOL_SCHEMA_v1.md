@@ -4,12 +4,12 @@
 
 Two MCP tools with discriminated union pattern for O(1) validation:
 
-| Tool    | Actions | Subactions | Purpose                                      |
-|---------|---------|------------|----------------------------------------------|
-| `flux`  | 4       | 39         | Docker infrastructure management (read/write) |
-| `scout` | —       | 11         | SSH remote operations (read-mostly)           |
+| Tool    | Actions | Subactions | Help Handler | Purpose                                      |
+|---------|---------|------------|--------------|----------------------------------------------|
+| `flux`  | 4       | 39         | ✅           | Docker infrastructure management (read/write) |
+| `scout` | —       | 11         | ✅           | SSH remote operations (read-mostly)           |
 
-**Total: 50 subactions across 2 tools**
+**Total: 50 subactions across 2 tools + auto-generated help handlers**
 
 ---
 
@@ -159,6 +159,34 @@ Host-level operations.
 
 ---
 
+## 5. Help Handler
+
+Auto-generated help system introspects Zod schemas to provide self-documenting API.
+
+### Flux Help
+
+```json
+{ "action": "help" }
+{ "action": "help", "topic": "container" }
+{ "action": "help", "topic": "container:logs" }
+{ "action": "help", "format": "json" }
+```
+
+**Response**: Returns action/subaction descriptions, parameters with types/defaults, and examples extracted from schema metadata.
+
+### Scout Help
+
+```json
+{ "subaction": "help" }
+{ "subaction": "help", "topic": "zfs" }
+{ "subaction": "help", "topic": "logs" }
+{ "subaction": "help", "format": "json" }
+```
+
+**Implementation**: Help handlers run before schema validation. They introspect the discriminated union schemas using Zod's `.describe()` metadata and return formatted documentation in markdown or JSON.
+
+---
+
 ## Tool 2: `scout`
 
 SSH remote file and system operations. Flat structure (subaction only, no action).
@@ -172,8 +200,8 @@ SSH remote file and system operations. Flat structure (subaction only, no action
 | `delta`   | Compare files             | `source`, `target` OR `source`, `content`     | RENAME (was `diff`)    |
 | `emit`    | Multi-host operations     | `targets[]`, `command?`                       | RENAME (was `targets`) |
 | `beam`    | File transfer             | `source`, `destination`                       | PORT                   |
-| `zfs`     | ZFS pool/dataset info     | `host`, `pool?`, `view?`                      | PORT (from resource)   |
-| `logs`    | System logs               | `host`, `lines?`, `grep?`                     | PORT (from resource)   |
+| `zfs`     | ZFS pool/dataset info     | `host`, `view?`, view-specific parameters     | PORT (from resource)   |
+| `logs`    | System logs               | `host`, `log_type?`, `lines?`, `grep?`, `since?`, `until?`, `unit?`, `priority?` | PORT (from resource)   |
 | `ps`      | List/search processes     | `host`, `grep?`, `user?`, `sort?`, `limit?`   | NEW                    |
 | `df`      | Disk usage for path/mount | `host`, `path?`, `human_readable?`            | NEW                    |
 
@@ -190,13 +218,29 @@ SSH remote file and system operations. Flat structure (subaction only, no action
 
 ### Parameter Details
 
+**log_type** (logs): `syslog` | `journal` | `dmesg` | `auth` (default: `syslog`)
+
 **view** (zfs): `pools` | `datasets` | `snapshots` (default: `pools`)
+
+**pool** (zfs): Pool name filter (optional for all views)
+
+**health** (zfs, pools view only): `online` | `degraded` | `faulted`
+
+**type** (zfs, datasets view only): `filesystem` | `volume`
+
+**recursive** (zfs, datasets view only): Include child datasets (boolean)
+
+**dataset** (zfs, snapshots view only): Filter to specific dataset
+
+**limit** (zfs, snapshots view only): Max number of snapshots (1-1000)
 
 **timeout** (exec): seconds, default 30, max 120
 
 **depth**: max directory depth, default 5
 
 **sort** (ps): `cpu` | `mem` | `pid` | `time` (default: `cpu`)
+
+**priority** (logs, journal only): `emerg` | `alert` | `crit` | `err` | `warning` | `notice` | `info` | `debug`
 
 ### Examples
 ```json
@@ -211,9 +255,15 @@ SSH remote file and system operations. Flat structure (subaction only, no action
 { "subaction": "emit", "targets": ["host1:/etc", "host2:/etc"], "command": "ls -la" }
 { "subaction": "beam", "source": "tootie:/tmp/backup.tar.gz", "destination": "/tmp/local.tar.gz" }
 { "subaction": "beam", "source": "/tmp/config.yaml", "destination": "tootie:/etc/app/config.yaml" }
-{ "subaction": "zfs", "host": "dookie", "view": "pools" }
-{ "subaction": "zfs", "host": "dookie", "pool": "tank", "view": "snapshots" }
-{ "subaction": "logs", "host": "tootie", "lines": 50, "grep": "error" }
+{ "subaction": "zfs", "view": "pools", "host": "dookie" }
+{ "subaction": "zfs", "view": "pools", "host": "dookie", "pool": "tank", "health": "online" }
+{ "subaction": "zfs", "view": "datasets", "host": "dookie", "pool": "tank", "type": "filesystem", "recursive": true }
+{ "subaction": "zfs", "view": "snapshots", "host": "dookie", "pool": "tank", "dataset": "tank/media", "limit": 50 }
+{ "subaction": "logs", "host": "tootie", "log_type": "syslog", "lines": 50, "grep": "error" }
+{ "subaction": "logs", "host": "tootie", "log_type": "journal", "unit": "docker.service", "since": "2024-01-15T10:00:00Z" }
+{ "subaction": "logs", "host": "dookie", "log_type": "dmesg", "lines": 100 }
+{ "subaction": "logs", "host": "tootie", "log_type": "auth", "grep": "Failed password" }
+{ "subaction": "logs", "host": "tootie", "log_type": "journal", "priority": "err", "lines": 50 }
 { "subaction": "ps", "host": "tootie", "grep": "nginx" }
 { "subaction": "ps", "host": "dookie", "user": "root", "sort": "mem", "limit": 20 }
 { "subaction": "df", "host": "tootie", "path": "/mnt/data" }
@@ -347,6 +397,95 @@ const scoutPeekSchema = z.object({
   depth: z.number().min(1).max(10).optional().default(3),
   response_format: responseFormatSchema.optional(),
 });
+
+// Logs schema with nested discriminated union
+const scoutLogsSchema = z.discriminatedUnion("log_type", [
+  // Syslog
+  z.object({
+    subaction: z.literal("logs"),
+    log_type: z.literal("syslog"),
+    host: z.string(),
+    lines: z.number().int().min(1).max(10000).optional(),
+    grep: z.string().optional(),
+  }),
+  // Systemd journal
+  z.object({
+    subaction: z.literal("logs"),
+    log_type: z.literal("journal"),
+    host: z.string(),
+    lines: z.number().int().min(1).max(10000).optional(),
+    since: z.string().optional(), // ISO 8601
+    until: z.string().optional(), // ISO 8601
+    unit: z.string().optional(), // systemd unit
+    priority: z.enum(["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]).optional(),
+    grep: z.string().optional(),
+  }),
+  // Kernel ring buffer
+  z.object({
+    subaction: z.literal("logs"),
+    log_type: z.literal("dmesg"),
+    host: z.string(),
+    lines: z.number().int().min(1).max(10000).optional(),
+    grep: z.string().optional(),
+  }),
+  // Authentication logs
+  z.object({
+    subaction: z.literal("logs"),
+    log_type: z.literal("auth"),
+    host: z.string(),
+    lines: z.number().int().min(1).max(10000).optional(),
+    grep: z.string().optional(),
+  }),
+]).default({ log_type: "syslog" }); // Default to syslog if log_type not specified
+
+// ZFS schema with nested discriminated union
+const scoutZfsSchema = z.discriminatedUnion("view", [
+  // Pools view
+  z.object({
+    subaction: z.literal("zfs"),
+    view: z.literal("pools"),
+    host: z.string(),
+    pool: z.string().optional(), // Filter to specific pool
+    health: z.enum(["online", "degraded", "faulted"]).optional(), // Filter by health status
+  }),
+  // Datasets view
+  z.object({
+    subaction: z.literal("zfs"),
+    view: z.literal("datasets"),
+    host: z.string(),
+    pool: z.string().optional(), // Filter datasets in pool
+    type: z.enum(["filesystem", "volume"]).optional(), // Filter by dataset type
+    recursive: z.boolean().optional(), // Include child datasets
+  }),
+  // Snapshots view
+  z.object({
+    subaction: z.literal("zfs"),
+    view: z.literal("snapshots"),
+    host: z.string(),
+    pool: z.string().optional(), // Filter snapshots in pool
+    dataset: z.string().optional(), // Filter to specific dataset
+    limit: z.number().int().min(1).max(1000).optional(), // Max snapshots to return
+  }),
+]).default({ view: "pools" }); // Default to pools if view not specified
+
+// Help handler (not part of discriminated union)
+function handleHelp(tool: 'flux' | 'scout', topic?: string, format: 'markdown' | 'json' = 'markdown') {
+  const schema = tool === 'flux' ? FluxSchema : ScoutSchema;
+
+  // Introspect schema using Zod metadata
+  const options = schema.options;
+
+  if (!topic) {
+    // Return overview of all subactions
+    return formatHelp(options, format);
+  }
+
+  // Find specific topic in discriminated union
+  const match = options.find(opt => matchesTopic(opt, topic));
+  if (!match) throw new Error(`Unknown topic: ${topic}`);
+
+  return formatDetailedHelp(match, format);
+}
 ```
 
 ---
@@ -390,11 +529,14 @@ src/
 ### Flux Tool — All Subactions by Action
 
 ```
-container: list, start, stop, restart, pause, unpause, logs, stats, inspect, search, pull, recreate, exec, top
-compose:   list, status, up, down, restart, logs, build, pull, recreate
-docker:    info, df, prune, images, pull, build, rmi, networks, volumes
-host:      status, resources, info, uptime, services, network, mounts
+container: list, start, stop, restart, pause, unpause, logs, stats, inspect, search, pull, recreate, exec, top (14)
+compose:   list, status, up, down, restart, logs, build, pull, recreate (9)
+docker:    info, df, prune, images, pull, build, rmi, networks, volumes (9)
+host:      status, resources, info, uptime, services, network, mounts (7)
+help:      Auto-generated documentation (not in discriminator)
 ```
+
+**Total**: 39 operational subactions + help handler
 
 ### Flux Tool — Discriminator Keys
 
@@ -412,12 +554,35 @@ docker:build, docker:rmi, docker:networks, docker:volumes,
 
 host:status, host:resources, host:info, host:uptime,
 host:services, host:network, host:mounts
+
+help: Auto-generated documentation (not in discriminator)
 ```
+
+**Note**: Help handler (`{ "action": "help", ... }`) runs before discriminator validation and is not included in the discriminated union.
+
+---
 
 ### Scout Tool — All Subactions
 
 ```
-nodes, peek, exec, find, delta, emit, beam, zfs, logs, ps, df
+nodes, peek, exec, find, delta, emit, beam, zfs, logs, ps, df (11)
+help: Auto-generated documentation (not in discriminator)
 ```
 
-**Note**: Scout uses a flat structure with only `subaction` as the discriminator (no `action` field), so these subaction names are also the discriminator keys.
+**Total**: 11 operational subactions + help handler
+
+### Scout Tool — Discriminator Keys
+
+```
+nodes, peek, exec, find, delta, emit, beam,
+zfs:pools, zfs:datasets, zfs:snapshots,
+logs:syslog, logs:journal, logs:dmesg, logs:auth,
+ps, df
+```
+
+**Notes**:
+- Scout uses a flat structure with `subaction` as the primary discriminator
+- Two subactions use nested discriminated unions for O(1) validation of variant-specific parameters:
+  - **logs**: Discriminates on `log_type` (syslog, journal, dmesg, auth)
+  - **zfs**: Discriminates on `view` (pools, datasets, snapshots)
+- Help handler (`{ "subaction": "help", ... }`) runs before discriminator validation and is not included in the discriminated union

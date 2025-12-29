@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { executeSSHCommand, getGlobalPool } from "./ssh-pool-exec.js";
+import { SSHConnectionPoolImpl } from "./ssh-pool.js";
+import { SSHService } from "./ssh-service.js";
 import { HostConfig } from "../types.js";
 import { logError } from "../utils/errors.js";
 
 describe("SSH Connection Pool Performance Benchmarks", () => {
+  // Create pool and service for benchmarks
+  const pool = new SSHConnectionPoolImpl();
+  const sshService = new SSHService(pool);
+
   const testHost: HostConfig = {
     name: "benchmark-host",
     host: "localhost",
@@ -14,14 +19,13 @@ describe("SSH Connection Pool Performance Benchmarks", () => {
   beforeAll(async () => {
     // Warm up pool
     try {
-      await executeSSHCommand(testHost, "echo warmup");
+      await sshService.executeSSHCommand(testHost, "echo warmup");
     } catch {
       // Ignore if SSH not available
     }
   });
 
   afterAll(async () => {
-    const pool = getGlobalPool();
     await pool.closeAll();
   });
 
@@ -33,7 +37,7 @@ describe("SSH Connection Pool Performance Benchmarks", () => {
     const pooledStart = Date.now();
     for (let i = 0; i < iterations; i++) {
       try {
-        await executeSSHCommand(testHost, command);
+        await sshService.executeSSHCommand(testHost, command);
       } catch {
         // SSH may not be available in test environment
         console.log("SSH not available, skipping benchmark");
@@ -42,7 +46,6 @@ describe("SSH Connection Pool Performance Benchmarks", () => {
     }
     const pooledDuration = Date.now() - pooledStart;
 
-    const pool = getGlobalPool();
     const stats = pool.getStats();
 
     console.log(`\nPerformance Results (${iterations} operations):`);
@@ -73,7 +76,7 @@ describe("SSH Connection Pool Performance Benchmarks", () => {
 
     const start = Date.now();
     const promises = Array.from({ length: concurrentRequests }, (_, i) =>
-      executeSSHCommand(testHost, `${command} ${i}`).catch((error) => {
+      sshService.executeSSHCommand(testHost, `${command} ${i}`).catch((error) => {
         logError(error, {
           operation: "benchmark",
           metadata: { commandIndex: i, command }
@@ -89,7 +92,6 @@ describe("SSH Connection Pool Performance Benchmarks", () => {
     console.log(`  Total time: ${duration}ms`);
     console.log(`  Avg per request: ${(duration / concurrentRequests).toFixed(2)}ms`);
 
-    const pool = getGlobalPool();
     const stats = pool.getStats();
     console.log(`  Pool hits: ${stats.poolHits}`);
     console.log(`  Pool misses: ${stats.poolMisses}`);
@@ -99,7 +101,6 @@ describe("SSH Connection Pool Performance Benchmarks", () => {
   });
 
   it("should show pool statistics", () => {
-    const pool = getGlobalPool();
     const stats = pool.getStats();
 
     console.log("\nPool Statistics:");
