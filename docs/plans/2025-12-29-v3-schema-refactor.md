@@ -2984,11 +2984,178 @@ Repeat steps 1-5 for each remaining subaction (status, restart, logs, build, pul
 
 ### Task 18: Implement Docker Handlers (RED-GREEN-REFACTOR)
 
-**Note:** Follow same TDD pattern as Task 16 for docker handlers
-
 **Files:**
 - Create: `src/tools/handlers/docker.ts`
 - Test: `src/tools/handlers/docker.test.ts`
+
+**Step 1: Write failing tests for docker handlers**
+
+```typescript
+// src/tools/handlers/docker.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { handleDockerAction } from './docker.js';
+
+describe('Docker Handler', () => {
+  it('should handle info subaction', async () => {
+    const mockDockerService = {
+      getInfo: vi.fn().mockResolvedValue({ version: '24.0.0', containers: 15 })
+    };
+    const mockContainer = {
+      getDockerService: () => mockDockerService
+    } as any;
+
+    const result = await handleDockerAction({
+      action: 'docker',
+      subaction: 'info',
+      action_subaction: 'docker:info',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockDockerService.getInfo).toHaveBeenCalledWith('tootie');
+    expect(result).toContain('24.0.0');
+  });
+
+  it('should handle df subaction', async () => {
+    const mockDockerService = {
+      getDiskUsage: vi.fn().mockResolvedValue({ images: '10GB', containers: '5GB' })
+    };
+    const mockContainer = {
+      getDockerService: () => mockDockerService
+    } as any;
+
+    const result = await handleDockerAction({
+      action: 'docker',
+      subaction: 'df',
+      action_subaction: 'docker:df',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockDockerService.getDiskUsage).toHaveBeenCalledWith('tootie');
+    expect(result).toContain('10GB');
+  });
+
+  it('should handle prune subaction with force flag', async () => {
+    const mockDockerService = {
+      prune: vi.fn().mockResolvedValue({ reclaimed: '2GB' })
+    };
+    const mockContainer = {
+      getDockerService: () => mockDockerService
+    } as any;
+
+    await handleDockerAction({
+      action: 'docker',
+      subaction: 'prune',
+      action_subaction: 'docker:prune',
+      host: 'tootie',
+      prune_target: 'images',
+      force: true
+    }, mockContainer);
+
+    expect(mockDockerService.prune).toHaveBeenCalledWith('tootie', 'images', { force: true });
+  });
+
+  it('should handle networks subaction', async () => {
+    const mockDockerService = {
+      listNetworks: vi.fn().mockResolvedValue([{ name: 'bridge' }, { name: 'host' }])
+    };
+    const mockContainer = {
+      getDockerService: () => mockDockerService
+    } as any;
+
+    const result = await handleDockerAction({
+      action: 'docker',
+      subaction: 'networks',
+      action_subaction: 'docker:networks',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockDockerService.listNetworks).toHaveBeenCalled();
+    expect(result).toContain('bridge');
+  });
+
+  it('should handle volumes subaction', async () => {
+    const mockDockerService = {
+      listVolumes: vi.fn().mockResolvedValue([{ name: 'plex_data' }])
+    };
+    const mockContainer = {
+      getDockerService: () => mockDockerService
+    } as any;
+
+    const result = await handleDockerAction({
+      action: 'docker',
+      subaction: 'volumes',
+      action_subaction: 'docker:volumes'
+    }, mockContainer);
+
+    expect(mockDockerService.listVolumes).toHaveBeenCalled();
+    expect(result).toContain('plex_data');
+  });
+});
+```
+
+**Step 2: Run test to verify it fails (RED)**
+
+Run: `pnpm test src/tools/handlers/docker.test.ts`
+Expected: FAIL with "Cannot find module './docker.js'"
+
+**Step 3: Write minimal implementation (GREEN)**
+
+```typescript
+// src/tools/handlers/docker.ts
+import type { ServiceContainer } from '../../services/container.js';
+
+export async function handleDockerAction(
+  input: any,
+  container: ServiceContainer
+): Promise<string> {
+  const dockerService = container.getDockerService();
+
+  switch (input.subaction) {
+    case 'info':
+      const info = await dockerService.getInfo(input.host);
+      return JSON.stringify(info);
+
+    case 'df':
+      const diskUsage = await dockerService.getDiskUsage(input.host);
+      return JSON.stringify(diskUsage);
+
+    case 'prune':
+      const pruneResult = await dockerService.prune(input.host, input.prune_target, { force: input.force });
+      return `Pruned ${input.prune_target}: ${pruneResult.reclaimed} reclaimed`;
+
+    case 'networks':
+      const networks = await dockerService.listNetworks(input.host);
+      return JSON.stringify(networks);
+
+    case 'volumes':
+      const volumes = await dockerService.listVolumes(input.host);
+      return JSON.stringify(volumes);
+
+    default:
+      throw new Error(`Unknown subaction: ${input.subaction}`);
+  }
+}
+```
+
+**Step 4: Run test to verify it passes (GREEN)**
+
+Run: `pnpm test src/tools/handlers/docker.test.ts`
+Expected: PASS
+
+**Step 5: Refactor (if needed) and commit**
+
+```bash
+git add src/tools/handlers/docker.ts src/tools/handlers/docker.test.ts
+git commit -m "feat(handlers): implement docker handlers with TDD (info, df, prune, networks, volumes)"
+```
+
+**Step 6: Continue RED-GREEN-REFACTOR for remaining docker subactions**
+
+Repeat steps 1-5 for each remaining subaction (images, pull, build, rmi), adding 2-3 subactions per commit.
+
+**Docker subactions to implement:**
+- info, df, prune, networks, volumes (initial commit - 5 subactions)
+- images, pull, build, rmi (second commit - 4 subactions)
 
 ---
 
