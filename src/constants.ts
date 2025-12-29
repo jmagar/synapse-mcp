@@ -19,3 +19,48 @@ export const DEFAULT_DOCKER_SOCKET = "/var/run/docker.sock";
 // Environment variable names for config
 export const ENV_HOSTS_CONFIG = "HOMELAB_HOSTS_CONFIG";
 export const ENV_DEFAULT_HOST = "HOMELAB_DEFAULT_HOST";
+
+// ===== Scout File Operations Constants =====
+
+// File size limits (bytes)
+export const DEFAULT_MAX_FILE_SIZE = 1048576; // 1MB
+export const MAX_FILE_SIZE_LIMIT = 10485760; // 10MB
+
+// Command timeout limits (milliseconds)
+export const DEFAULT_COMMAND_TIMEOUT = 30000; // 30s
+export const MAX_COMMAND_TIMEOUT = 300000; // 300s (5 min)
+
+// Tree depth limits
+export const DEFAULT_TREE_DEPTH = 3;
+export const MAX_TREE_DEPTH = 10;
+
+// Find result limits
+export const DEFAULT_FIND_LIMIT = 100;
+export const MAX_FIND_LIMIT = 1000;
+
+// Allowed commands for exec subaction (read-only operations)
+export const ALLOWED_COMMANDS = new Set([
+  "cat",
+  "head",
+  "tail",
+  "grep",
+  "rg",
+  "find",
+  "ls",
+  "tree",
+  "wc",
+  "sort",
+  "uniq",
+  "diff",
+  "stat",
+  "file",
+  "du",
+  "df",
+  "pwd",
+  "hostname",
+  "uptime",
+  "whoami"
+]);
+
+// Environment variable to disable command allowlist
+export const ENV_ALLOW_ANY_COMMAND = "HOMELAB_ALLOW_ANY_COMMAND";
