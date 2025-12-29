@@ -221,6 +221,12 @@ export interface IDockerService {
     host: HostConfig,
     options: { context: string; tag: string; dockerfile?: string; noCache?: boolean }
   ): Promise<{ status: string }>;
+
+  /**
+   * Clear all cached Docker client connections.
+   * Useful for cleanup during shutdown or when connections need to be reset.
+   */
+  clearClients(): void;
 }
 
 /**

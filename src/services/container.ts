@@ -110,8 +110,8 @@ export class ServiceContainer {
    */
   async cleanup(): Promise<void> {
     if (this.sshPool) await this.sshPool.closeAll();
-    if (this.dockerService && "clearClients" in this.dockerService) {
-      (this.dockerService as DockerService).clearClients();
+    if (this.dockerService) {
+      this.dockerService.clearClients();
     }
   }
 }

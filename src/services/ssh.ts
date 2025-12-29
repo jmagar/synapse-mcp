@@ -11,11 +11,11 @@ let globalSSHService: SSHService | null = null;
 function getGlobalSSHService(): SSHService {
   if (!globalSSHService) {
     const pool = new SSHConnectionPoolImpl({
-      maxConnections: parseInt(process.env.SSH_POOL_MAX_CONNECTIONS || "5", 10),
-      idleTimeoutMs: parseInt(process.env.SSH_POOL_IDLE_TIMEOUT_MS || "60000", 10),
-      connectionTimeoutMs: parseInt(process.env.SSH_POOL_CONNECTION_TIMEOUT_MS || "5000", 10),
-      enableHealthChecks: process.env.SSH_POOL_ENABLE_HEALTH_CHECKS !== "false",
-      healthCheckIntervalMs: parseInt(process.env.SSH_POOL_HEALTH_CHECK_INTERVAL_MS || "30000", 10)
+      maxConnections: parseInt(process.env.HOMELAB_SSH_MAX_CONNECTIONS || "5", 10),
+      idleTimeoutMs: parseInt(process.env.HOMELAB_SSH_IDLE_TIMEOUT_MS || "60000", 10),
+      connectionTimeoutMs: parseInt(process.env.HOMELAB_SSH_CONNECTION_TIMEOUT_MS || "5000", 10),
+      enableHealthChecks: process.env.HOMELAB_SSH_ENABLE_HEALTH_CHECKS !== "false",
+      healthCheckIntervalMs: parseInt(process.env.HOMELAB_SSH_HEALTH_CHECK_INTERVAL_MS || "30000", 10)
     });
     globalSSHService = new SSHService(pool);
   }
@@ -79,14 +79,4 @@ export interface HostResources {
     availGB: number;
     usagePercent: number;
   }>;
-}
-
-/**
- * Get host resource usage via SSH using connection pool
- *
- * @deprecated Use SSHService.getHostResources() instead
- * This is a temporary backward-compatibility wrapper
- */
-export async function getHostResources(host: HostConfig): Promise<HostResources> {
-  return getGlobalSSHService().getHostResources(host);
 }

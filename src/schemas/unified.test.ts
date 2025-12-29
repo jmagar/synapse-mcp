@@ -43,6 +43,7 @@ describe("UnifiedHomelabSchema", () => {
     const result = UnifiedHomelabSchema.safeParse({
       action: "docker",
       subaction: "prune",
+      host: "tootie",
       prune_target: "images",
       force: true
     });
@@ -102,7 +103,7 @@ describe("Discriminated union optimization", () => {
       { action: "container", subaction: "start", container_id: "test" },
       { action: "compose", subaction: "up", host: "test", project: "plex" },
       { action: "host", subaction: "status" },
-      { action: "docker", subaction: "info" },
+      { action: "docker", subaction: "info", host: "tootie" },
       { action: "image", subaction: "list" }
     ];
 
@@ -200,7 +201,8 @@ describe("Individual schema discriminators", () => {
   it("should have action_subaction discriminator in docker schemas", () => {
     const result = UnifiedHomelabSchema.parse({
       action: "docker",
-      subaction: "info"
+      subaction: "info",
+      host: "tootie"
     });
 
     expect(result.action_subaction).toBe("docker:info");
