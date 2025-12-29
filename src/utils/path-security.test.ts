@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { validateSecurePath } from "./path-security.js";
+import {
+  validateSecurePath,
+  validateHostFormat,
+  HostSecurityError,
+  escapeShellArg,
+  isSystemPath,
+} from "./path-security.js";
 
 describe("validateSecurePath", () => {
   describe("directory traversal attacks", () => {
@@ -167,5 +173,121 @@ describe("validateSecurePath", () => {
         expect((error as Error).message).toContain("..");
       }
     });
+  });
+});
+
+describe("validateHostFormat", () => {
+  // Valid hostnames
+  it("allows simple hostname: myserver", () => {
+    expect(() => validateHostFormat("myserver")).not.toThrow();
+  });
+
+  it("allows FQDN: server.example.com", () => {
+    expect(() => validateHostFormat("server.example.com")).not.toThrow();
+  });
+
+  it("allows IP address: 192.168.1.100", () => {
+    expect(() => validateHostFormat("192.168.1.100")).not.toThrow();
+  });
+
+  it("allows hostname with dash: my-server", () => {
+    expect(() => validateHostFormat("my-server")).not.toThrow();
+  });
+
+  it("allows hostname with underscore: my_server", () => {
+    expect(() => validateHostFormat("my_server")).not.toThrow();
+  });
+
+  // Command injection attacks
+  it("throws on semicolon: host;rm -rf /", () => {
+    expect(() => validateHostFormat("host;rm -rf /")).toThrow(HostSecurityError);
+  });
+
+  it("throws on pipe: host|cat /etc/passwd", () => {
+    expect(() => validateHostFormat("host|cat")).toThrow(HostSecurityError);
+  });
+
+  it("throws on dollar: host$(whoami)", () => {
+    expect(() => validateHostFormat("host$(whoami)")).toThrow(HostSecurityError);
+  });
+
+  it("throws on backtick: host`id`", () => {
+    expect(() => validateHostFormat("host`id`")).toThrow(HostSecurityError);
+  });
+
+  it("throws on ampersand: host&rm", () => {
+    expect(() => validateHostFormat("host&rm")).toThrow(HostSecurityError);
+  });
+
+  it("throws on angle brackets: host<script>", () => {
+    expect(() => validateHostFormat("host<script>")).toThrow(HostSecurityError);
+  });
+
+  it("throws on empty string", () => {
+    expect(() => validateHostFormat("")).toThrow(HostSecurityError);
+  });
+});
+
+describe("escapeShellArg", () => {
+  it("returns simple strings in single quotes: filename.txt", () => {
+    expect(escapeShellArg("filename.txt")).toBe("'filename.txt'");
+  });
+
+  it("quotes paths with spaces", () => {
+    expect(escapeShellArg("/path/with spaces/file.txt")).toBe("'/path/with spaces/file.txt'");
+  });
+
+  it("escapes single quotes by ending quote, adding escaped quote, starting new quote", () => {
+    expect(escapeShellArg("file'name.txt")).toBe("'file'\\''name.txt'");
+  });
+
+  it("handles paths with special shell chars safely", () => {
+    const result = escapeShellArg("$HOME/file.txt");
+    expect(result).toBe("'$HOME/file.txt'");
+  });
+
+  it("handles backticks safely", () => {
+    const result = escapeShellArg("`whoami`.txt");
+    expect(result).toBe("'`whoami`.txt'");
+  });
+
+  it("handles subshell safely", () => {
+    const result = escapeShellArg("$(id).txt");
+    expect(result).toBe("'$(id).txt'");
+  });
+
+  it("handles empty string", () => {
+    expect(escapeShellArg("")).toBe("''");
+  });
+});
+
+describe("isSystemPath", () => {
+  it("returns true for /etc/*", () => {
+    expect(isSystemPath("/etc/passwd")).toBe(true);
+    expect(isSystemPath("/etc/shadow")).toBe(true);
+  });
+
+  it("returns true for /bin/*", () => {
+    expect(isSystemPath("/bin/bash")).toBe(true);
+  });
+
+  it("returns true for /usr/bin/*", () => {
+    expect(isSystemPath("/usr/bin/python")).toBe(true);
+  });
+
+  it("returns true for /sbin/*", () => {
+    expect(isSystemPath("/sbin/init")).toBe(true);
+  });
+
+  it("returns false for /home/*", () => {
+    expect(isSystemPath("/home/user/file.txt")).toBe(false);
+  });
+
+  it("returns false for /tmp/*", () => {
+    expect(isSystemPath("/tmp/scratch.txt")).toBe(false);
+  });
+
+  it("returns false for /var/log/*", () => {
+    expect(isSystemPath("/var/log/syslog")).toBe(false);
   });
 });
