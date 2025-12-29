@@ -2180,13 +2180,13 @@ describe("scout action integration", () => {
         "total 8\n.hidden_file"
       );
 
-      const result = (await toolHandler({
+      await toolHandler({
         action: "scout",
         subaction: "list",
         host: "testhost",
         path: "/home/user",
         all: true
-      })) as { content: Array<{ text: string }> };
+      });
 
       expect(mockFileService.listDirectory).toHaveBeenCalledWith(
         expect.objectContaining({ name: "testhost" }),
@@ -2275,14 +2275,14 @@ describe("scout action integration", () => {
         "/var/log\n/var/cache"
       );
 
-      const result = (await toolHandler({
+      await toolHandler({
         action: "scout",
         subaction: "find",
         host: "testhost",
         path: "/var",
         pattern: "*",
         type: "d"
-      })) as { content: Array<{ text: string }> };
+      });
 
       expect(mockFileService.findFiles).toHaveBeenCalledWith(
         expect.objectContaining({ name: "testhost" }),

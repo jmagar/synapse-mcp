@@ -33,3 +33,7 @@ coverage/
 
 # Config with secrets
 homelab.config.json
+
+# Runner script artifacts
+.server.pid
+.server.log

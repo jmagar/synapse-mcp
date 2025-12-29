@@ -4,10 +4,11 @@ import { SSHConnectionPoolImpl } from "./ssh-pool.js";
 
 /**
  * Temporary global SSH service for backward compatibility
- * TODO: Remove when all callers use DI
+ * @deprecated Use ServiceContainer.getSSHService() instead
  */
 let globalSSHService: SSHService | null = null;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getGlobalSSHService(): SSHService {
   if (!globalSSHService) {
     const pool = new SSHConnectionPoolImpl({

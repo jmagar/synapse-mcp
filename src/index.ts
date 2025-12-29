@@ -66,6 +66,14 @@ async function runHTTP(): Promise<void> {
 
   app.use(express.json());
 
+  // Request logging middleware
+  app.use((req, _res, next) => {
+    const timestamp = new Date().toISOString();
+    const forwarded = req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "";
+    console.error(`[${timestamp}] ${req.method} ${req.path} from ${req.ip} (fwd: ${forwarded})`);
+    next();
+  });
+
   // Health check endpoint (no rate limiting)
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", server: SERVER_NAME, version: SERVER_VERSION });
@@ -84,8 +92,8 @@ async function runHTTP(): Promise<void> {
     await transport.handleRequest(req, res, req.body);
   });
 
-  const port = parseInt(process.env.PORT || "3000", 10);
-  const host = process.env.HOST || "127.0.0.1";
+  const port = parseInt(process.env.HOMELAB_PORT || "3000", 10);
+  const host = process.env.HOMELAB_HOST || "127.0.0.1";
 
   app.listen(port, host, () => {
     console.error(`${SERVER_NAME} v${SERVER_VERSION} running on http://${host}:${port}/mcp`);
@@ -128,8 +136,8 @@ CONFIGURATION:
 ENVIRONMENT VARIABLES:
   HOMELAB_CONFIG_FILE     Path to config file (optional, overrides default paths)
   HOMELAB_HOSTS_CONFIG    JSON config as env var (fallback if no config file)
-  PORT                    HTTP server port (default: 3000)
-  HOST                    HTTP server bind address (default: 127.0.0.1)
+  HOMELAB_PORT            HTTP server port (default: 3000)
+  HOMELAB_HOST            HTTP server bind address (default: 127.0.0.1)
 
 CLAUDE CODE CONFIG (~/.claude/claude_code_config.json):
   {
