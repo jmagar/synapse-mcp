@@ -19,7 +19,14 @@ import {
   formatHostResourcesMarkdown,
   formatImagesMarkdown,
   formatComposeListMarkdown,
-  formatComposeStatusMarkdown
+  formatComposeStatusMarkdown,
+  formatScoutReadMarkdown,
+  formatScoutListMarkdown,
+  formatScoutTreeMarkdown,
+  formatScoutExecMarkdown,
+  formatScoutFindMarkdown,
+  formatScoutTransferMarkdown,
+  formatScoutDiffMarkdown
 } from "../formatters/index.js";
 import { logError, HostOperationError } from "../utils/errors.js";
 
@@ -155,6 +162,15 @@ ACTIONS:
     build                - Build from Dockerfile
     remove               - Remove an image
 
+  scout <subaction>      - Remote file operations via SSH
+    read                 - Read file content
+    list                 - List directory contents
+    tree                 - Show directory tree
+    exec                 - Execute command
+    find                 - Find files by pattern
+    transfer             - Transfer file between hosts
+    diff                 - Diff files across hosts
+
 EXAMPLES:
   { action: "container", subaction: "list", state: "running" }
   { action: "container", subaction: "restart", container_id: "plex" }
@@ -163,7 +179,10 @@ EXAMPLES:
   { action: "docker", subaction: "info", host: "tootie" }
   { action: "docker", subaction: "df", host: "tootie" }
   { action: "docker", subaction: "prune", host: "tootie", prune_target: "images", force: true }
-  { action: "image", subaction: "pull", host: "tootie", image: "nginx:latest" }`;
+  { action: "image", subaction: "pull", host: "tootie", image: "nginx:latest" }
+  { action: "scout", subaction: "read", host: "tootie", path: "/etc/hosts" }
+  { action: "scout", subaction: "list", host: "tootie", path: "/var/log" }
+  { action: "scout", subaction: "exec", host: "tootie", path: "/tmp", command: "ls -la" }`;
 
   server.registerTool(
     "homelab",
@@ -223,6 +242,8 @@ async function routeAction(
       return handleDockerAction(params, hosts, container);
     case "image":
       return handleImageAction(params, hosts, container);
+    case "scout":
+      return handleScoutAction(params, hosts, container);
     default:
       throw new Error(`Unknown action: ${action}`);
   }
@@ -887,6 +908,232 @@ async function handleImageAction(
 
     default:
       throw new Error(`Unknown image subaction: ${subaction}`);
+  }
+}
+
+// ===== Scout Action Handlers =====
+
+async function handleScoutAction(
+  params: UnifiedHomelabInput,
+  hosts: HostConfig[],
+  container: ServiceContainer
+): Promise<{
+  isError?: boolean;
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+}> {
+  if (params.action !== "scout") throw new Error("Invalid action");
+  const { subaction } = params;
+  const fileService = container.getFileService();
+
+  switch (subaction) {
+    case "read": {
+      const targetHost = hosts.find((h) => h.name === params.host);
+      if (!targetHost) {
+        return errorResponse(`Host '${params.host}' not found.`);
+      }
+
+      const result = await fileService.readFile(targetHost, params.path, params.max_size);
+
+      const output = {
+        host: params.host,
+        path: params.path,
+        content: result.content,
+        size: result.size,
+        truncated: result.truncated
+      };
+
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatScoutReadMarkdown(params.host, params.path, result.content, result.size, result.truncated);
+
+      return successResponse(text, output);
+    }
+
+    case "list": {
+      const targetHost = hosts.find((h) => h.name === params.host);
+      if (!targetHost) {
+        return errorResponse(`Host '${params.host}' not found.`);
+      }
+
+      const listing = await fileService.listDirectory(targetHost, params.path, params.all);
+
+      const output = {
+        host: params.host,
+        path: params.path,
+        listing
+      };
+
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatScoutListMarkdown(params.host, params.path, listing);
+
+      return successResponse(text, output);
+    }
+
+    case "tree": {
+      const targetHost = hosts.find((h) => h.name === params.host);
+      if (!targetHost) {
+        return errorResponse(`Host '${params.host}' not found.`);
+      }
+
+      const tree = await fileService.treeDirectory(targetHost, params.path, params.depth);
+
+      const output = {
+        host: params.host,
+        path: params.path,
+        depth: params.depth,
+        tree
+      };
+
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatScoutTreeMarkdown(params.host, params.path, tree, params.depth);
+
+      return successResponse(text, output);
+    }
+
+    case "exec": {
+      const targetHost = hosts.find((h) => h.name === params.host);
+      if (!targetHost) {
+        return errorResponse(`Host '${params.host}' not found.`);
+      }
+
+      const result = await fileService.executeCommand(
+        targetHost,
+        params.path,
+        params.command,
+        params.timeout
+      );
+
+      const output = {
+        host: params.host,
+        path: params.path,
+        command: params.command,
+        stdout: result.stdout,
+        exitCode: result.exitCode
+      };
+
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatScoutExecMarkdown(
+              params.host,
+              params.path,
+              params.command,
+              result.stdout,
+              result.exitCode
+            );
+
+      return successResponse(text, output);
+    }
+
+    case "find": {
+      const targetHost = hosts.find((h) => h.name === params.host);
+      if (!targetHost) {
+        return errorResponse(`Host '${params.host}' not found.`);
+      }
+
+      const results = await fileService.findFiles(targetHost, params.path, params.pattern, {
+        type: params.type,
+        maxDepth: params.max_depth,
+        limit: params.limit
+      });
+
+      const output = {
+        host: params.host,
+        path: params.path,
+        pattern: params.pattern,
+        results
+      };
+
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatScoutFindMarkdown(params.host, params.path, params.pattern, results);
+
+      return successResponse(text, output);
+    }
+
+    case "transfer": {
+      const sourceHost = hosts.find((h) => h.name === params.source_host);
+      const targetHost = hosts.find((h) => h.name === params.target_host);
+
+      if (!sourceHost) {
+        return errorResponse(`Source host '${params.source_host}' not found.`);
+      }
+      if (!targetHost) {
+        return errorResponse(`Target host '${params.target_host}' not found.`);
+      }
+
+      const result = await fileService.transferFile(
+        sourceHost,
+        params.source_path,
+        targetHost,
+        params.target_path
+      );
+
+      const output = {
+        source_host: params.source_host,
+        source_path: params.source_path,
+        target_host: params.target_host,
+        target_path: params.target_path,
+        bytes_transferred: result.bytesTransferred,
+        warning: result.warning
+      };
+
+      const text = formatScoutTransferMarkdown(
+        params.source_host,
+        params.source_path,
+        params.target_host,
+        params.target_path,
+        result.bytesTransferred,
+        result.warning
+      );
+
+      return successResponse(text, output);
+    }
+
+    case "diff": {
+      const host1 = hosts.find((h) => h.name === params.host1);
+      const host2 = hosts.find((h) => h.name === params.host2);
+
+      if (!host1) {
+        return errorResponse(`Host '${params.host1}' not found.`);
+      }
+      if (!host2) {
+        return errorResponse(`Host '${params.host2}' not found.`);
+      }
+
+      const diff = await fileService.diffFiles(
+        host1,
+        params.path1,
+        host2,
+        params.path2,
+        params.context_lines
+      );
+
+      const output = {
+        host1: params.host1,
+        path1: params.path1,
+        host2: params.host2,
+        path2: params.path2,
+        diff
+      };
+
+      const text =
+        params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(output, null, 2)
+          : formatScoutDiffMarkdown(params.host1, params.path1, params.host2, params.path2, diff);
+
+      return successResponse(text, output);
+    }
+
+    default:
+      throw new Error(`Unknown scout subaction: ${subaction}`);
   }
 }
 
