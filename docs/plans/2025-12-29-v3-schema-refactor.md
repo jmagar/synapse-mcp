@@ -1,12 +1,14 @@
 # V3 Schema Refactor - Flux & Scout Tools
 
+> **📁 Organization Note:** When this plan is fully implemented and verified, move this file to `docs/plans/complete/` to keep the plans folder organized.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Replace unified homelab tool with two specialized MCP tools (flux and scout) using discriminated unions with O(1) validation and auto-generated help system. Clean break - no backward compatibility.
 
 **Architecture:** Flux uses composite discriminator (`action_subaction`), scout uses primary discriminator (`action`) with nested discriminators for `zfs` and `logs` actions. Both tools include auto-generated help handlers that introspect schema metadata.
 
-**Tech Stack:** TypeScript 5.7+, Zod 3.24+, MCP SDK 1.12+, Vitest 4.0+
+**Tech Stack:** TypeScript 5.7+, Zod 3.24+, MCP SDK 1.25.1+, Vitest 4.0+
 
 **Changes from Current:**
 - **DELETE** unified tool entirely (homelab)
@@ -19,11 +21,17 @@
 - Scout: Nested discriminators for `zfs` and `logs`
 - Help: Auto-generated via schema introspection
 
+**Validation Status:** ✅ ALL ISSUES FIXED
+- ✅ TDD compliance restored (Task 12 deleted, Task 17 split into RED-GREEN-REFACTOR cycles)
+- ✅ MCP SDK API corrected (addTool → registerTool)
+- ✅ Preprocessor moved to common.ts to prevent deletion dependency
+- ✅ Help handler unwraps preprocessed schemas correctly
+
 ---
 
 ## Phase 1: Common Schemas and Utilities
 
-### Task 1: Create Common Schema Base
+### Task 1: Create Common Schema Base with Preprocessor
 
 **Files:**
 - Create: `src/schemas/common.ts`
@@ -38,7 +46,8 @@ import {
   responseFormatSchema,
   paginationSchema,
   hostSchema,
-  containerIdSchema
+  containerIdSchema,
+  preprocessWithDiscriminator
 } from './common.js';
 
 describe('Common Schemas', () => {
@@ -106,6 +115,25 @@ describe('Common Schemas', () => {
       expect(() => containerIdSchema.parse('')).toThrow();
     });
   });
+
+  describe('preprocessWithDiscriminator', () => {
+    it('should inject action_subaction from action and subaction', () => {
+      const result = preprocessWithDiscriminator({
+        action: 'container',
+        subaction: 'list'
+      });
+      expect(result).toEqual({
+        action: 'container',
+        subaction: 'list',
+        action_subaction: 'container:list'
+      });
+    });
+
+    it('should return unchanged if action or subaction missing', () => {
+      const result = preprocessWithDiscriminator({ action: 'help' });
+      expect(result).toEqual({ action: 'help' });
+    });
+  });
 });
 ```
 
@@ -154,6 +182,17 @@ export const projectSchema = z.string()
 export const imageSchema = z.string()
   .min(1)
   .describe('Image name with optional tag');
+
+/**
+ * Preprocessor to inject composite discriminator key
+ * Used by Flux tool to create action_subaction from action + subaction
+ */
+export function preprocessWithDiscriminator(data: any): any {
+  if (data && typeof data === 'object' && data.action && data.subaction) {
+    return { ...data, action_subaction: `${data.action}:${data.subaction}` };
+  }
+  return data;
+}
 ```
 
 **Step 4: Run test to verify it passes**
@@ -165,7 +204,7 @@ Expected: PASS (all tests green)
 
 ```bash
 git add src/schemas/common.ts src/schemas/common.test.ts
-git commit -m "feat(schemas): add common base schemas for V3 refactor"
+git commit -m "feat(schemas): add common base schemas and discriminator preprocessor"
 ```
 
 ---
@@ -217,6 +256,15 @@ describe('Help Handler', () => {
     it('should return empty for unknown topic', () => {
       const help = generateHelp(testSchema, 'unknown');
       expect(help).toHaveLength(0);
+    });
+
+    it('should unwrap preprocessed schema', () => {
+      const preprocessedSchema = z.preprocess(
+        (data) => data,
+        testSchema
+      );
+      const help = generateHelp(preprocessedSchema);
+      expect(help).toHaveLength(2);
     });
   });
 
@@ -274,15 +322,37 @@ export interface HelpEntry {
 }
 
 /**
+ * Unwrap z.preprocess wrapper to access inner schema
+ */
+function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
+  // Check if schema is wrapped in z.preprocess
+  if ('_def' in schema && 'innerType' in schema._def) {
+    return schema._def.innerType;
+  }
+  return schema;
+}
+
+/**
  * Generate help documentation from discriminated union schema
+ *
+ * Handles schemas wrapped in z.preprocess() by unwrapping to access
+ * the inner discriminated union.
  */
 export function generateHelp(
-  schema: z.ZodDiscriminatedUnion<string, z.ZodObject<any>[]>,
+  schema: z.ZodTypeAny,
   topic?: string
 ): HelpEntry[] {
-  const options = schema.options as z.ZodObject<any>[];
+  // Unwrap z.preprocess if present
+  const actualSchema = unwrapSchema(schema);
 
-  const entries = options.map((option) => {
+  // Access options from discriminated union
+  const options = (actualSchema as any).options || (actualSchema as any)._def?.options;
+
+  if (!options) {
+    throw new Error('Schema is not a discriminated union');
+  }
+
+  const entries = options.map((option: z.ZodObject<any>) => {
     const shape = option.shape;
     const discriminatorKey = Object.keys(shape).find(
       key => shape[key] instanceof z.ZodLiteral
@@ -370,7 +440,7 @@ Expected: PASS (all tests green)
 
 ```bash
 git add src/utils/help.ts src/utils/help.test.ts
-git commit -m "feat(utils): add help handler with schema introspection"
+git commit -m "feat(utils): add help handler with schema introspection and unwrapping"
 ```
 
 ---
@@ -1242,7 +1312,7 @@ Expected: FAIL
 ```typescript
 // src/schemas/flux/index.ts
 import { z } from 'zod';
-import { preprocessWithDiscriminator } from '../discriminator.js';
+import { preprocessWithDiscriminator } from '../common.js';
 import {
   containerListSchema,
   containerStartSchema,
@@ -2040,8 +2110,7 @@ export async function handleFluxTool(
   // Handle help action before validation
   if (typeof input === 'object' && input !== null && 'action' in input && input.action === 'help') {
     const helpInput = input as HelpInput;
-    const discriminatedUnion = FluxSchema._def.schema as any;
-    const help = generateHelp(discriminatedUnion, helpInput.topic);
+    const help = generateHelp(FluxSchema, helpInput.topic);
 
     if (helpInput.format === 'json') {
       return formatHelpJson(help);
@@ -2234,94 +2303,9 @@ git commit -m "feat(tools): add scout tool handler with auto-generated help"
 
 ---
 
-## Phase 5: Handler Stub Implementation
+## Phase 5: Tool Registration and Integration
 
-### Task 12: Create Action Handler Stubs
-
-**Note:** This task creates minimal handler stubs that delegate to existing service layer. Full implementation will reuse existing logic from `src/tools/unified.ts`.
-
-**Files:**
-- Create: `src/tools/handlers/container.ts`
-- Create: `src/tools/handlers/compose.ts`
-- Create: `src/tools/handlers/docker.ts`
-- Create: `src/tools/handlers/host.ts`
-- Create: `src/tools/handlers/scout-simple.ts`
-- Create: `src/tools/handlers/scout-zfs.ts`
-- Create: `src/tools/handlers/scout-logs.ts`
-
-**Step 1: Write stub for container handler**
-
-```typescript
-// src/tools/handlers/container.ts
-import type { ServiceContainer } from '../../services/container.js';
-
-export async function handleContainerAction(
-  input: any,
-  container: ServiceContainer
-): Promise<string> {
-  const dockerService = container.getDockerService();
-
-  switch (input.subaction) {
-    case 'list':
-      // Delegate to existing service - implementation in Task 13
-      const containers = await dockerService.listContainers([], { state: input.state });
-      return JSON.stringify(containers);
-    case 'resume':
-      // New: maps to unpause in service layer
-      throw new Error('Not implemented yet');
-    default:
-      throw new Error(`Unknown subaction: ${input.subaction}`);
-  }
-}
-```
-
-**Step 2: Create minimal stubs for other handlers**
-
-```typescript
-// src/tools/handlers/compose.ts
-export async function handleComposeAction(input: any, container: any): Promise<string> {
-  throw new Error('Compose handler not implemented');
-}
-
-// src/tools/handlers/docker.ts
-export async function handleDockerAction(input: any, container: any): Promise<string> {
-  throw new Error('Docker handler not implemented');
-}
-
-// src/tools/handlers/host.ts
-export async function handleHostAction(input: any, container: any): Promise<string> {
-  throw new Error('Host handler not implemented');
-}
-
-// src/tools/handlers/scout-simple.ts
-export async function handleNodesAction(input: any, container: any): Promise<string> {
-  throw new Error('Not implemented');
-}
-// ... (export stubs for other scout simple actions)
-
-// src/tools/handlers/scout-zfs.ts
-export async function handleZfsAction(input: any, container: any): Promise<string> {
-  throw new Error('Not implemented');
-}
-
-// src/tools/handlers/scout-logs.ts
-export async function handleLogsAction(input: any, container: any): Promise<string> {
-  throw new Error('Not implemented');
-}
-```
-
-**Step 3: Commit stubs**
-
-```bash
-git add src/tools/handlers/
-git commit -m "feat(tools): add handler stubs for flux and scout actions"
-```
-
----
-
-## Phase 6: Tool Registration and Integration
-
-### Task 13: Register Flux and Scout Tools
+### Task 12: Register Flux and Scout Tools
 
 **Files:**
 - Modify: `src/tools/index.ts`
@@ -2339,19 +2323,33 @@ import type { ServiceContainer } from '../services/container.js';
 describe('Tool Registration', () => {
   it('should register flux and scout tools', () => {
     const server = {
-      addTool: vi.fn()
+      registerTool: vi.fn()
     } as unknown as McpServer;
 
     const container = {} as ServiceContainer;
 
     registerTools(server, container);
 
-    expect(server.addTool).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'flux' })
-    );
-    expect(server.addTool).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'scout' })
-    );
+    // Verify registerTool was called (not addTool)
+    expect(server.registerTool).toHaveBeenCalledTimes(2);
+
+    // Check first call (flux)
+    const fluxCall = (server.registerTool as any).mock.calls[0];
+    expect(fluxCall[0]).toBe('flux');
+    expect(fluxCall[1]).toMatchObject({
+      title: 'Flux Tool',
+      description: expect.stringContaining('Docker'),
+      inputSchema: expect.any(Object)
+    });
+
+    // Check second call (scout)
+    const scoutCall = (server.registerTool as any).mock.calls[1];
+    expect(scoutCall[0]).toBe('scout');
+    expect(scoutCall[1]).toMatchObject({
+      title: 'Scout Tool',
+      description: expect.stringContaining('SSH'),
+      inputSchema: expect.any(Object)
+    });
   });
 });
 ```
@@ -2381,27 +2379,45 @@ export function registerTools(server: McpServer, container?: ServiceContainer): 
     throw new Error("ServiceContainer is required for tool registration");
   }
 
-  // Register Flux tool
-  server.addTool({
-    name: 'flux',
-    description: 'Docker infrastructure management (read/write operations)',
-    inputSchema: zodToJsonSchema(FluxSchema),
-    handler: async (input) => {
-      const result = await handleFluxTool(input, container);
+  // Register Flux tool using MCP SDK 1.25.1 API
+  server.registerTool(
+    'flux',
+    {
+      title: 'Flux Tool',
+      description: 'Docker infrastructure management (read/write operations)',
+      inputSchema: zodToJsonSchema(FluxSchema),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true
+      }
+    },
+    async (params: unknown) => {
+      const result = await handleFluxTool(params, container);
       return { content: [{ type: 'text', text: result }] };
     }
-  });
+  );
 
-  // Register Scout tool
-  server.addTool({
-    name: 'scout',
-    description: 'SSH remote operations (read-mostly)',
-    inputSchema: zodToJsonSchema(ScoutSchema),
-    handler: async (input) => {
-      const result = await handleScoutTool(input, container);
+  // Register Scout tool using MCP SDK 1.25.1 API
+  server.registerTool(
+    'scout',
+    {
+      title: 'Scout Tool',
+      description: 'SSH remote operations (read-mostly)',
+      inputSchema: zodToJsonSchema(ScoutSchema),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true
+      }
+    },
+    async (params: unknown) => {
+      const result = await handleScoutTool(params, container);
       return { content: [{ type: 'text', text: result }] };
     }
-  });
+  );
 }
 ```
 
@@ -2414,14 +2430,14 @@ Expected: PASS
 
 ```bash
 git add src/tools/index.ts src/tools/index.test.ts
-git commit -m "feat(tools): register flux and scout tools with MCP server"
+git commit -m "feat(tools): register flux and scout tools with MCP SDK 1.25.1"
 ```
 
 ---
 
-## Phase 7: Delete Unified Tool
+## Phase 6: Delete Unified Tool
 
-### Task 14: Remove Unified Tool and Old Schemas
+### Task 13: Remove Unified Tool and Old Schemas
 
 **Files:**
 - Delete: `src/tools/unified.ts`
@@ -2430,8 +2446,6 @@ git commit -m "feat(tools): register flux and scout tools with MCP server"
 - Delete: `src/schemas/unified.ts`
 - Delete: `src/schemas/unified.test.ts`
 - Delete: `src/schemas/unified.bench.test.ts`
-- Delete: `src/schemas/discriminator.ts`
-- Delete: `src/schemas/discriminator.test.ts`
 - Modify: `src/schemas/index.ts`
 
 **Step 1: Delete unified tool files**
@@ -2444,7 +2458,6 @@ git rm src/tools/unified.ts src/tools/unified.test.ts src/tools/unified.integrat
 
 ```bash
 git rm src/schemas/unified.ts src/schemas/unified.test.ts src/schemas/unified.bench.test.ts
-git rm src/schemas/discriminator.ts src/schemas/discriminator.test.ts
 ```
 
 **Step 3: Update schema exports**
@@ -2473,9 +2486,9 @@ git commit -m "refactor: delete unified tool and old schemas for V3"
 
 ---
 
-## Phase 8: Documentation and Completion
+## Phase 7: Documentation and Completion
 
-### Task 15: Update README and Documentation
+### Task 14: Update README and Documentation
 
 **Files:**
 - Modify: `README.md`
@@ -2538,7 +2551,7 @@ Both tools include auto-generated help:
 1. **Tool Separation**: Docker operations (flux) separated from SSH operations (scout)
 2. **O(1) Validation**: Discriminated unions for constant-time schema validation
 3. **Auto-Generated Help**: Schema introspection for documentation
-4. **Backward Compatibility**: Deprecated unified tool remains available
+4. **No Backward Compatibility**: Clean break from V2 unified tool
 
 ## Schema Architecture
 
@@ -2561,7 +2574,7 @@ Uses **primary discriminator** pattern:
 ```
 src/
 ├── schemas/
-│   ├── common.ts           # Shared schemas
+│   ├── common.ts           # Shared schemas + preprocessor
 │   ├── flux/
 │   │   ├── index.ts        # Flux discriminated union
 │   │   ├── container.ts    # Container schemas (14)
@@ -2585,7 +2598,7 @@ src/
 │       ├── scout-zfs.ts
 │       └── scout-logs.ts
 └── utils/
-    └── help.ts             # Help introspection
+    └── help.ts             # Help introspection with unwrapping
 ```
 
 ## Performance
@@ -2597,6 +2610,7 @@ src/
 
 ### Help Generation
 - Uses Zod schema introspection
+- Unwraps `z.preprocess()` wrappers automatically
 - Extracts types, descriptions, defaults from schema metadata
 - No manual documentation maintenance
 
@@ -2607,6 +2621,7 @@ src/
 - Two new tools: `flux` (Docker) and `scout` (SSH)
 - `container:unpause` → `container:resume`
 - Scout actions restructured with nested discriminators
+- MCP SDK 1.25.1 API (`registerTool` instead of `addTool`)
 ```
 
 **Step 3: Commit**
@@ -2620,7 +2635,7 @@ git commit -m "docs: update README and add architecture documentation for V3"
 
 ## Verification and Testing
 
-### Task 16: Integration Tests
+### Task 15: Integration Tests
 
 **Files:**
 - Create: `src/tools/flux.integration.test.ts`
@@ -2720,69 +2735,208 @@ git commit -m "test: add integration tests for flux and scout tools"
 
 ---
 
-## Final Task: Complete Handler Implementation
+## Final Tasks: Handler Implementation (TDD-Compliant)
 
-### Task 17: Implement All Action Handlers
-
-**Note:** This task migrates existing logic from `src/tools/unified.ts` to the new handler structure. Each handler should:
-1. Reuse existing service layer methods
-2. Apply formatting from `src/formatters/index.ts`
-3. Handle errors with custom error classes
-4. Support both markdown and JSON output formats
+### Task 16: Implement Container Handlers (RED-GREEN-REFACTOR)
 
 **Files:**
-- Modify: All files in `src/tools/handlers/`
+- Create: `src/tools/handlers/container.ts`
+- Test: `src/tools/handlers/container.test.ts`
 
-**Step 1: Implement container handler**
+**Step 1: Write failing tests for container handlers**
 
-Review `src/tools/unified.ts` lines 100-400 (container operations) and migrate logic to `src/tools/handlers/container.ts`.
+```typescript
+// src/tools/handlers/container.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { handleContainerAction } from './container.js';
 
-Map `resume` subaction to existing `unpause` service method.
+describe('Container Handler', () => {
+  it('should handle list subaction', async () => {
+    const mockDockerService = {
+      listContainers: vi.fn().mockResolvedValue([{ id: 'abc', name: 'test' }])
+    };
+    const mockContainer = {
+      getDockerService: () => mockDockerService
+    } as any;
 
-**Step 2: Implement remaining handlers**
+    const result = await handleContainerAction({
+      action: 'container',
+      subaction: 'list',
+      action_subaction: 'container:list',
+      state: 'all'
+    }, mockContainer);
 
-Follow same pattern for:
-- compose (migrate from unified.ts compose section)
-- docker (migrate from unified.ts docker section)
-- host (migrate from unified.ts host section + add new operations)
-- scout-simple (migrate from unified.ts scout section)
-- scout-zfs (new implementation using SSH service)
-- scout-logs (new implementation using SSH service)
+    expect(mockDockerService.listContainers).toHaveBeenCalled();
+    expect(result).toContain('test');
+  });
 
-**Step 3: Run full test suite**
+  it('should handle resume subaction (maps to unpause)', async () => {
+    const mockDockerService = {
+      unpauseContainer: vi.fn().mockResolvedValue({ success: true })
+    };
+    const mockContainer = {
+      getDockerService: () => mockDockerService
+    } as any;
+
+    await handleContainerAction({
+      action: 'container',
+      subaction: 'resume',
+      action_subaction: 'container:resume',
+      container_id: 'plex'
+    }, mockContainer);
+
+    expect(mockDockerService.unpauseContainer).toHaveBeenCalledWith('plex');
+  });
+});
+```
+
+**Step 2: Run test to verify it fails (RED)**
+
+Run: `pnpm test src/tools/handlers/container.test.ts`
+Expected: FAIL with "Cannot find module './container.js'"
+
+**Step 3: Write minimal implementation (GREEN)**
+
+```typescript
+// src/tools/handlers/container.ts
+import type { ServiceContainer } from '../../services/container.js';
+
+export async function handleContainerAction(
+  input: any,
+  container: ServiceContainer
+): Promise<string> {
+  const dockerService = container.getDockerService();
+
+  switch (input.subaction) {
+    case 'list':
+      const containers = await dockerService.listContainers([], { state: input.state });
+      return JSON.stringify(containers);
+    case 'resume':
+      // Map resume to unpause in service layer
+      await dockerService.unpauseContainer(input.container_id);
+      return `Container ${input.container_id} resumed`;
+    default:
+      throw new Error(`Unknown subaction: ${input.subaction}`);
+  }
+}
+```
+
+**Step 4: Run test to verify it passes (GREEN)**
+
+Run: `pnpm test src/tools/handlers/container.test.ts`
+Expected: PASS
+
+**Step 5: Refactor (if needed) and commit**
+
+```bash
+git add src/tools/handlers/container.ts src/tools/handlers/container.test.ts
+git commit -m "feat(handlers): implement container handlers with TDD (list, resume)"
+```
+
+**Step 6: Continue RED-GREEN-REFACTOR for remaining container subactions**
+
+Repeat steps 1-5 for each remaining subaction (start, stop, restart, etc.), adding 2-3 subactions per commit.
+
+---
+
+### Task 17: Implement Compose Handlers (RED-GREEN-REFACTOR)
+
+**Note:** Follow same TDD pattern as Task 16 for compose handlers
+
+**Files:**
+- Create: `src/tools/handlers/compose.ts`
+- Test: `src/tools/handlers/compose.test.ts`
+
+---
+
+### Task 18: Implement Docker Handlers (RED-GREEN-REFACTOR)
+
+**Note:** Follow same TDD pattern as Task 16 for docker handlers
+
+**Files:**
+- Create: `src/tools/handlers/docker.ts`
+- Test: `src/tools/handlers/docker.test.ts`
+
+---
+
+### Task 19: Implement Host Handlers (RED-GREEN-REFACTOR)
+
+**Note:** Follow same TDD pattern as Task 16 for host handlers
+
+**Files:**
+- Create: `src/tools/handlers/host.ts`
+- Test: `src/tools/handlers/host.test.ts`
+
+---
+
+### Task 20: Implement Scout Simple Handlers (RED-GREEN-REFACTOR)
+
+**Note:** Follow same TDD pattern as Task 16 for scout simple action handlers
+
+**Files:**
+- Create: `src/tools/handlers/scout-simple.ts`
+- Test: `src/tools/handlers/scout-simple.test.ts`
+
+---
+
+### Task 21: Implement Scout ZFS Handler (RED-GREEN-REFACTOR)
+
+**Note:** Follow same TDD pattern as Task 16 for scout zfs handler
+
+**Files:**
+- Create: `src/tools/handlers/scout-zfs.ts`
+- Test: `src/tools/handlers/scout-zfs.test.ts`
+
+---
+
+### Task 22: Implement Scout Logs Handler (RED-GREEN-REFACTOR)
+
+**Note:** Follow same TDD pattern as Task 16 for scout logs handler
+
+**Files:**
+- Create: `src/tools/handlers/scout-logs.ts`
+- Test: `src/tools/handlers/scout-logs.test.ts`
+
+---
+
+### Task 23: Final Integration Test and Type Check
+
+**Step 1: Run full test suite**
 
 Run: `pnpm test`
 Expected: All tests PASS
 
-**Step 4: Run type check**
+**Step 2: Run type check**
 
 Run: `pnpm build`
 Expected: No type errors
 
-**Step 5: Final commit**
+**Step 3: Final commit**
 
 ```bash
 git add src/tools/handlers/
-git commit -m "feat(tools): complete handler implementation with service layer delegation"
+git commit -m "feat(tools): complete all handler implementations with TDD"
 ```
 
 ---
 
 ## Summary
 
-**Plan complete!**
+**Plan complete and validation issues resolved!**
 
-Total tasks: 17
-Total commits: 17 (one per task)
+**Total tasks:** 23 (was 17, split Task 17 into 7 separate TDD tasks)
+**Total commits:** 23+ (one per task + additional commits for handler subactions)
 
 **Key deliverables:**
-- ✅ Common schema base with pagination, response format
+- ✅ Common schema base with pagination, response format, and preprocessor
 - ✅ Flux tool with 39 subactions (4 actions × varying subactions)
 - ✅ Scout tool with 11 actions (9 simple + 2 nested)
-- ✅ Auto-generated help system via schema introspection
+- ✅ Auto-generated help system via schema introspection with unwrapping
 - ✅ **Complete removal of unified tool** (clean break)
 - ✅ Architecture docs (no migration guide needed)
 - ✅ Full test coverage (unit + integration)
+- ✅ **MCP SDK 1.25.1 API compliance** (registerTool instead of addTool)
+- ✅ **TDD-compliant handler implementation** (RED-GREEN-REFACTOR cycles)
 
 **Breaking changes (V2 → V3):**
 - **DELETED**: Unified `homelab` tool completely removed
@@ -2790,9 +2944,17 @@ Total commits: 17 (one per task)
 - **NEW**: `scout` tool for SSH operations (11 actions)
 - `container:unpause` → `container:resume`
 - Scout operations restructured with nested discriminators
+- MCP SDK API updated to 1.25.1
 
 **New features:**
 - Help action for both tools (`{ "action": "help" }`)
 - Docker: `networks`, `volumes` subactions
 - Host: 5 new subactions (`info`, `uptime`, `services`, `network`, `mounts`)
 - Scout: Nested discriminators for `zfs` and `logs`
+
+**Validation fixes applied:**
+1. ✅ Preprocessor moved to common.ts to prevent deletion dependency
+2. ✅ Help handler unwraps preprocessed schemas correctly
+3. ✅ MCP SDK API updated to use `registerTool()` instead of `addTool()`
+4. ✅ Task 12 deleted (TDD violation removed)
+5. ✅ Task 17 split into 7 separate TDD-compliant tasks with proper RED-GREEN-REFACTOR cycles
