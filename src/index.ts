@@ -6,11 +6,14 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { registerTools } from "./tools/index.js";
-import { clearDockerClients } from "./services/docker.js";
+import { createDefaultContainer, type ServiceContainer } from "./services/container.js";
 
 // Server metadata
 const SERVER_NAME = "homelab-mcp-server";
 const SERVER_VERSION = "1.0.0";
+
+// Global service container instance
+let globalContainer: ServiceContainer | undefined;
 
 /**
  * Create and configure the MCP server
@@ -21,8 +24,11 @@ function createServer(): McpServer {
     version: SERVER_VERSION
   });
 
+  // Create and register service container
+  globalContainer = createDefaultContainer();
+
   // Register all homelab tools
-  registerTools(server);
+  registerTools(server, globalContainer);
 
   return server;
 }
@@ -60,6 +66,14 @@ async function runHTTP(): Promise<void> {
 
   app.use(express.json());
 
+  // Request logging middleware
+  app.use((req, _res, next) => {
+    const timestamp = new Date().toISOString();
+    const forwarded = req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "";
+    console.error(`[${timestamp}] ${req.method} ${req.path} from ${req.ip} (fwd: ${forwarded})`);
+    next();
+  });
+
   // Health check endpoint (no rate limiting)
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", server: SERVER_NAME, version: SERVER_VERSION });
@@ -78,8 +92,8 @@ async function runHTTP(): Promise<void> {
     await transport.handleRequest(req, res, req.body);
   });
 
-  const port = parseInt(process.env.PORT || "3000", 10);
-  const host = process.env.HOST || "127.0.0.1";
+  const port = parseInt(process.env.HOMELAB_PORT || "3000", 10);
+  const host = process.env.HOMELAB_HOST || "127.0.0.1";
 
   app.listen(port, host, () => {
     console.error(`${SERVER_NAME} v${SERVER_VERSION} running on http://${host}:${port}/mcp`);
@@ -122,8 +136,8 @@ CONFIGURATION:
 ENVIRONMENT VARIABLES:
   HOMELAB_CONFIG_FILE     Path to config file (optional, overrides default paths)
   HOMELAB_HOSTS_CONFIG    JSON config as env var (fallback if no config file)
-  PORT                    HTTP server port (default: 3000)
-  HOST                    HTTP server bind address (default: 127.0.0.1)
+  HOMELAB_PORT            HTTP server port (default: 3000)
+  HOMELAB_HOST            HTTP server bind address (default: 127.0.0.1)
 
 CLAUDE CODE CONFIG (~/.claude/claude_code_config.json):
   {
@@ -143,16 +157,28 @@ CLAUDE CODE CONFIG (~/.claude/claude_code_config.json):
 /**
  * Graceful shutdown handler
  */
-function shutdown(signal: string): void {
+async function shutdown(signal: string): Promise<void> {
   console.error(`\nReceived ${signal}, shutting down gracefully...`);
-  clearDockerClients();
+  if (globalContainer) {
+    await globalContainer.cleanup();
+  }
   console.error("Cleanup complete");
   process.exit(0);
 }
 
 // Register signal handlers for graceful shutdown
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => {
+  shutdown("SIGINT").catch((error) => {
+    console.error("Error during shutdown:", error);
+    process.exit(1);
+  });
+});
+process.on("SIGTERM", () => {
+  shutdown("SIGTERM").catch((error) => {
+    console.error("Error during shutdown:", error);
+    process.exit(1);
+  });
+});
 
 // Main entry point
 const args = process.argv.slice(2);

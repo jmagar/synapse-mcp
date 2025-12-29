@@ -3,7 +3,14 @@ import {
   formatContainersMarkdown,
   formatLogsMarkdown,
   formatHostStatusMarkdown,
-  truncateIfNeeded
+  truncateIfNeeded,
+  formatScoutReadMarkdown,
+  formatScoutListMarkdown,
+  formatScoutTreeMarkdown,
+  formatScoutExecMarkdown,
+  formatScoutFindMarkdown,
+  formatScoutTransferMarkdown,
+  formatScoutDiffMarkdown
 } from "./index.js";
 
 describe("truncateIfNeeded", () => {
@@ -108,5 +115,105 @@ describe("formatHostStatusMarkdown", () => {
     const result = formatHostStatusMarkdown(status);
     expect(result).toContain("🔴");
     expect(result).toContain("Offline");
+  });
+});
+
+describe("scout formatters", () => {
+  describe("formatScoutReadMarkdown", () => {
+    it("formats file content with path header", () => {
+      const result = formatScoutReadMarkdown(
+        "tootie",
+        "/etc/hosts",
+        "127.0.0.1 localhost",
+        100,
+        false
+      );
+      expect(result).toContain("tootie:/etc/hosts");
+      expect(result).toContain("127.0.0.1 localhost");
+    });
+
+    it("shows truncation notice when truncated", () => {
+      const result = formatScoutReadMarkdown(
+        "tootie",
+        "/var/log/big.log",
+        "partial content...",
+        1000000,
+        true
+      );
+      expect(result).toContain("truncated");
+    });
+  });
+
+  describe("formatScoutListMarkdown", () => {
+    it("formats directory listing", () => {
+      const listing = "total 4\ndrwxr-xr-x 2 root root 4096 Jan 1 00:00 test";
+      const result = formatScoutListMarkdown("tootie", "/var/log", listing);
+      expect(result).toContain("tootie:/var/log");
+      expect(result).toContain("total 4");
+    });
+  });
+
+  describe("formatScoutTreeMarkdown", () => {
+    it("formats tree output", () => {
+      const tree = ".\n├── dir1\n└── file.txt";
+      const result = formatScoutTreeMarkdown("tootie", "/home", tree, 3);
+      expect(result).toContain("tootie:/home");
+      expect(result).toContain("├── dir1");
+    });
+  });
+
+  describe("formatScoutExecMarkdown", () => {
+    it("formats command result", () => {
+      const result = formatScoutExecMarkdown("tootie", "/tmp", "ls -la", "file1\nfile2", 0);
+      expect(result).toContain("ls -la");
+      expect(result).toContain("file1");
+      expect(result).toContain("**Exit:** 0");
+    });
+  });
+
+  describe("formatScoutFindMarkdown", () => {
+    it("formats find results", () => {
+      const files = "/var/log/syslog\n/var/log/auth.log";
+      const result = formatScoutFindMarkdown("tootie", "/var", "*.log", files);
+      expect(result).toContain("*.log");
+      expect(result).toContain("/var/log/syslog");
+    });
+  });
+
+  describe("formatScoutTransferMarkdown", () => {
+    it("formats transfer result", () => {
+      const result = formatScoutTransferMarkdown(
+        "tootie", "/tmp/file.txt",
+        "shart", "/backup/file.txt",
+        1024
+      );
+      expect(result).toContain("tootie:/tmp/file.txt");
+      expect(result).toContain("shart:/backup/file.txt");
+      expect(result).toContain("1.0 KB");
+    });
+
+    it("includes warning if present", () => {
+      const result = formatScoutTransferMarkdown(
+        "tootie", "/tmp/file.txt",
+        "shart", "/etc/config",
+        512,
+        "Warning: system path"
+      );
+      expect(result).toContain("Warning");
+    });
+  });
+
+  describe("formatScoutDiffMarkdown", () => {
+    it("formats diff output", () => {
+      const diff = "--- a/hosts\n+++ b/hosts\n@@ -1 +1 @@\n-old\n+new";
+      const result = formatScoutDiffMarkdown(
+        "tootie", "/etc/hosts",
+        "shart", "/etc/hosts",
+        diff
+      );
+      expect(result).toContain("tootie:/etc/hosts");
+      expect(result).toContain("shart:/etc/hosts");
+      expect(result).toContain("---");
+    });
   });
 });

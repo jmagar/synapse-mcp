@@ -43,6 +43,13 @@ src/
 - Mask sensitive env vars in output
 - Use execFile for spawning processes (not shell)
 
+## Error Handling
+- Use custom error classes (HostOperationError, SSHCommandError, ComposeOperationError)
+- Chain errors to preserve stack traces
+- Use logError utility for structured logging
+- Never silently catch without logging
+- See docs/error-handling.md for details
+
 ## Adding New Tools (TDD Flow)
 1. Write test for new schema validation
 2. Add Zod schema in src/schemas/index.ts — see test pass

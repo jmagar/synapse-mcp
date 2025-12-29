@@ -1,8 +1,27 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { HostConfig } from "../types.js";
+import { SSHService } from "./ssh-service.js";
+import { SSHConnectionPoolImpl } from "./ssh-pool.js";
 
-const execFileAsync = promisify(execFile);
+/**
+ * Temporary global SSH service for backward compatibility
+ * @deprecated Use ServiceContainer.getSSHService() instead
+ */
+let globalSSHService: SSHService | null = null;
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function getGlobalSSHService(): SSHService {
+  if (!globalSSHService) {
+    const pool = new SSHConnectionPoolImpl({
+      maxConnections: parseInt(process.env.HOMELAB_SSH_MAX_CONNECTIONS || "5", 10),
+      idleTimeoutMs: parseInt(process.env.HOMELAB_SSH_IDLE_TIMEOUT_MS || "60000", 10),
+      connectionTimeoutMs: parseInt(process.env.HOMELAB_SSH_CONNECTION_TIMEOUT_MS || "5000", 10),
+      enableHealthChecks: process.env.HOMELAB_SSH_ENABLE_HEALTH_CHECKS !== "false",
+      healthCheckIntervalMs: parseInt(process.env.HOMELAB_SSH_HEALTH_CHECK_INTERVAL_MS || "30000", 10)
+    });
+    globalSSHService = new SSHService(pool);
+  }
+  return globalSSHService;
+}
 
 /**
  * Sanitize string for safe shell usage
@@ -61,136 +80,4 @@ export interface HostResources {
     availGB: number;
     usagePercent: number;
   }>;
-}
-
-/**
- * Build SSH command for a host (uses execFile-style array for safety)
- */
-function buildSshArgs(host: HostConfig): string[] {
-  // Validate all inputs first
-  validateHostForSsh(host);
-
-  const args = [
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "ConnectTimeout=5",
-    "-o",
-    "StrictHostKeyChecking=accept-new"
-  ];
-
-  if (host.sshKeyPath) {
-    args.push("-i", sanitizeForShell(host.sshKeyPath));
-  }
-
-  // Use host.name for SSH target to leverage ~/.ssh/config (port, key, user settings)
-  const target = host.host.includes("/") ? "localhost" : sanitizeForShell(host.name);
-
-  args.push(target);
-
-  return args;
-}
-
-/**
- * Execute SSH command on a host using execFile for safety
- */
-async function sshExec(host: HostConfig, command: string): Promise<string> {
-  const args = buildSshArgs(host);
-  // Command is passed as final argument - it's a static script, not user input
-  args.push(command);
-
-  try {
-    const { stdout } = await execFileAsync("ssh", args, { timeout: 15000 });
-    return stdout.trim();
-  } catch (error) {
-    throw new Error(`SSH failed: ${error instanceof Error ? error.message : "Unknown error"}`);
-  }
-}
-
-/**
- * Get host resource usage via SSH
- */
-export async function getHostResources(host: HostConfig): Promise<HostResources> {
-  // Run all commands in one SSH session for efficiency
-  const script = `
-    hostname
-    echo "---"
-    uptime -p 2>/dev/null || uptime | sed 's/.*up/up/'
-    echo "---"
-    cat /proc/loadavg | awk '{print $1,$2,$3}'
-    echo "---"
-    nproc
-    echo "---"
-    top -bn1 | grep "Cpu(s)" | awk '{print 100-$8}' 2>/dev/null || echo "0"
-    echo "---"
-    free -m | awk '/^Mem:/ {print $2,$3,$4}'
-    echo "---"
-    df -BG --output=source,target,size,used,avail,pcent 2>/dev/null | grep -E '^/dev' || df -h | grep -E '^/dev'
-  `
-    .trim()
-    .replace(/\n/g, "; ");
-
-  const output = await sshExec(host, script);
-  const sections = output.split("---").map((s) => s.trim());
-
-  // Parse hostname
-  const hostname = sections[0] || host.name;
-
-  // Parse uptime
-  const uptime = sections[1] || "unknown";
-
-  // Parse load average
-  const loadParts = (sections[2] || "0 0 0").split(" ").map(Number);
-  const loadAverage: [number, number, number] = [
-    loadParts[0] || 0,
-    loadParts[1] || 0,
-    loadParts[2] || 0
-  ];
-
-  // Parse CPU
-  const cores = parseInt(sections[3] || "1", 10);
-  const cpuUsage = parseFloat(sections[4] || "0");
-
-  // Parse memory
-  const memParts = (sections[5] || "0 0 0").split(" ").map(Number);
-  const totalMB = memParts[0] || 0;
-  const usedMB = memParts[1] || 0;
-  const freeMB = memParts[2] || 0;
-  const memUsagePercent = totalMB > 0 ? (usedMB / totalMB) * 100 : 0;
-
-  // Parse disk
-  const diskLines = (sections[6] || "").split("\n").filter((l) => l.trim());
-  const disk = diskLines
-    .map((line) => {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length >= 6) {
-        return {
-          filesystem: parts[0],
-          mount: parts[1],
-          totalGB: parseFloat(parts[2].replace("G", "")) || 0,
-          usedGB: parseFloat(parts[3].replace("G", "")) || 0,
-          availGB: parseFloat(parts[4].replace("G", "")) || 0,
-          usagePercent: parseFloat(parts[5].replace("%", "")) || 0
-        };
-      }
-      return null;
-    })
-    .filter((d): d is NonNullable<typeof d> => d !== null);
-
-  return {
-    hostname,
-    uptime,
-    loadAverage,
-    cpu: {
-      cores,
-      usagePercent: Math.round(cpuUsage * 10) / 10
-    },
-    memory: {
-      totalMB,
-      usedMB,
-      freeMB,
-      usagePercent: Math.round(memUsagePercent * 10) / 10
-    },
-    disk
-  };
 }

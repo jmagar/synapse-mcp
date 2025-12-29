@@ -1,9 +1,7 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { HostConfig } from "../types.js";
-import { sanitizeForShell, validateHostForSsh } from "./ssh.js";
-
-const execFileAsync = promisify(execFile);
+import { validateHostForSsh } from "./ssh.js";
+import { ComposeOperationError, logError } from "../utils/errors.js";
+import type { ISSHService, IComposeService } from "./interfaces.js";
 
 /**
  * Validate Docker Compose project name
@@ -16,19 +14,43 @@ export function validateProjectName(name: string): void {
 }
 
 /**
+ * Validate extra arguments for docker compose commands
+ *
+ * SECURITY: Prevents command injection by rejecting shell metacharacters.
+ * Only allows alphanumeric, hyphens, underscores, dots, equals, colons,
+ * forward slashes, commas, and spaces.
+ *
+ * @throws {Error} If argument contains shell metacharacters or exceeds 500 chars
+ */
+function validateComposeArgs(args: string[]): void {
+  const SHELL_METACHARACTERS = /[;&|`$()<>{}[\]\\"\n\r\t]/;
+
+  for (const arg of args) {
+    if (SHELL_METACHARACTERS.test(arg)) {
+      throw new Error(`Invalid character in compose argument: ${arg}`);
+    }
+
+    // Additional safety: reject extremely long arguments (DoS prevention)
+    if (arg.length > 500) {
+      throw new Error(`Compose argument too long: ${arg.substring(0, 50)}...`);
+    }
+  }
+}
+
+/**
  * Compose project status
  */
 export interface ComposeProject {
   name: string;
   status: "running" | "partial" | "stopped" | "unknown";
   configFiles: string[];
-  services: ComposeService[];
+  services: ComposeServiceInfo[];
 }
 
 /**
  * Compose service info
  */
-export interface ComposeService {
+export interface ComposeServiceInfo {
   name: string;
   status: string;
   health?: string;
@@ -41,90 +63,28 @@ export interface ComposeService {
 }
 
 /**
- * Build SSH command args for remote compose execution
+ * Build docker compose command string for remote execution
+ *
+ * @param project - Project name (optional, for commands that need -p flag)
+ * @param action - Compose action (up, down, ps, ls, etc.)
+ * @param extraArgs - Additional arguments
+ * @returns Command string
  */
-function buildComposeArgs(host: HostConfig): string[] {
-  validateHostForSsh(host);
-
-  const args = [
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "ConnectTimeout=5",
-    "-o",
-    "StrictHostKeyChecking=accept-new"
-  ];
-
-  if (host.sshKeyPath) {
-    args.push("-i", sanitizeForShell(host.sshKeyPath));
-  }
-
-  // Use host.name for SSH target to leverage ~/.ssh/config (port, key, user settings)
-  const target = host.host.includes("/") ? "localhost" : sanitizeForShell(host.name);
-
-  args.push(target);
-
-  return args;
-}
-
-/**
- * Execute docker compose command on remote host
- */
-export async function composeExec(
-  host: HostConfig,
-  project: string,
+function buildComposeCommand(
+  project: string | null,
   action: string,
   extraArgs: string[] = []
-): Promise<string> {
-  validateProjectName(project);
+): string {
+  const parts = ["docker", "compose"];
 
-  // Build the compose command
-  const composeCmd = ["docker", "compose", "-p", project, action, ...extraArgs].join(" ");
-
-  const sshArgs = buildComposeArgs(host);
-  sshArgs.push(composeCmd);
-
-  try {
-    const { stdout } = await execFileAsync("ssh", sshArgs, { timeout: 30000 });
-    return stdout.trim();
-  } catch (error) {
-    throw new Error(
-      `Compose command failed: ${error instanceof Error ? error.message : "Unknown error"}`
-    );
+  if (project) {
+    parts.push("-p", project);
   }
-}
 
-/**
- * List all compose projects on a host
- */
-export async function listComposeProjects(host: HostConfig): Promise<ComposeProject[]> {
-  const sshArgs = buildComposeArgs(host);
-  sshArgs.push("docker compose ls --format json");
+  parts.push(action);
+  parts.push(...extraArgs);
 
-  try {
-    const { stdout } = await execFileAsync("ssh", sshArgs, { timeout: 15000 });
-
-    if (!stdout.trim()) {
-      return [];
-    }
-
-    const projects = JSON.parse(stdout) as Array<{
-      Name: string;
-      Status: string;
-      ConfigFiles: string;
-    }>;
-
-    return projects.map((p) => ({
-      name: p.Name,
-      status: parseComposeStatus(p.Status),
-      configFiles: p.ConfigFiles.split(",").map((f) => f.trim()),
-      services: []
-    }));
-  } catch (error) {
-    throw new Error(
-      `Failed to list compose projects: ${error instanceof Error ? error.message : "Unknown error"}`
-    );
-  }
+  return parts.join(" ");
 }
 
 /**
@@ -145,193 +105,335 @@ function parseComposeStatus(status: string): ComposeProject["status"] {
 }
 
 /**
- * Get detailed status of a compose project
+ * ComposeService class for managing Docker Compose operations with dependency injection
  */
-export async function getComposeStatus(host: HostConfig, project: string): Promise<ComposeProject> {
-  validateProjectName(project);
+export class ComposeService implements IComposeService {
+  constructor(private sshService: ISSHService) {}
 
-  const sshArgs = buildComposeArgs(host);
-  sshArgs.push(`docker compose -p ${project} ps --format json`);
+  /**
+   * Execute docker compose command on remote host using connection pool
+   *
+   * SECURITY: Arguments are validated before execution to prevent command injection.
+   * Uses SSH connection pool for better performance.
+   *
+   * @param host - Host configuration with SSH details
+   * @param project - Docker Compose project name (validated, alphanumeric only)
+   * @param action - Compose action (up, down, restart, etc.)
+   * @param extraArgs - Additional arguments (validated for shell metacharacters)
+   * @returns Command output
+   * @throws {Error} If validation fails or SSH execution fails
+   */
+  async composeExec(
+    host: HostConfig,
+    project: string,
+    action: string,
+    extraArgs: string[] = []
+  ): Promise<string> {
+    validateHostForSsh(host);
+    validateProjectName(project);
+    validateComposeArgs(extraArgs);
 
-  try {
-    const { stdout } = await execFileAsync("ssh", sshArgs, { timeout: 15000 });
+    const command = buildComposeCommand(project, action, extraArgs);
 
-    const services: ComposeService[] = [];
+    try {
+      return await this.sshService.executeSSHCommand(host, command, [], { timeoutMs: 30000 });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown error";
+      throw new ComposeOperationError(
+        `Docker Compose command failed: ${detail}`,
+        host.name,
+        project,
+        action,
+        error
+      );
+    }
+  }
 
-    if (stdout.trim()) {
-      // docker compose ps outputs one JSON object per line
-      const lines = stdout.trim().split("\n");
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const svc = JSON.parse(line) as {
-            Name: string;
-            State: string;
-            Health?: string;
-            ExitCode?: number;
-            Publishers?: Array<{
-              PublishedPort: number;
-              TargetPort: number;
-              Protocol: string;
-            }>;
-          };
-          services.push({
-            name: svc.Name,
-            status: svc.State,
-            health: svc.Health,
-            exitCode: svc.ExitCode,
-            publishers: svc.Publishers?.map((p) => ({
-              publishedPort: p.PublishedPort,
-              targetPort: p.TargetPort,
-              protocol: p.Protocol
-            }))
-          });
-        } catch {
-          // Skip malformed lines
+  /**
+   * List all compose projects on a host using connection pool
+   */
+  async listComposeProjects(host: HostConfig): Promise<ComposeProject[]> {
+    validateHostForSsh(host);
+
+    const command = buildComposeCommand(null, "ls", ["--format", "json"]);
+
+    try {
+      const stdout = await this.sshService.executeSSHCommand(host, command, [], { timeoutMs: 15000 });
+
+      if (!stdout.trim()) {
+        return [];
+      }
+
+      const projects = JSON.parse(stdout) as Array<{
+        Name: string;
+        Status: string;
+        ConfigFiles: string;
+      }>;
+
+      return projects.map((p) => ({
+        name: p.Name,
+        status: parseComposeStatus(p.Status),
+        configFiles: p.ConfigFiles.split(",").map((f) => f.trim()),
+        services: []
+      }));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown error";
+      throw new ComposeOperationError(
+        `Failed to list compose projects: ${detail}`,
+        host.name,
+        "*",
+        "ls",
+        error
+      );
+    }
+  }
+
+  /**
+   * Get detailed status of a compose project using connection pool
+   */
+  async getComposeStatus(host: HostConfig, project: string): Promise<ComposeProject> {
+    validateHostForSsh(host);
+    validateProjectName(project);
+
+    const command = buildComposeCommand(project, "ps", ["--format", "json"]);
+
+    try {
+      const stdout = await this.sshService.executeSSHCommand(host, command, [], { timeoutMs: 15000 });
+
+      const services: ComposeServiceInfo[] = [];
+
+      if (stdout.trim()) {
+        // docker compose ps outputs one JSON object per line
+        const lines = stdout.trim().split("\n");
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const svc = JSON.parse(line) as {
+              Name: string;
+              State: string;
+              Health?: string;
+              ExitCode?: number;
+              Publishers?: Array<{
+                PublishedPort: number;
+                TargetPort: number;
+                Protocol: string;
+              }>;
+            };
+            services.push({
+              name: svc.Name,
+              status: svc.State,
+              health: svc.Health,
+              exitCode: svc.ExitCode,
+              publishers: svc.Publishers?.map((p) => ({
+                publishedPort: p.PublishedPort,
+                targetPort: p.TargetPort,
+                protocol: p.Protocol
+              }))
+            });
+          } catch {
+            logError(new Error("Failed to parse compose service line"), {
+              operation: "getComposeStatus",
+              metadata: {
+                host: host.name,
+                project,
+                line: line.substring(0, 100)
+              }
+            });
+          }
         }
       }
-    }
 
-    // Determine overall status
-    let status: ComposeProject["status"] = "unknown";
-    if (services.length === 0) {
-      status = "stopped";
-    } else {
-      const running = services.filter((s) => s.status === "running").length;
-      if (running === services.length) {
-        status = "running";
-      } else if (running > 0) {
-        status = "partial";
-      } else {
+      // Determine overall status
+      let status: ComposeProject["status"] = "unknown";
+      if (services.length === 0) {
         status = "stopped";
+      } else {
+        const running = services.filter((s) => s.status === "running").length;
+        if (running === services.length) {
+          status = "running";
+        } else if (running > 0) {
+          status = "partial";
+        } else {
+          status = "stopped";
+        }
       }
+
+      return {
+        name: project,
+        status,
+        configFiles: [],
+        services
+      };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown error";
+      throw new ComposeOperationError(
+        `Failed to get compose status: ${detail}`,
+        host.name,
+        project,
+        "ps",
+        error
+      );
+    }
+  }
+
+  /**
+   * Start a compose project
+   */
+  async composeUp(host: HostConfig, project: string, detach = true): Promise<string> {
+    const args = detach ? ["-d"] : [];
+    return this.composeExec(host, project, "up", args);
+  }
+
+  /**
+   * Stop a compose project
+   */
+  async composeDown(
+    host: HostConfig,
+    project: string,
+    removeVolumes = false
+  ): Promise<string> {
+    const args = removeVolumes ? ["-v"] : [];
+    return this.composeExec(host, project, "down", args);
+  }
+
+  /**
+   * Restart a compose project
+   */
+  async composeRestart(host: HostConfig, project: string): Promise<string> {
+    return this.composeExec(host, project, "restart", []);
+  }
+
+  /**
+   * Get logs from a compose project
+   */
+  async composeLogs(
+    host: HostConfig,
+    project: string,
+    options: {
+      tail?: number;
+      follow?: boolean;
+      timestamps?: boolean;
+      since?: string;
+      until?: string;
+      services?: string[];
+    } = {}
+  ): Promise<string> {
+    const args: string[] = ["--no-color"];
+
+    if (options.tail !== undefined) {
+      args.push("--tail", String(options.tail));
     }
 
-    return {
-      name: project,
-      status,
-      configFiles: [],
-      services
-    };
-  } catch (error) {
-    throw new Error(
-      `Failed to get compose status: ${error instanceof Error ? error.message : "Unknown error"}`
-    );
-  }
-}
-
-/**
- * Start a compose project
- */
-export async function composeUp(host: HostConfig, project: string, detach = true): Promise<string> {
-  const args = detach ? ["-d"] : [];
-  return composeExec(host, project, "up", args);
-}
-
-/**
- * Stop a compose project
- */
-export async function composeDown(
-  host: HostConfig,
-  project: string,
-  removeVolumes = false
-): Promise<string> {
-  const args = removeVolumes ? ["-v"] : [];
-  return composeExec(host, project, "down", args);
-}
-
-/**
- * Restart a compose project
- */
-export async function composeRestart(host: HostConfig, project: string): Promise<string> {
-  return composeExec(host, project, "restart", []);
-}
-
-/**
- * Get logs from a compose project
- */
-export async function composeLogs(
-  host: HostConfig,
-  project: string,
-  options: { lines?: number; service?: string } = {}
-): Promise<string> {
-  const args: string[] = ["--no-color"];
-
-  if (options.lines) {
-    args.push("--tail", String(options.lines));
-  }
-
-  if (options.service) {
-    // Validate service name like project name
-    if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
-      throw new Error(`Invalid service name: ${options.service}`);
+    if (options.follow) {
+      args.push("-f");
     }
-    args.push(options.service);
-  }
 
-  return composeExec(host, project, "logs", args);
-}
-
-/**
- * Build images for a compose project
- */
-export async function composeBuild(
-  host: HostConfig,
-  project: string,
-  options: { service?: string; noCache?: boolean } = {}
-): Promise<string> {
-  const args: string[] = [];
-
-  if (options.noCache) {
-    args.push("--no-cache");
-  }
-
-  if (options.service) {
-    if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
-      throw new Error(`Invalid service name: ${options.service}`);
+    if (options.timestamps) {
+      args.push("-t");
     }
-    args.push(options.service);
-  }
 
-  return composeExec(host, project, "build", args);
-}
-
-/**
- * Pull images for a compose project
- */
-export async function composePull(
-  host: HostConfig,
-  project: string,
-  options: { service?: string } = {}
-): Promise<string> {
-  const args: string[] = [];
-
-  if (options.service) {
-    if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
-      throw new Error(`Invalid service name: ${options.service}`);
+    if (options.since) {
+      args.push("--since", options.since);
     }
-    args.push(options.service);
-  }
 
-  return composeExec(host, project, "pull", args);
-}
-
-/**
- * Recreate containers for a compose project (force recreate)
- */
-export async function composeRecreate(
-  host: HostConfig,
-  project: string,
-  options: { service?: string } = {}
-): Promise<string> {
-  const args: string[] = ["-d", "--force-recreate"];
-
-  if (options.service) {
-    if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
-      throw new Error(`Invalid service name: ${options.service}`);
+    if (options.until) {
+      args.push("--until", options.until);
     }
-    args.push(options.service);
+
+    if (options.services && options.services.length > 0) {
+      // Validate service names
+      for (const service of options.services) {
+        if (!/^[a-zA-Z0-9_-]+$/.test(service)) {
+          throw new Error(`Invalid service name: ${service}`);
+        }
+      }
+      args.push(...options.services);
+    }
+
+    return this.composeExec(host, project, "logs", args);
   }
 
-  return composeExec(host, project, "up", args);
+  /**
+   * Build images for a compose project
+   */
+  async composeBuild(
+    host: HostConfig,
+    project: string,
+    options: { service?: string; noCache?: boolean; pull?: boolean } = {}
+  ): Promise<string> {
+    const args: string[] = [];
+
+    if (options.noCache) {
+      args.push("--no-cache");
+    }
+
+    if (options.pull) {
+      args.push("--pull");
+    }
+
+    if (options.service) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
+        throw new Error(`Invalid service name: ${options.service}`);
+      }
+      args.push(options.service);
+    }
+
+    return this.composeExec(host, project, "build", args);
+  }
+
+  /**
+   * Pull images for a compose project
+   */
+  async composePull(
+    host: HostConfig,
+    project: string,
+    options: { service?: string; ignorePullFailures?: boolean; quiet?: boolean } = {}
+  ): Promise<string> {
+    const args: string[] = [];
+
+    if (options.ignorePullFailures) {
+      args.push("--ignore-pull-failures");
+    }
+
+    if (options.quiet) {
+      args.push("--quiet");
+    }
+
+    if (options.service) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
+        throw new Error(`Invalid service name: ${options.service}`);
+      }
+      args.push(options.service);
+    }
+
+    return this.composeExec(host, project, "pull", args);
+  }
+
+  /**
+   * Recreate containers for a compose project (force recreate)
+   */
+  async composeRecreate(
+    host: HostConfig,
+    project: string,
+    options: { service?: string; forceRecreate?: boolean; noDeps?: boolean } = {}
+  ): Promise<string> {
+    const args: string[] = ["-d"];
+
+    if (options.forceRecreate !== false) {
+      args.push("--force-recreate");
+    }
+
+    if (options.noDeps) {
+      args.push("--no-deps");
+    }
+
+    if (options.service) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(options.service)) {
+        throw new Error(`Invalid service name: ${options.service}`);
+      }
+      args.push(options.service);
+    }
+
+    return this.composeExec(host, project, "up", args);
+  }
 }
