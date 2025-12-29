@@ -8,7 +8,7 @@
 
 **Architecture:** Flux uses composite discriminator (`action_subaction`), scout uses primary discriminator (`action`) with nested discriminators for `zfs` and `logs` actions. Both tools include auto-generated help handlers that introspect schema metadata.
 
-**Tech Stack:** TypeScript 5.7+, Zod 3.24+, MCP SDK 1.25.1+, Vitest 4.0+
+**Tech Stack:** TypeScript 5.9+ (5.9.3 installed), Zod 3.24+ (3.25.76 installed, pinned for help system stability), MCP SDK 1.25.1+, Vitest 4.0+
 
 **Changes from Current:**
 - **DELETE** unified tool entirely (homelab)
@@ -323,6 +323,12 @@ export interface HelpEntry {
 
 /**
  * Unwrap z.preprocess wrapper to access inner schema
+ *
+ * NOTE: This function accesses Zod internal implementation details (_def.innerType).
+ * Zod version is pinned at 3.25.76 to ensure stability. When upgrading Zod:
+ * 1. Run full test suite to verify unwrapSchema still works
+ * 2. Check Zod changelog for changes to z.preprocess internals
+ * 3. Update this function if internal structure changes
  */
 function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
   // Check if schema is wrapped in z.preprocess
@@ -2460,27 +2466,17 @@ git rm src/tools/unified.ts src/tools/unified.test.ts src/tools/unified.integrat
 git rm src/schemas/unified.ts src/schemas/unified.test.ts src/schemas/unified.bench.test.ts
 ```
 
-**Step 3: Update schema exports**
-
-```typescript
-// src/schemas/index.ts
-/**
- * Schema exports for homelab MCP server
- */
-export * from "./common.js";
-export * from "./flux/index.js";
-export * from "./scout/index.js";
-```
-
-**Step 4: Run tests to verify deletions**
+**Step 3: Run tests to verify deletions**
 
 Run: `pnpm test`
-Expected: Tests pass (unified tests removed)
+Expected: Some tests may fail temporarily due to unified schema deletions. This is acceptable - schema index will be updated in Phase 7 after all handlers are integrated.
 
-**Step 5: Commit**
+**Note:** The `src/schemas/index.ts` export update is intentionally deferred to Phase 7 (after Task 12) to avoid TypeScript errors during the transition period. The old unified exports remain until flux/scout handlers are fully integrated.
+
+**Step 4: Commit**
 
 ```bash
-git add -A  # Stage deletions and modifications
+git add -A  # Stage deletions
 git commit -m "refactor: delete unified tool and old schemas for V3"
 ```
 
@@ -2488,13 +2484,26 @@ git commit -m "refactor: delete unified tool and old schemas for V3"
 
 ## Phase 7: Documentation and Completion
 
-### Task 14: Update README and Documentation
+### Task 14: Update Schema Exports and Documentation
 
 **Files:**
+- Modify: `src/schemas/index.ts`
 - Modify: `README.md`
 - Create: `docs/ARCHITECTURE.md`
 
-**Step 1: Update README with new tools**
+**Step 1: Update schema exports**
+
+```typescript
+// src/schemas/index.ts
+/**
+ * Schema exports for homelab MCP server V3
+ */
+export * from "./common.js";
+export * from "./flux/index.js";
+export * from "./scout/index.js";
+```
+
+**Step 2: Update README with new tools**
 
 ```markdown
 <!-- README.md - Tools section -->
@@ -2540,7 +2549,7 @@ Both tools include auto-generated help:
 **Breaking change from V2:** The unified `homelab` tool has been completely removed and replaced with `flux` and `scout`.
 ```
 
-**Step 2: Create architecture documentation**
+**Step 3: Create architecture documentation**
 
 ```markdown
 <!-- docs/ARCHITECTURE.md -->
@@ -2624,11 +2633,11 @@ src/
 - MCP SDK 1.25.1 API (`registerTool` instead of `addTool`)
 ```
 
-**Step 3: Commit**
+**Step 4: Commit**
 
 ```bash
-git add README.md docs/ARCHITECTURE.md
-git commit -m "docs: update README and add architecture documentation for V3"
+git add src/schemas/index.ts README.md docs/ARCHITECTURE.md
+git commit -m "docs: update schema exports, README, and add architecture documentation for V3"
 ```
 
 ---
