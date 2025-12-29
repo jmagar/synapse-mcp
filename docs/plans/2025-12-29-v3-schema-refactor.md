@@ -2850,11 +2850,135 @@ Repeat steps 1-5 for each remaining subaction (start, stop, restart, etc.), addi
 
 ### Task 17: Implement Compose Handlers (RED-GREEN-REFACTOR)
 
-**Note:** Follow same TDD pattern as Task 16 for compose handlers
-
 **Files:**
 - Create: `src/tools/handlers/compose.ts`
 - Test: `src/tools/handlers/compose.test.ts`
+
+**Step 1: Write failing tests for compose handlers**
+
+```typescript
+// src/tools/handlers/compose.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { handleComposeAction } from './compose.js';
+
+describe('Compose Handler', () => {
+  it('should handle list subaction', async () => {
+    const mockComposeService = {
+      listProjects: vi.fn().mockResolvedValue([{ name: 'plex', containers: 5 }])
+    };
+    const mockContainer = {
+      getComposeService: () => mockComposeService
+    } as any;
+
+    const result = await handleComposeAction({
+      action: 'compose',
+      subaction: 'list',
+      action_subaction: 'compose:list',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockComposeService.listProjects).toHaveBeenCalledWith('tootie');
+    expect(result).toContain('plex');
+  });
+
+  it('should handle up subaction with detach option', async () => {
+    const mockComposeService = {
+      upProject: vi.fn().mockResolvedValue({ success: true })
+    };
+    const mockContainer = {
+      getComposeService: () => mockComposeService
+    } as any;
+
+    await handleComposeAction({
+      action: 'compose',
+      subaction: 'up',
+      action_subaction: 'compose:up',
+      host: 'tootie',
+      project: 'plex',
+      detach: true
+    }, mockContainer);
+
+    expect(mockComposeService.upProject).toHaveBeenCalledWith('tootie', 'plex', { detach: true });
+  });
+
+  it('should handle down subaction with remove_volumes option', async () => {
+    const mockComposeService = {
+      downProject: vi.fn().mockResolvedValue({ success: true })
+    };
+    const mockContainer = {
+      getComposeService: () => mockComposeService
+    } as any;
+
+    await handleComposeAction({
+      action: 'compose',
+      subaction: 'down',
+      action_subaction: 'compose:down',
+      host: 'tootie',
+      project: 'plex',
+      remove_volumes: false
+    }, mockContainer);
+
+    expect(mockComposeService.downProject).toHaveBeenCalledWith('tootie', 'plex', { removeVolumes: false });
+  });
+});
+```
+
+**Step 2: Run test to verify it fails (RED)**
+
+Run: `pnpm test src/tools/handlers/compose.test.ts`
+Expected: FAIL with "Cannot find module './compose.js'"
+
+**Step 3: Write minimal implementation (GREEN)**
+
+```typescript
+// src/tools/handlers/compose.ts
+import type { ServiceContainer } from '../../services/container.js';
+
+export async function handleComposeAction(
+  input: any,
+  container: ServiceContainer
+): Promise<string> {
+  const composeService = container.getComposeService();
+
+  switch (input.subaction) {
+    case 'list':
+      const projects = await composeService.listProjects(input.host);
+      return JSON.stringify(projects);
+
+    case 'up':
+      await composeService.upProject(input.host, input.project, { detach: input.detach });
+      return `Project ${input.project} started`;
+
+    case 'down':
+      await composeService.downProject(input.host, input.project, { removeVolumes: input.remove_volumes });
+      return `Project ${input.project} stopped`;
+
+    default:
+      throw new Error(`Unknown subaction: ${input.subaction}`);
+  }
+}
+```
+
+**Step 4: Run test to verify it passes (GREEN)**
+
+Run: `pnpm test src/tools/handlers/compose.test.ts`
+Expected: PASS
+
+**Step 5: Refactor (if needed) and commit**
+
+```bash
+git add src/tools/handlers/compose.ts src/tools/handlers/compose.test.ts
+git commit -m "feat(handlers): implement compose handlers with TDD (list, up, down)"
+```
+
+**Step 6: Continue RED-GREEN-REFACTOR for remaining compose subactions**
+
+Repeat steps 1-5 for each remaining subaction (status, restart, logs, build, pull, recreate), adding 2-3 subactions per commit.
+
+**Compose subactions to implement:**
+- list, status, up, down (initial commit)
+- restart, logs (second commit)
+- build, pull, recreate (third commit)
 
 ---
 
