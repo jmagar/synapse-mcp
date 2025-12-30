@@ -26,6 +26,21 @@ async function updateReadme(): Promise<void> {
   // Find the "Available Tools" section and replace the tool descriptions
   const toolsTableRegex = /#### flux\n\n([^\n]+)\n/;
   const scoutTableRegex = /#### scout\n\n([^\n]+)\n/;
+  
+  let updated = readme;
+
+  const fluxMatch = toolsTableRegex.test(readme);
+  const scoutMatch = scoutTableRegex.test(readme);
+
+  if (!fluxMatch) {
+    console.error('⚠️ Could not find "#### flux" section in README.md');
+  }
+  if (!scoutMatch) {
+    console.error('⚠️ Could not find "#### scout" section in README.md');
+  }
+
+  // Update flux description
+  updated = updated.replace(
 
   let updated = readme;
 
