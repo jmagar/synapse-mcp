@@ -24,7 +24,7 @@ describe("FileService", () => {
 
   afterEach(() => {
     // Clean up env vars after each test
-    delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+    delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
   });
 
   describe("readFile", () => {
@@ -150,8 +150,8 @@ describe("FileService", () => {
         }
       });
 
-      it("allows any command when HOMELAB_ALLOW_ANY_COMMAND=true", async () => {
-        process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      it("allows any command when SYNAPSE_ALLOW_ANY_COMMAND=true", async () => {
+        process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
         vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue("ok");
 
         await expect(
