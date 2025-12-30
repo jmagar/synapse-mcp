@@ -266,8 +266,10 @@ describe('Compose Handler', () => {
         grep: 'Error'
       } as unknown as FluxInput, mockContainer as ServiceContainer);
 
+      // Verify matching lines are included
       expect(result).toContain('Error');
-      // The grep filter should be applied
+      // Verify non-matching lines are excluded
+      expect(result).not.toContain('Info: normal log');
     });
   });
 

@@ -21,6 +21,20 @@ import { validateCommandAllowlist } from "../utils/command-security.js";
 import type { IDockerService } from "./interfaces.js";
 
 /**
+ * Extended volume type that includes CreatedAt field
+ * Docker API may return CreatedAt but dockerode types don't include it
+ * This interface documents the actual API response shape
+ */
+interface VolumeWithCreatedAt {
+  Name: string;
+  Driver: string;
+  Scope: string;
+  Mountpoint?: string;
+  Labels?: { [label: string]: string };
+  CreatedAt?: string;
+}
+
+/**
  * Check if a string looks like a Unix socket path
  */
 export function isSocketPath(value: string): boolean {
@@ -482,16 +496,41 @@ export class DockerService implements IDockerService {
 
     try {
       await new Promise<void>((resolve, reject) => {
+        // Guard to ensure only one settlement path executes
+        let settled = false;
+
+        /**
+         * Atomically settle the promise with rejection.
+         * Checks settled guard, sets it, cleans up, then rejects.
+         * Safe to call multiple times - subsequent calls are no-ops.
+         */
+        const settleWithRejection = (error: Error): void => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(error);
+        };
+
+        /**
+         * Atomically settle the promise with success.
+         * Checks settled guard, sets it, cleans up, then resolves.
+         * Safe to call multiple times - subsequent calls are no-ops.
+         */
+        const settleWithSuccess = (): void => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve();
+        };
+
         // Set up timeout
         timeoutId = setTimeout(() => {
-          cleanup();
-          reject(new Error(`Exec timeout: command exceeded ${timeout}ms limit`));
+          settleWithRejection(new Error(`Exec timeout: command exceeded ${timeout}ms limit`));
         }, timeout);
 
-        // Handle stream errors with cleanup
+        // Handle stream errors
         const handleError = (err: Error): void => {
-          cleanup();
-          reject(err);
+          settleWithRejection(err);
         };
 
         stream.on("error", handleError);
@@ -501,7 +540,7 @@ export class DockerService implements IDockerService {
         // Check for buffer exceeded after each data event
         const checkBufferExceeded = (): void => {
           if (bufferExceeded) {
-            reject(new Error(`Buffer limit exceeded: output exceeded ${maxBuffer} bytes`));
+            settleWithRejection(new Error(`Buffer limit exceeded: output exceeded ${maxBuffer} bytes`));
           }
         };
         stdoutStream.on("data", checkBufferExceeded);
@@ -509,10 +548,9 @@ export class DockerService implements IDockerService {
 
         stream.on("end", () => {
           if (bufferExceeded) {
-            reject(new Error(`Buffer limit exceeded: output exceeded ${maxBuffer} bytes`));
+            settleWithRejection(new Error(`Buffer limit exceeded: output exceeded ${maxBuffer} bytes`));
           } else {
-            cleanup();
-            resolve();
+            settleWithSuccess();
           }
         });
 
@@ -676,17 +714,22 @@ export class DockerService implements IDockerService {
     const result = await docker.listVolumes();
     const volumes = result?.Volumes ?? [];
 
-    return volumes.map((volume) => ({
-      name: volume.Name,
-      driver: volume.Driver,
-      scope: volume.Scope,
-      mountpoint: volume.Mountpoint,
-      createdAt: typeof (volume as { CreatedAt?: string }).CreatedAt === "string"
-        ? (volume as { CreatedAt?: string }).CreatedAt
-        : undefined,
-      labels: volume.Labels ?? undefined,
-      hostName: host.name
-    }));
+    return volumes.map((volume) => {
+      // Cast once to document the expected shape with CreatedAt
+      const volumeWithCreatedAt = volume as VolumeWithCreatedAt;
+
+      return {
+        name: volumeWithCreatedAt.Name,
+        driver: volumeWithCreatedAt.Driver,
+        scope: volumeWithCreatedAt.Scope,
+        mountpoint: volumeWithCreatedAt.Mountpoint,
+        createdAt: typeof volumeWithCreatedAt.CreatedAt === "string"
+          ? volumeWithCreatedAt.CreatedAt
+          : undefined,
+        labels: volumeWithCreatedAt.Labels ?? undefined,
+        hostName: host.name
+      };
+    });
   }
 
   /**
