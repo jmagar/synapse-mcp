@@ -260,6 +260,79 @@ describe("DockerService", () => {
       expect(result.exitCode).toBe(0);
     });
 
+    it("captures stderr output from command", async () => {
+      const mockStream = new PassThrough();
+      const mockExec = {
+        start: vi.fn().mockResolvedValue(mockStream),
+        inspect: vi.fn().mockResolvedValue({ ExitCode: 1 })
+      };
+      const mockContainer = {
+        exec: vi.fn().mockResolvedValue(mockExec)
+      };
+      const mockModem = {
+        demuxStream: vi.fn((stream, stdout, stderr) => {
+          stdout.write("partial output");
+          stdout.end();
+          stderr.write("error message");
+          stderr.end();
+          stream.emit("end");
+        })
+      };
+      const mockClient = {
+        getContainer: vi.fn().mockReturnValue(mockContainer),
+        modem: mockModem
+      } as unknown as Docker;
+
+      mockFactory = vi.fn(() => mockClient);
+      service = new DockerService(mockFactory);
+
+      const result = await service.execContainer("container-123", testHost, {
+        command: "grep nonexistent /etc/hosts"
+      });
+
+      expect(result.stdout).toBe("partial output");
+      expect(result.stderr).toBe("error message");
+      expect(result.exitCode).toBe(1);
+    });
+
+    it("passes user and workdir options to exec", async () => {
+      const mockStream = new PassThrough();
+      const mockExec = {
+        start: vi.fn().mockResolvedValue(mockStream),
+        inspect: vi.fn().mockResolvedValue({ ExitCode: 0 })
+      };
+      const mockContainer = {
+        exec: vi.fn().mockResolvedValue(mockExec)
+      };
+      const mockModem = {
+        demuxStream: vi.fn((stream, stdout, stderr) => {
+          stdout.end();
+          stderr.end();
+          stream.emit("end");
+        })
+      };
+      const mockClient = {
+        getContainer: vi.fn().mockReturnValue(mockContainer),
+        modem: mockModem
+      } as unknown as Docker;
+
+      mockFactory = vi.fn(() => mockClient);
+      service = new DockerService(mockFactory);
+
+      await service.execContainer("container-123", testHost, {
+        command: "whoami",
+        user: "testuser",
+        workdir: "/tmp"
+      });
+
+      expect(mockContainer.exec).toHaveBeenCalledWith(
+        expect.objectContaining({
+          User: "testuser",
+          WorkingDir: "/tmp"
+        })
+      );
+    });
+
     it("times out after specified duration", async () => {
       vi.useFakeTimers();
       try {
@@ -304,41 +377,42 @@ describe("DockerService", () => {
 
     it("uses default timeout when not specified", async () => {
       vi.useFakeTimers();
+      try {
+        const mockStream = new PassThrough();
+        const mockExec = {
+          start: vi.fn().mockResolvedValue(mockStream),
+          inspect: vi.fn().mockResolvedValue({ ExitCode: 0 })
+        };
+        const mockContainer = {
+          exec: vi.fn().mockResolvedValue(mockExec)
+        };
+        const mockModem = {
+          demuxStream: vi.fn(() => {
+            // Never emit 'end' - simulates a hanging command
+          })
+        };
+        const mockClient = {
+          getContainer: vi.fn().mockReturnValue(mockContainer),
+          modem: mockModem
+        } as unknown as Docker;
 
-      const mockStream = new PassThrough();
-      const mockExec = {
-        start: vi.fn().mockResolvedValue(mockStream),
-        inspect: vi.fn().mockResolvedValue({ ExitCode: 0 })
-      };
-      const mockContainer = {
-        exec: vi.fn().mockResolvedValue(mockExec)
-      };
-      const mockModem = {
-        demuxStream: vi.fn(() => {
-          // Never emit 'end' - simulates a hanging command
-        })
-      };
-      const mockClient = {
-        getContainer: vi.fn().mockReturnValue(mockContainer),
-        modem: mockModem
-      } as unknown as Docker;
+        mockFactory = vi.fn(() => mockClient);
+        service = new DockerService(mockFactory);
 
-      mockFactory = vi.fn(() => mockClient);
-      service = new DockerService(mockFactory);
+        const execPromise = service.execContainer("container-123", testHost, {
+          command: "tail /var/log/syslog"
+        });
 
-      const execPromise = service.execContainer("container-123", testHost, {
-        command: "tail /var/log/syslog"
-      });
+        // Set up the expectation first, then advance timers
+        const expectation = expect(execPromise).rejects.toThrow(/timeout/i);
 
-      // Set up the expectation first, then advance timers
-      const expectation = expect(execPromise).rejects.toThrow(/timeout/i);
+        // Flush all timers to ensure the timeout fires even if scheduled late
+        await vi.runAllTimersAsync();
 
-      // Flush all timers to ensure the timeout fires even if scheduled late
-      await vi.runAllTimersAsync();
-
-      await expectation;
-
-      vi.useRealTimers();
+        await expectation;
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("rejects when stdout buffer exceeds limit", async () => {
@@ -419,45 +493,46 @@ describe("DockerService", () => {
 
     it("cleans up streams on timeout", async () => {
       vi.useFakeTimers();
+      try {
+        const mockStream = new PassThrough();
+        const destroySpy = vi.spyOn(mockStream, "destroy");
 
-      const mockStream = new PassThrough();
-      const destroySpy = vi.spyOn(mockStream, "destroy");
+        const mockExec = {
+          start: vi.fn().mockResolvedValue(mockStream),
+          inspect: vi.fn().mockResolvedValue({ ExitCode: 0 })
+        };
+        const mockContainer = {
+          exec: vi.fn().mockResolvedValue(mockExec)
+        };
+        const mockModem = {
+          demuxStream: vi.fn(() => {
+            // Never emit 'end' - simulates a hanging command
+          })
+        };
+        const mockClient = {
+          getContainer: vi.fn().mockReturnValue(mockContainer),
+          modem: mockModem
+        } as unknown as Docker;
 
-      const mockExec = {
-        start: vi.fn().mockResolvedValue(mockStream),
-        inspect: vi.fn().mockResolvedValue({ ExitCode: 0 })
-      };
-      const mockContainer = {
-        exec: vi.fn().mockResolvedValue(mockExec)
-      };
-      const mockModem = {
-        demuxStream: vi.fn(() => {
-          // Never emit 'end' - simulates a hanging command
-        })
-      };
-      const mockClient = {
-        getContainer: vi.fn().mockReturnValue(mockContainer),
-        modem: mockModem
-      } as unknown as Docker;
+        mockFactory = vi.fn(() => mockClient);
+        service = new DockerService(mockFactory);
 
-      mockFactory = vi.fn(() => mockClient);
-      service = new DockerService(mockFactory);
+        const execPromise = service.execContainer("container-123", testHost, {
+          command: "tail /var/log/syslog",
+          timeout: 5000
+        });
 
-      const execPromise = service.execContainer("container-123", testHost, {
-        command: "tail /var/log/syslog",
-        timeout: 5000
-      });
+        // Set up the expectation first to handle the rejection
+        const expectation = expect(execPromise).rejects.toThrow(/timeout/i);
 
-      // Set up the expectation first to handle the rejection
-      const expectation = expect(execPromise).rejects.toThrow(/timeout/i);
+        await vi.runAllTimersAsync();
 
-      await vi.runAllTimersAsync();
+        await expectation;
 
-      await expectation;
-
-      expect(destroySpy).toHaveBeenCalled();
-
-      vi.useRealTimers();
+        expect(destroySpy).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("cleans up streams on buffer overflow", async () => {

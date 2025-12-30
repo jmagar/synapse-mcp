@@ -103,11 +103,18 @@ export async function handleDockerAction(
         return JSON.stringify(images, null, 2);
       }
 
+      // Sort by hostName BEFORE pagination to ensure correct ordering
+      const sortedImages = [...images].sort((a, b) => {
+        const hostA = a.hostName ?? '';
+        const hostB = b.hostName ?? '';
+        return hostA.localeCompare(hostB);
+      });
+
       // Apply pagination
       const offset = (inp.offset as number) ?? 0;
       const limit = (inp.limit as number) ?? 50;
-      const total = images.length;
-      const paginatedImages = images.slice(offset, offset + limit);
+      const total = sortedImages.length;
+      const paginatedImages = sortedImages.slice(offset, offset + limit);
 
       return formatImagesMarkdown(paginatedImages, total, offset);
     }

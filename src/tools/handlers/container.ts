@@ -213,7 +213,13 @@ export async function handleContainerAction(
                 return null;
               }
               const validBindings = bindings.filter((b): b is { HostIp: string; HostPort: string } =>
-                b !== null && b !== undefined
+                b !== null &&
+                b !== undefined &&
+                typeof b === 'object' &&
+                'HostIp' in b &&
+                typeof b.HostIp === 'string' &&
+                'HostPort' in b &&
+                typeof b.HostPort === 'string'
               );
               if (validBindings.length === 0) {
                 return null;
@@ -274,6 +280,13 @@ export async function handleContainerAction(
           const inspection = await dockerService.inspectContainer(pullInput.container_id, found.host);
           image = resolveNonEmptyString(inspection?.Config?.Image);
         } catch (error) {
+          logError(error, {
+            operation: `inspectContainer:${pullInput.container_id}`,
+            metadata: {
+              host: found.host.name,
+              context: 'Falling back to inputImage for pull operation'
+            }
+          });
           if (!inputImage) {
             throw error;
           }

@@ -36,9 +36,11 @@ function formatLogsResponse(
  *
  * Subactions: syslog, journal, dmesg, auth
  *
- * SECURITY: Grep patterns are validated by shellGrepSchema in the Zod schema
- * to prevent command injection. Shell metacharacters and patterns > 200 chars
- * are rejected at the schema level before reaching this handler.
+ * SECURITY: Defense-in-depth approach to prevent command injection:
+ * 1. Grep patterns validated by shellGrepSchema (shell metacharacters rejected)
+ * 2. All grep filtering performed locally after command execution
+ * 3. No user input interpolated into shell commands
+ * This ensures complete immunity to command injection attacks.
  */
 export async function handleLogsAction(
   input: ScoutInput,
@@ -74,17 +76,13 @@ export async function handleLogsAction(
       const args = ['-n', String(lines), '/var/log/syslog'];
       const command = 'tail';
 
-      let output: string;
+      let output = await sshService.executeSSHCommand(hostConfig, command, args);
+
+      // Apply grep filter locally if specified (immune to command injection)
       if (grep) {
-        // SECURITY: grep pattern validated by shellGrepSchema
-        // Use tail piped to grep
-        output = await sshService.executeSSHCommand(
-          hostConfig,
-          `tail -n ${lines} /var/log/syslog | grep '${grep}'`,
-          []
-        );
-      } else {
-        output = await sshService.executeSSHCommand(hostConfig, command, args);
+        const outputLines = output.split('\n');
+        const filtered = outputLines.filter(line => line.includes(grep));
+        output = filtered.join('\n');
       }
 
       return formatLogsResponse(
@@ -145,26 +143,23 @@ export async function handleLogsAction(
     }
 
     case 'dmesg': {
-      let output: string;
+      // Execute dmesg with args, pipe output to tail
+      const dmesgOutput = await sshService.executeSSHCommand(
+        hostConfig,
+        'dmesg',
+        ['--color=never']
+      );
+
+      // Apply grep filter locally if specified (immune to command injection)
+      let filteredOutput = dmesgOutput;
       if (grep) {
-        // SECURITY: grep pattern validated by shellGrepSchema
-        // Use dmesg piped to grep with tail
-        output = await sshService.executeSSHCommand(
-          hostConfig,
-          `dmesg --color=never | grep '${grep}' | tail -n ${lines}`,
-          []
-        );
-      } else {
-        // Execute dmesg with args, pipe output to tail
-        const dmesgOutput = await sshService.executeSSHCommand(
-          hostConfig,
-          'dmesg',
-          ['--color=never']
-        );
-        // Apply tail locally (limit lines)
-        const outputLines = dmesgOutput.trim().split('\n');
-        output = outputLines.slice(-lines).join('\n');
+        const outputLines = dmesgOutput.split('\n');
+        filteredOutput = outputLines.filter(line => line.includes(grep)).join('\n');
       }
+
+      // Apply tail locally (limit lines)
+      const outputLines = filteredOutput.trim().split('\n');
+      const output = outputLines.slice(-lines).join('\n');
 
       return formatLogsResponse(
         format,
@@ -182,17 +177,13 @@ export async function handleLogsAction(
       const args = ['-n', String(lines), '/var/log/auth.log'];
       const command = 'tail';
 
-      let output: string;
+      let output = await sshService.executeSSHCommand(hostConfig, command, args);
+
+      // Apply grep filter locally if specified (immune to command injection)
       if (grep) {
-        // SECURITY: grep pattern validated by shellGrepSchema
-        // Use tail piped to grep
-        output = await sshService.executeSSHCommand(
-          hostConfig,
-          `tail -n ${lines} /var/log/auth.log | grep '${grep}'`,
-          []
-        );
-      } else {
-        output = await sshService.executeSSHCommand(hostConfig, command, args);
+        const outputLines = output.split('\n');
+        const filtered = outputLines.filter(line => line.includes(grep));
+        output = filtered.join('\n');
       }
 
       return formatLogsResponse(

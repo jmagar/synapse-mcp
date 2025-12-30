@@ -5,12 +5,18 @@ import type { ServiceContainer } from '../../services/container.js';
 import type { IDockerService } from '../../services/interfaces.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
 import { ResponseFormat } from '../../types.js';
+import { logError } from '../../utils/errors.js';
+
+vi.mock('../../utils/errors.js', () => ({
+  logError: vi.fn()
+}));
 
 describe('Container Handler', () => {
   let mockDockerService: Partial<IDockerService>;
   let mockContainer: ServiceContainer;
 
   beforeEach(() => {
+    vi.mocked(logError).mockClear();
     mockDockerService = {
       listContainers: vi.fn().mockResolvedValue([]),
       containerAction: vi.fn().mockResolvedValue(undefined),
@@ -324,6 +330,35 @@ describe('Container Handler', () => {
         image: 'redis:latest'
       } as FluxInput, mockContainer);
 
+      expect(mockDockerService.pullImage).toHaveBeenCalledWith('redis:latest', expect.anything());
+    });
+
+    it('should log error and use input image when inspection fails but inputImage is provided', async () => {
+      const inspectionError = new Error('Failed to inspect container');
+      mockDockerService.findContainerHost.mockResolvedValue({
+        host: { name: 'tootie' },
+        container: { Id: 'abc123' }
+      });
+      mockDockerService.inspectContainer.mockRejectedValue(inspectionError);
+
+      await handleContainerAction({
+        action: 'container',
+        subaction: 'pull',
+        action_subaction: 'container:pull',
+        container_id: 'abc123',
+        image: 'redis:latest'
+      } as FluxInput, mockContainer);
+
+      expect(logError).toHaveBeenCalledWith(
+        inspectionError,
+        expect.objectContaining({
+          operation: 'inspectContainer:abc123',
+          metadata: expect.objectContaining({
+            host: 'tootie',
+            context: 'Falling back to inputImage for pull operation'
+          })
+        })
+      );
       expect(mockDockerService.pullImage).toHaveBeenCalledWith('redis:latest', expect.anything());
     });
 

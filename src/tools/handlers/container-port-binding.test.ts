@@ -4,6 +4,39 @@ import { handleContainerAction } from './container.js';
 import type { ServiceContainer } from '../../services/container.js';
 import type { IDockerService } from '../../services/interfaces.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
+import type Dockerode from 'dockerode';
+
+/**
+ * Factory helper to create mock container inspection objects
+ * Reduces duplication across port binding test cases
+ */
+function createMockInspection(
+  ports: Dockerode.ContainerInspectInfo['NetworkSettings']['Ports']
+): Dockerode.ContainerInspectInfo {
+  return {
+    Id: 'abc123',
+    Name: '/nginx',
+    RestartCount: 0,
+    Created: '2024-01-01T00:00:00Z',
+    State: {
+      Status: 'running',
+      Running: true,
+      StartedAt: '2024-01-01T00:01:00Z'
+    } as Dockerode.ContainerInspectInfo['State'],
+    Config: {
+      Image: 'nginx:latest',
+      Cmd: ['nginx'],
+      WorkingDir: '/',
+      Env: [],
+      Labels: {}
+    } as Dockerode.ContainerInspectInfo['Config'],
+    Mounts: [],
+    NetworkSettings: {
+      Ports: ports,
+      Networks: {}
+    } as Dockerode.ContainerInspectInfo['NetworkSettings']
+  } as Dockerode.ContainerInspectInfo;
+}
 
 describe('Container Handler - Port Binding Edge Cases', () => {
   let mockDockerService: Partial<IDockerService>;
@@ -24,31 +57,11 @@ describe('Container Handler - Port Binding Edge Cases', () => {
 
   describe('inspect summary mode - port binding filtering', () => {
     it('should show ports with valid bindings', async () => {
-      mockDockerService.inspectContainer.mockResolvedValue({
-        Id: 'abc123',
-        Name: '/nginx',
-        RestartCount: 0,
-        Created: '2024-01-01T00:00:00Z',
-        State: {
-          Status: 'running',
-          Running: true,
-          StartedAt: '2024-01-01T00:01:00Z'
-        },
-        Config: {
-          Image: 'nginx:latest',
-          Cmd: ['nginx'],
-          WorkingDir: '/',
-          Env: [],
-          Labels: {}
-        },
-        Mounts: [],
-        NetworkSettings: {
-          Ports: {
-            '80/tcp': [{ HostIp: '0.0.0.0', HostPort: '8080' }]
-          },
-          Networks: {}
-        }
-      });
+      mockDockerService.inspectContainer.mockResolvedValue(
+        createMockInspection({
+          '80/tcp': [{ HostIp: '0.0.0.0', HostPort: '8080' }]
+        })
+      );
 
       const result = await handleContainerAction({
         action: 'container',
@@ -62,31 +75,11 @@ describe('Container Handler - Port Binding Edge Cases', () => {
     });
 
     it('should handle ports with null bindings array', async () => {
-      mockDockerService.inspectContainer.mockResolvedValue({
-        Id: 'abc123',
-        Name: '/nginx',
-        RestartCount: 0,
-        Created: '2024-01-01T00:00:00Z',
-        State: {
-          Status: 'running',
-          Running: true,
-          StartedAt: '2024-01-01T00:01:00Z'
-        },
-        Config: {
-          Image: 'nginx:latest',
-          Cmd: ['nginx'],
-          WorkingDir: '/',
-          Env: [],
-          Labels: {}
-        },
-        Mounts: [],
-        NetworkSettings: {
-          Ports: {
-            '80/tcp': null // Exposed but not bound
-          },
-          Networks: {}
-        }
-      });
+      mockDockerService.inspectContainer.mockResolvedValue(
+        createMockInspection({
+          '80/tcp': null // Exposed but not bound
+        })
+      );
 
       const result = await handleContainerAction({
         action: 'container',
@@ -101,31 +94,11 @@ describe('Container Handler - Port Binding Edge Cases', () => {
     });
 
     it('should handle ports with empty bindings array', async () => {
-      mockDockerService.inspectContainer.mockResolvedValue({
-        Id: 'abc123',
-        Name: '/nginx',
-        RestartCount: 0,
-        Created: '2024-01-01T00:00:00Z',
-        State: {
-          Status: 'running',
-          Running: true,
-          StartedAt: '2024-01-01T00:01:00Z'
-        },
-        Config: {
-          Image: 'nginx:latest',
-          Cmd: ['nginx'],
-          WorkingDir: '/',
-          Env: [],
-          Labels: {}
-        },
-        Mounts: [],
-        NetworkSettings: {
-          Ports: {
-            '80/tcp': []
-          },
-          Networks: {}
-        }
-      });
+      mockDockerService.inspectContainer.mockResolvedValue(
+        createMockInspection({
+          '80/tcp': []
+        })
+      );
 
       const result = await handleContainerAction({
         action: 'container',
@@ -140,35 +113,15 @@ describe('Container Handler - Port Binding Edge Cases', () => {
     });
 
     it('should handle ports with mix of null and valid bindings in array', async () => {
-      mockDockerService.inspectContainer.mockResolvedValue({
-        Id: 'abc123',
-        Name: '/nginx',
-        RestartCount: 0,
-        Created: '2024-01-01T00:00:00Z',
-        State: {
-          Status: 'running',
-          Running: true,
-          StartedAt: '2024-01-01T00:01:00Z'
-        },
-        Config: {
-          Image: 'nginx:latest',
-          Cmd: ['nginx'],
-          WorkingDir: '/',
-          Env: [],
-          Labels: {}
-        },
-        Mounts: [],
-        NetworkSettings: {
-          Ports: {
-            '80/tcp': [
-              null, // Invalid binding
-              { HostIp: '0.0.0.0', HostPort: '8080' }, // Valid binding
-              null // Another invalid
-            ]
-          },
-          Networks: {}
-        }
-      });
+      mockDockerService.inspectContainer.mockResolvedValue(
+        createMockInspection({
+          '80/tcp': [
+            null, // Invalid binding
+            { HostIp: '0.0.0.0', HostPort: '8080' }, // Valid binding
+            null // Another invalid
+          ]
+        })
+      );
 
       const result = await handleContainerAction({
         action: 'container',
@@ -185,34 +138,14 @@ describe('Container Handler - Port Binding Edge Cases', () => {
     });
 
     it('should handle ports with multiple valid bindings', async () => {
-      mockDockerService.inspectContainer.mockResolvedValue({
-        Id: 'abc123',
-        Name: '/nginx',
-        RestartCount: 0,
-        Created: '2024-01-01T00:00:00Z',
-        State: {
-          Status: 'running',
-          Running: true,
-          StartedAt: '2024-01-01T00:01:00Z'
-        },
-        Config: {
-          Image: 'nginx:latest',
-          Cmd: ['nginx'],
-          WorkingDir: '/',
-          Env: [],
-          Labels: {}
-        },
-        Mounts: [],
-        NetworkSettings: {
-          Ports: {
-            '80/tcp': [
-              { HostIp: '0.0.0.0', HostPort: '8080' },
-              { HostIp: '127.0.0.1', HostPort: '8080' }
-            ]
-          },
-          Networks: {}
-        }
-      });
+      mockDockerService.inspectContainer.mockResolvedValue(
+        createMockInspection({
+          '80/tcp': [
+            { HostIp: '0.0.0.0', HostPort: '8080' },
+            { HostIp: '127.0.0.1', HostPort: '8080' }
+          ]
+        })
+      );
 
       const result = await handleContainerAction({
         action: 'container',
@@ -227,31 +160,11 @@ describe('Container Handler - Port Binding Edge Cases', () => {
     });
 
     it('should handle ports with all null bindings in array', async () => {
-      mockDockerService.inspectContainer.mockResolvedValue({
-        Id: 'abc123',
-        Name: '/nginx',
-        RestartCount: 0,
-        Created: '2024-01-01T00:00:00Z',
-        State: {
-          Status: 'running',
-          Running: true,
-          StartedAt: '2024-01-01T00:01:00Z'
-        },
-        Config: {
-          Image: 'nginx:latest',
-          Cmd: ['nginx'],
-          WorkingDir: '/',
-          Env: [],
-          Labels: {}
-        },
-        Mounts: [],
-        NetworkSettings: {
-          Ports: {
-            '80/tcp': [null, null, null]
-          },
-          Networks: {}
-        }
-      });
+      mockDockerService.inspectContainer.mockResolvedValue(
+        createMockInspection({
+          '80/tcp': [null, null, null]
+        })
+      );
 
       const result = await handleContainerAction({
         action: 'container',
