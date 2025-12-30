@@ -167,16 +167,30 @@ describe('ScoutSchema', () => {
     })).toThrow();
   });
 
-  it('should count 11 total action types (9 simple + 2 nested)', () => {
-    // 9 simple actions + 2 nested discriminators (zfs, logs)
-    // Total unique schema options = 9 + 3 (zfs subactions) + 4 (logs subactions) = 16
-    const simpleActions = ['nodes', 'peek', 'exec', 'find', 'delta', 'emit', 'beam', 'ps', 'df'];
-    const zfsSubactions = ['pools', 'datasets', 'snapshots'];
-    const logsSubactions = ['syslog', 'journal', 'dmesg', 'auth'];
+  it('should have 11 top-level schema options (9 simple + 2 nested)', () => {
+    // ScoutSchema is a z.union, so we can introspect its options
+    const schemaOptions = ScoutSchema.options;
 
-    expect(simpleActions).toHaveLength(9);
-    expect(zfsSubactions).toHaveLength(3);
-    expect(logsSubactions).toHaveLength(4);
-    expect(simpleActions.length + zfsSubactions.length + logsSubactions.length).toBe(16);
+    // 9 simple actions + 2 nested discriminators (zfs, logs) = 11 top-level options
+    expect(schemaOptions).toHaveLength(11);
+
+    // Verify all 11 action types can be parsed by the schema
+    const allActionTypes = [
+      { action: 'nodes' },
+      { action: 'peek', target: 'host:/path' },
+      { action: 'exec', target: 'host:/path', command: 'ls' },
+      { action: 'find', target: 'host:/path', pattern: '*.txt' },
+      { action: 'delta', source: '/local/file' },
+      { action: 'emit', targets: ['host:/path'] },
+      { action: 'beam', source: '/local', destination: 'host:/remote' },
+      { action: 'ps', host: 'testhost' },
+      { action: 'df', host: 'testhost' },
+      { action: 'zfs', subaction: 'pools', host: 'testhost' },
+      { action: 'logs', subaction: 'syslog', host: 'testhost' }
+    ];
+
+    for (const input of allActionTypes) {
+      expect(() => ScoutSchema.parse(input)).not.toThrow();
+    }
   });
 });
