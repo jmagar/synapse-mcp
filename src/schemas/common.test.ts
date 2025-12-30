@@ -96,9 +96,14 @@ describe("Common Schemas", () => {
       });
     });
 
-    it("should return unchanged if action or subaction missing", () => {
+    it("should return unchanged if subaction missing", () => {
       const result = preprocessWithDiscriminator({ action: "help" });
       expect(result).toEqual({ action: "help" });
+    });
+
+    it("should return unchanged if action missing", () => {
+      const result = preprocessWithDiscriminator({ subaction: "list" });
+      expect(result).toEqual({ subaction: "list" });
     });
 
     it("should return unchanged if input is null", () => {
