@@ -8,7 +8,10 @@ import {
   MAX_TREE_DEPTH,
   DEFAULT_FIND_LIMIT,
   MAX_FIND_LIMIT,
-  ALLOWED_COMMANDS
+  ALLOWED_COMMANDS,
+  ENV_HOSTS_CONFIG,
+  ENV_DEFAULT_HOST,
+  ENV_ALLOW_ANY_COMMAND
 } from "./constants.js";
 
 describe("scout constants", () => {
@@ -61,5 +64,13 @@ describe("scout constants", () => {
     expect(ALLOWED_COMMANDS.has("wget")).toBe(false);
     expect(ALLOWED_COMMANDS.has("curl")).toBe(false);
     expect(ALLOWED_COMMANDS.has("bash")).toBe(false);
+  });
+});
+
+describe("Environment Constants", () => {
+  it("should use SYNAPSE prefix for environment variables", () => {
+    expect(ENV_HOSTS_CONFIG).toBe("SYNAPSE_HOSTS_CONFIG");
+    expect(ENV_DEFAULT_HOST).toBe("SYNAPSE_DEFAULT_HOST");
+    expect(ENV_ALLOW_ANY_COMMAND).toBe("SYNAPSE_ALLOW_ANY_COMMAND");
   });
 });

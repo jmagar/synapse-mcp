@@ -17,8 +17,8 @@ export const STATS_TIMEOUT = 5000;
 export const DEFAULT_DOCKER_SOCKET = "/var/run/docker.sock";
 
 // Environment variable names for config
-export const ENV_HOSTS_CONFIG = "HOMELAB_HOSTS_CONFIG";
-export const ENV_DEFAULT_HOST = "HOMELAB_DEFAULT_HOST";
+export const ENV_HOSTS_CONFIG = "SYNAPSE_HOSTS_CONFIG";
+export const ENV_DEFAULT_HOST = "SYNAPSE_DEFAULT_HOST";
 
 // ===== Scout File Operations Constants =====
 
@@ -74,4 +74,4 @@ export const ALLOWED_COMMANDS = new Set([
 ]);
 
 // Environment variable to disable command allowlist
-export const ENV_ALLOW_ANY_COMMAND = "HOMELAB_ALLOW_ANY_COMMAND";
+export const ENV_ALLOW_ANY_COMMAND = "SYNAPSE_ALLOW_ANY_COMMAND";
