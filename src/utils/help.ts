@@ -149,12 +149,90 @@ function getOptions(schema: z.ZodTypeAny): z.ZodTypeAny[] | undefined {
 }
 
 /**
- * Generate help documentation from discriminated union schema
+ * Check if a schema is a nested discriminated union (has options but no shape)
+ */
+function isNestedDiscriminatedUnion(schema: z.ZodTypeAny): boolean {
+  const def = getDef(schema);
+  const hasOptions = !!getOptions(schema);
+  const hasShape = !!(schema as unknown as { shape?: unknown }).shape;
+  return hasOptions && !hasShape && (def.type === 'discriminatedUnion' || def.type === 'union');
+}
+
+/**
+ * Extract help entries from a single ZodObject schema
+ */
+function extractObjectHelpEntry(option: z.ZodTypeAny, prefix?: string): HelpEntry | null {
+  // Access shape from ZodObject
+  const shape = (option as unknown as { shape: Record<string, z.ZodTypeAny> }).shape;
+
+  if (!shape) {
+    return null;
+  }
+
+  // Find literal fields for discriminator
+  const literals: { key: string; value: string }[] = [];
+  for (const key of Object.keys(shape)) {
+    const fieldSchema = shape[key];
+    const fieldDef = getDef(fieldSchema);
+    // In Zod 4.x, literals use _def.values array
+    if (fieldDef.type === "literal" && fieldDef.values) {
+      literals.push({ key, value: fieldDef.values[0] as string });
+    }
+  }
+
+  if (literals.length === 0) {
+    return null;
+  }
+
+  // Build discriminator value: action or action:subaction
+  let discriminatorValue: string;
+  const actionLiteral = literals.find(l => l.key === 'action');
+  const subactionLiteral = literals.find(l => l.key === 'subaction');
+
+  if (subactionLiteral && actionLiteral) {
+    // Nested pattern: action:subaction (e.g., "zfs:pools")
+    discriminatorValue = `${actionLiteral.value}:${subactionLiteral.value}`;
+  } else if (actionLiteral) {
+    discriminatorValue = actionLiteral.value;
+  } else if (subactionLiteral) {
+    discriminatorValue = prefix ? `${prefix}:${subactionLiteral.value}` : subactionLiteral.value;
+  } else {
+    discriminatorValue = literals[0].value;
+  }
+
+  // Extract parameters (excluding discriminator fields)
+  const parameters = Object.entries(shape)
+    .filter(
+      ([key]) =>
+        // Skip discriminator-related fields
+        key !== "action_subaction" && key !== "action" && key !== "subaction"
+    )
+    .map(([name, fieldSchema]) => {
+      return {
+        name,
+        type: getBaseTypeName(fieldSchema),
+        description: fieldSchema.description,
+        required: !fieldSchema.isOptional(),
+        default: getDefaultValue(fieldSchema)
+      };
+    });
+
+  return {
+    discriminator: discriminatorValue,
+    description: option.description ?? "",
+    parameters
+  };
+}
+
+/**
+ * Generate help documentation from discriminated union or union schema
  *
- * Handles schemas wrapped in z.preprocess() by unwrapping to access
- * the inner discriminated union.
+ * Handles:
+ * - Schemas wrapped in z.preprocess()
+ * - z.discriminatedUnion with composite discriminator (Flux)
+ * - z.union with nested z.discriminatedUnion (Scout)
  *
- * @param schema - A Zod discriminated union schema (optionally wrapped in preprocess)
+ * @param schema - A Zod discriminated union or union schema
  * @param topic - Optional discriminator value to filter results
  * @returns Array of help entries for matching actions
  */
@@ -162,64 +240,39 @@ export function generateHelp(schema: z.ZodTypeAny, topic?: string): HelpEntry[] 
   // Unwrap z.preprocess if present
   const actualSchema = unwrapSchema(schema);
 
-  // Access options from discriminated union
+  // Access options from discriminated union or union
   const options = getOptions(actualSchema);
 
   if (!options || !Array.isArray(options)) {
-    throw new Error("Schema is not a discriminated union");
+    throw new Error("Schema is not a discriminated union or union");
   }
 
-  const entries: HelpEntry[] = options.map((option) => {
-    // Access shape from ZodObject
-    const shape = (option as unknown as { shape: Record<string, z.ZodTypeAny> }).shape;
+  const entries: HelpEntry[] = [];
 
-    if (!shape) {
-      throw new Error("Schema option is not a ZodObject");
-    }
-
-    // Find the discriminator key (the first literal field)
-    let discriminatorValue: string | undefined;
-    for (const key of Object.keys(shape)) {
-      const fieldSchema = shape[key];
-      const fieldDef = getDef(fieldSchema);
-      // In Zod 4.x, literals use _def.values array
-      if (fieldDef.type === "literal" && fieldDef.values) {
-        discriminatorValue = fieldDef.values[0] as string;
-        break;
+  for (const option of options) {
+    // Check if this option is a nested discriminated union (like zfs or logs in Scout)
+    if (isNestedDiscriminatedUnion(option)) {
+      const nestedOptions = getOptions(option);
+      if (nestedOptions) {
+        for (const nestedOption of nestedOptions) {
+          const entry = extractObjectHelpEntry(nestedOption);
+          if (entry) {
+            entries.push(entry);
+          }
+        }
+      }
+    } else {
+      // Regular ZodObject option
+      const entry = extractObjectHelpEntry(option);
+      if (entry) {
+        entries.push(entry);
       }
     }
-
-    if (!discriminatorValue) {
-      throw new Error("Schema option missing discriminator literal");
-    }
-
-    // Extract parameters (excluding discriminator fields)
-    const parameters = Object.entries(shape)
-      .filter(
-        ([key]) =>
-          // Skip discriminator-related fields
-          key !== "action_subaction" && key !== "action" && key !== "subaction"
-      )
-      .map(([name, fieldSchema]) => {
-        return {
-          name,
-          type: getBaseTypeName(fieldSchema),
-          description: fieldSchema.description,
-          required: !fieldSchema.isOptional(),
-          default: getDefaultValue(fieldSchema)
-        };
-      });
-
-    return {
-      discriminator: discriminatorValue,
-      description: option.description ?? "",
-      parameters
-    };
-  });
+  }
 
   // Filter by topic if provided
   if (topic) {
-    return entries.filter((e) => e.discriminator === topic);
+    return entries.filter((e) => e.discriminator === topic || e.discriminator.startsWith(topic + ':'));
   }
 
   return entries;
