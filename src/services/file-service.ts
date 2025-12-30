@@ -193,8 +193,13 @@ export class FileService implements IFileService {
       command += ` -maxdepth ${safeMaxDepth}`;
     }
 
-    // Type is validated by TypeScript (literal union), safe to use directly
-    if (options.type) {
+    // Runtime validation for type - TypeScript types are compile-time only
+    // and don't protect against malicious runtime input
+    if (options.type !== undefined) {
+      const allowedTypes = ["f", "d", "l"] as const;
+      if (!allowedTypes.includes(options.type)) {
+        throw new Error(`Invalid type '${options.type}'. Allowed values: ${allowedTypes.join(", ")}`);
+      }
       command += ` -type ${options.type}`;
     }
 
