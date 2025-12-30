@@ -75,7 +75,7 @@ Both tools include auto-generated help:
 { "action": "help", "format": "json" }
 ```
 
-**Breaking change from V2:** The unified `homelab` tool has been completely removed and replaced with `flux` and `scout`.
+**Breaking change from V2:** The unified tool has been completely removed and replaced with `flux` and `scout`.
 
 ---
 
