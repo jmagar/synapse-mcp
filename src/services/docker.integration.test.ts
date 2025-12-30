@@ -88,7 +88,11 @@ describe('Config Loading Integration (Rename Verification)', () => {
     delete process.env.SYNAPSE_HOSTS_CONFIG;
 
     // Verify HOMELAB_HOSTS_CONFIG would NOT work (would fall back to local)
-    process.env.HOMELAB_HOSTS_CONFIG = validConfig;
+   afterEach(() => {
+     // Restore environment
+     process.chdir(originalCwd);
+     delete process.env.HOMELAB_HOSTS_CONFIG;
+     if (originalEnv.SYNAPSE_HOSTS_CONFIG !== undefined) {
     const hostsWithOldName = loadHostConfigs();
     // Should only have the default "local" host since HOMELAB_ prefix is not recognized
     expect(hostsWithOldName.every(h => h.name !== 'test')).toBe(true);
