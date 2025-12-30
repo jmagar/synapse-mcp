@@ -1,6 +1,18 @@
 // src/tools/handlers/compose.ts
 import type { ServiceContainer } from '../../services/container.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
+import type {
+  ComposeActionInput,
+  ComposeListInput,
+  ComposeStatusInput,
+  ComposeUpInput,
+  ComposeDownInput,
+  ComposeRestartInput,
+  ComposeLogsInput,
+  ComposeBuildInput,
+  ComposePullInput,
+  ComposeRecreateInput
+} from '../../schemas/flux/compose.js';
 import { loadHostConfigs } from '../../services/docker.js';
 import { ResponseFormat } from '../../types.js';
 import {
@@ -25,9 +37,8 @@ export async function handleComposeAction(
   const hosts = loadHostConfigs();
   const format = input.response_format ?? ResponseFormat.MARKDOWN;
 
-  // Use type assertion to access subaction-specific fields validated by Zod
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const inp = input as any;
+  // Cast to the compose action union type - validated by Zod
+  const inp = input as ComposeActionInput;
 
   // Find the target host
   const hostConfig = hosts.find(h => h.name === inp.host);
@@ -37,12 +48,13 @@ export async function handleComposeAction(
 
   switch (inp.subaction) {
     case 'list': {
+      const listInput = inp as ComposeListInput;
       let projects = await composeService.listComposeProjects(hostConfig);
 
       // Apply name filter if specified
-      if (inp.name_filter) {
+      if (listInput.name_filter) {
         projects = projects.filter(p =>
-          p.name.toLowerCase().includes(inp.name_filter.toLowerCase())
+          p.name.toLowerCase().includes((listInput.name_filter as string).toLowerCase())
         );
       }
 
@@ -51,8 +63,8 @@ export async function handleComposeAction(
       }
 
       // Apply pagination
-      const offset = inp.offset ?? 0;
-      const limit = inp.limit ?? 50;
+      const offset = listInput.offset ?? 0;
+      const limit = listInput.limit ?? 50;
       const total = projects.length;
       const paginatedProjects = projects.slice(offset, offset + limit);
       const hasMore = offset + limit < total;
@@ -61,13 +73,14 @@ export async function handleComposeAction(
     }
 
     case 'status': {
-      const project = await composeService.getComposeStatus(hostConfig, inp.project);
+      const statusInput = inp as ComposeStatusInput;
+      const project = await composeService.getComposeStatus(hostConfig, statusInput.project);
 
       // Apply service filter if specified
       let services = project.services;
-      if (inp.service_filter) {
+      if (statusInput.service_filter) {
         services = services.filter(s =>
-          s.name.toLowerCase().includes(inp.service_filter.toLowerCase())
+          s.name.toLowerCase().includes((statusInput.service_filter as string).toLowerCase())
         );
         project.services = services;
       }
@@ -77,8 +90,8 @@ export async function handleComposeAction(
       }
 
       // Apply pagination to services
-      const offset = inp.offset ?? 0;
-      const limit = inp.limit ?? 50;
+      const offset = statusInput.offset ?? 0;
+      const limit = statusInput.limit ?? 50;
       const totalServices = services.length;
       project.services = services.slice(offset, offset + limit);
       const hasMore = offset + limit < totalServices;
@@ -87,24 +100,28 @@ export async function handleComposeAction(
     }
 
     case 'up': {
-      await composeService.composeUp(hostConfig, inp.project, inp.detach ?? true);
-      return `Project '${inp.project}' started successfully on ${hostConfig.name}`;
+      const upInput = inp as ComposeUpInput;
+      await composeService.composeUp(hostConfig, upInput.project, upInput.detach ?? true);
+      return `Project '${upInput.project}' started successfully on ${hostConfig.name}`;
     }
 
     case 'down': {
-      if (inp.remove_volumes && !inp.force) {
+      const downInput = inp as ComposeDownInput;
+      if (downInput.remove_volumes && !downInput.force) {
         throw new Error('Compose down with remove_volumes requires force=true to prevent accidental data loss');
       }
-      await composeService.composeDown(hostConfig, inp.project, inp.remove_volumes ?? false);
-      return `Project '${inp.project}' stopped successfully on ${hostConfig.name}`;
+      await composeService.composeDown(hostConfig, downInput.project, downInput.remove_volumes ?? false);
+      return `Project '${downInput.project}' stopped successfully on ${hostConfig.name}`;
     }
 
     case 'restart': {
-      await composeService.composeRestart(hostConfig, inp.project);
-      return `Project '${inp.project}' restarted successfully on ${hostConfig.name}`;
+      const restartInput = inp as ComposeRestartInput;
+      await composeService.composeRestart(hostConfig, restartInput.project);
+      return `Project '${restartInput.project}' restarted successfully on ${hostConfig.name}`;
     }
 
     case 'logs': {
+      const logsInput = inp as ComposeLogsInput;
       const options: {
         tail?: number;
         since?: string;
@@ -112,85 +129,90 @@ export async function handleComposeAction(
         services?: string[];
       } = {};
 
-      if (inp.lines !== undefined) {
-        options.tail = inp.lines;
+      if (logsInput.lines !== undefined) {
+        options.tail = logsInput.lines;
       }
-      if (inp.since) {
-        options.since = inp.since;
+      if (logsInput.since) {
+        options.since = logsInput.since;
       }
-      if (inp.until) {
-        options.until = inp.until;
+      if (logsInput.until) {
+        options.until = logsInput.until;
       }
-      if (inp.service) {
-        options.services = [inp.service];
+      if (logsInput.service) {
+        options.services = [logsInput.service];
       }
 
-      let logs = await composeService.composeLogs(hostConfig, inp.project, options);
+      let logs = await composeService.composeLogs(hostConfig, logsInput.project, options);
 
       // Apply grep filter if specified
-      if (inp.grep) {
+      if (logsInput.grep) {
         const lines = logs.split('\n');
-        const filtered = lines.filter(line => line.includes(inp.grep));
+        const filtered = lines.filter(line => line.includes(logsInput.grep as string));
         logs = filtered.join('\n');
       }
 
       if (format === ResponseFormat.JSON) {
-        return JSON.stringify({ project: inp.project, host: hostConfig.name, logs }, null, 2);
+        return JSON.stringify({ project: logsInput.project, host: hostConfig.name, logs }, null, 2);
       }
 
-      return `## Logs: ${inp.project} (${hostConfig.name})\n\n\`\`\`\n${logs}\n\`\`\``;
+      return `## Logs: ${logsInput.project} (${hostConfig.name})\n\n\`\`\`\n${logs}\n\`\`\``;
     }
 
     case 'build': {
+      const buildInput = inp as ComposeBuildInput;
       const options: {
         service?: string;
         noCache?: boolean;
         pull?: boolean;
       } = {};
 
-      if (inp.service) {
-        options.service = inp.service;
+      if (buildInput.service) {
+        options.service = buildInput.service;
       }
-      if (inp.no_cache) {
-        options.noCache = inp.no_cache;
+      if (buildInput.no_cache) {
+        options.noCache = buildInput.no_cache;
       }
 
-      await composeService.composeBuild(hostConfig, inp.project, options);
-      return `Project '${inp.project}' build completed on ${hostConfig.name}`;
+      await composeService.composeBuild(hostConfig, buildInput.project, options);
+      return `Project '${buildInput.project}' build completed on ${hostConfig.name}`;
     }
 
     case 'pull': {
+      const pullInput = inp as ComposePullInput;
       const options: {
         service?: string;
         ignorePullFailures?: boolean;
         quiet?: boolean;
       } = {};
 
-      if (inp.service) {
-        options.service = inp.service;
+      if (pullInput.service) {
+        options.service = pullInput.service;
       }
 
-      await composeService.composePull(hostConfig, inp.project, options);
-      return `Project '${inp.project}' pull completed on ${hostConfig.name}`;
+      await composeService.composePull(hostConfig, pullInput.project, options);
+      return `Project '${pullInput.project}' pull completed on ${hostConfig.name}`;
     }
 
     case 'recreate': {
+      const recreateInput = inp as ComposeRecreateInput;
       const options: {
         service?: string;
         forceRecreate?: boolean;
         noDeps?: boolean;
       } = {};
 
-      if (inp.service) {
-        options.service = inp.service;
+      if (recreateInput.service) {
+        options.service = recreateInput.service;
       }
 
-      await composeService.composeRecreate(hostConfig, inp.project, options);
-      return `Project '${inp.project}' recreated on ${hostConfig.name}`;
+      await composeService.composeRecreate(hostConfig, recreateInput.project, options);
+      return `Project '${recreateInput.project}' recreated on ${hostConfig.name}`;
     }
 
-    default:
+    default: {
       // This should never be reached due to Zod validation
-      throw new Error(`Unknown subaction: ${inp.subaction}`);
+      const exhaustiveCheck: never = inp;
+      throw new Error(`Unknown subaction: ${(exhaustiveCheck as ComposeActionInput).subaction}`);
+    }
   }
 }

@@ -64,15 +64,49 @@ export const projectSchema = z
 export const imageSchema = z.string().min(1).describe("Image name with optional tag");
 
 /**
- * Shell grep pattern schema with strict safety validation
- * SECURITY: Rejects shell metacharacters to prevent command injection (CWE-78)
- * Used ONLY for patterns passed to shell grep command (e.g., scout-logs)
+ * Schema for grep patterns passed to shell commands.
+ *
+ * @description Strict validation that blocks shell metacharacters to prevent
+ * command injection (CWE-78). Use this ONLY for patterns passed to shell
+ * commands like `grep`, `awk`, or other CLI tools via SSH or exec.
+ *
+ * This schema intentionally rejects common log message characters like
+ * brackets `[]`, quotes `'"`, and parentheses `()` because these have
+ * special meaning in shell contexts and could enable injection attacks.
+ *
+ * @example
+ * // CORRECT - For shell grep commands (scout-logs)
+ * const scoutLogsSchema = z.object({
+ *   host: hostSchema,
+ *   grep: shellGrepSchema.optional()  // Passed to: grep -E "${pattern}"
+ * });
+ *
+ * @example
+ * // Valid patterns for shell grep
+ * shellGrepSchema.parse("error");           // Simple word
+ * shellGrepSchema.parse("connection reset"); // Words with spaces
+ * shellGrepSchema.parse("nginx.*failed");   // Basic regex
+ * shellGrepSchema.parse("status: 5..");     // Numbers and punctuation
+ *
+ * @example
+ * // INVALID - These throw ZodError
+ * shellGrepSchema.parse("[ERROR]");    // Brackets are shell metacharacters
+ * shellGrepSchema.parse("'admin'");    // Quotes are shell metacharacters
+ * shellGrepSchema.parse("$(whoami)");  // Command substitution attempt
+ * shellGrepSchema.parse("foo; rm -rf"); // Command chaining attempt
+ *
+ * @example
+ * // INCORRECT - Don't use for JavaScript filtering
+ * // For client-side String.includes() matching, use jsFilterSchema instead
+ * // which allows brackets, quotes, and other common log characters
+ *
+ * @see {@link jsFilterSchema} for JavaScript-side filtering with String.includes()
  */
 export const shellGrepSchema = z
   .string()
   .min(1)
   .max(200)
-  .regex(/^[^;&|`$()<>{}[\]\\\"\n\r\t']+$/, "Grep pattern contains shell metacharacters")
+  .regex(/^[^;&|`$()<>{}[\]\\"\n\r\t']+$/, "Grep pattern contains shell metacharacters")
   .describe("Shell-safe grep pattern (shell metacharacters not allowed)");
 
 /**
@@ -81,20 +115,64 @@ export const shellGrepSchema = z
 export const safeGrepSchema = shellGrepSchema;
 
 /**
- * JavaScript filter pattern schema with relaxed validation
- * Used for patterns that are only used with String.includes() in JavaScript
- * (e.g., container logs, compose logs, scout ps)
+ * Schema for filter patterns used in JavaScript String.includes() matching.
  *
- * Allows characters like [], quotes, parentheses that are commonly found in log messages
- * (e.g., "[ERROR]", "User 'admin'", "(deprecated)")
+ * @description Relaxed validation for patterns that are ONLY used client-side
+ * in JavaScript with `String.includes()`. These patterns are never passed to
+ * shell commands, so shell metacharacters are safe to allow.
  *
- * Still rejects control characters and newlines to prevent log injection/confusion
+ * This schema allows characters commonly found in log messages that would be
+ * rejected by shellGrepSchema:
+ * - Brackets: `[ERROR]`, `[INFO]`, `[2024-01-15]`
+ * - Quotes: `User 'admin'`, `key="value"`
+ * - Parentheses: `(deprecated)`, `method(arg)`
+ * - Special chars: `$PATH`, `a|b`, `foo;bar`
+ *
+ * Only control characters (0x00-0x1F) are rejected to prevent log injection
+ * and display corruption.
+ *
+ * @example
+ * // CORRECT - For JavaScript String.includes() filtering
+ * const containerLogsSchema = z.object({
+ *   container: containerIdSchema,
+ *   filter: jsFilterSchema.optional()  // Used with: line.includes(filter)
+ * });
+ *
+ * @example
+ * // Valid patterns for JS filtering (allows log message syntax)
+ * jsFilterSchema.parse("[ERROR]");           // Brackets allowed
+ * jsFilterSchema.parse("User 'admin'");      // Quotes allowed
+ * jsFilterSchema.parse("status=(failed)");   // Parentheses allowed
+ * jsFilterSchema.parse("key=\"value\"");     // Escaped quotes allowed
+ * jsFilterSchema.parse("path: /var/log");    // Forward slashes allowed
+ *
+ * @example
+ * // INVALID - These throw ZodError
+ * jsFilterSchema.parse("line\ninjection");   // Newlines are control chars
+ * jsFilterSchema.parse("has\ttab");          // Tabs are control chars
+ * jsFilterSchema.parse("null\x00byte");      // Null bytes rejected
+ *
+ * @example
+ * // INCORRECT - Don't use for shell commands
+ * // For patterns passed to grep/awk via SSH, use shellGrepSchema instead
+ * // which blocks shell metacharacters for security
+ *
+ * @see {@link shellGrepSchema} for shell-safe grep patterns
  */
 export const jsFilterSchema = z
   .string()
   .min(1)
   .max(500)
-  .regex(/^[^\x00-\x1f]+$/, "Filter pattern contains control characters")
+  .refine(
+    (s) => {
+      for (let i = 0; i < s.length; i++) {
+        const code = s.charCodeAt(i);
+        if (code >= 0 && code <= 31) return false;
+      }
+      return true;
+    },
+    { message: "Filter pattern contains control characters" }
+  )
   .describe("Filter pattern for JavaScript String.includes() matching");
 
 /**
@@ -158,12 +236,35 @@ export const execUserSchema = z
  *   - Must be an absolute path (starts with /)
  *   - Only allows safe characters: alphanumeric, underscore, hyphen, period, forward slash
  *   - Does NOT allow: shell metacharacters, directory traversal (..), variable expansion ($)
+ *
+ * @note The root path `/` is intentionally allowed. Some Docker containers
+ * (especially minimal/distroless or scratch-based images) have very minimal
+ * filesystems where `/` may be the only valid working directory. Additionally,
+ * many official images use `/` as the default WORKDIR. Restricting this would
+ * break legitimate use cases.
+ *
+ * @example Valid paths
+ * ```typescript
+ * execWorkdirSchema.parse("/")              // Root path (allowed for minimal containers)
+ * execWorkdirSchema.parse("/app")           // Simple absolute path
+ * execWorkdirSchema.parse("/var/lib/data")  // Nested path
+ * execWorkdirSchema.parse("/app-v1.0")      // Path with dashes and dots
+ * ```
+ *
+ * @example Invalid paths
+ * ```typescript
+ * execWorkdirSchema.parse("app")            // Relative path (no leading /)
+ * execWorkdirSchema.parse("/app/../etc")    // Directory traversal
+ * execWorkdirSchema.parse("/app; rm -rf /") // Shell metacharacters
+ * execWorkdirSchema.parse("/app/$HOME")     // Variable expansion
+ * execWorkdirSchema.parse("/path with spaces") // Spaces not allowed
+ * ```
  */
 export const execWorkdirSchema = z
   .string()
   .min(1)
   .max(4096)
-  .regex(/^\/[a-zA-Z0-9_\-.\/]*$/, "Working directory must be an absolute path with safe characters only")
+  .regex(/^\/[a-zA-Z0-9_\-./]*$/, "Working directory must be an absolute path with safe characters only")
   .refine((path) => !path.includes(".."), {
     message: "Working directory cannot contain directory traversal (..)"
   })

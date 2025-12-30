@@ -161,3 +161,29 @@ export const composeRecreateSchema = z.preprocess(
     })
     .describe("Recreate Docker Compose project containers")
 );
+
+// Type exports for each compose subaction
+export type ComposeListInput = z.infer<typeof composeListSchema>;
+export type ComposeStatusInput = z.infer<typeof composeStatusSchema>;
+export type ComposeUpInput = z.infer<typeof composeUpSchema>;
+export type ComposeDownInput = z.infer<typeof composeDownSchema>;
+export type ComposeRestartInput = z.infer<typeof composeRestartSchema>;
+export type ComposeLogsInput = z.infer<typeof composeLogsSchema>;
+export type ComposeBuildInput = z.infer<typeof composeBuildSchema>;
+export type ComposePullInput = z.infer<typeof composePullSchema>;
+export type ComposeRecreateInput = z.infer<typeof composeRecreateSchema>;
+
+/**
+ * Union type of all compose action inputs
+ * Used for type-safe handling of compose subactions
+ */
+export type ComposeActionInput =
+  | ComposeListInput
+  | ComposeStatusInput
+  | ComposeUpInput
+  | ComposeDownInput
+  | ComposeRestartInput
+  | ComposeLogsInput
+  | ComposeBuildInput
+  | ComposePullInput
+  | ComposeRecreateInput;

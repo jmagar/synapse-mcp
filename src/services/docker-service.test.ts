@@ -3,7 +3,7 @@ import { DockerService } from "./docker.js";
 import type { HostConfig } from "../types.js";
 import type Docker from "dockerode";
 import { PassThrough } from "stream";
-import { DEFAULT_EXEC_MAX_BUFFER, DEFAULT_EXEC_TIMEOUT } from "../constants.js";
+import { DEFAULT_EXEC_MAX_BUFFER } from "../constants.js";
 
 describe("DockerService", () => {
   let service: DockerService;
@@ -458,13 +458,11 @@ describe("DockerService", () => {
         exec: vi.fn().mockResolvedValue(mockExec)
       };
 
-      let capturedStdout: PassThrough | null = null;
       const mockModem = {
         demuxStream: vi.fn((_stream, stdout, _stderr) => {
-          capturedStdout = stdout;
           // Emit an error on the captured stream immediately after demux is called
           setImmediate(() => {
-            capturedStdout!.emit("error", new Error("Stream error"));
+            stdout.emit("error", new Error("Stream error"));
           });
         })
       };

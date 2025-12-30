@@ -422,48 +422,62 @@ export class DockerService implements IDockerService {
     /**
      * Clean up all streams and clear timeout.
      * This function is idempotent and safe to call multiple times.
+     * Uses try-catch to handle race conditions where streams may be
+     * destroyed between the check and the destroy call.
      */
     const cleanup = (): void => {
       if (timeoutId !== null) {
         clearTimeout(timeoutId);
         timeoutId = null;
       }
-      // Destroy all streams to release resources
-      if (!stream.destroyed) {
+
+      // Safely destroy streams - ignore if already destroyed
+      // This prevents race conditions where destroyed state changes between check and call
+      try {
         stream.destroy();
+      } catch {
+        /* already destroyed */
       }
-      if (!stdoutStream.destroyed) {
+      try {
         stdoutStream.destroy();
+      } catch {
+        /* already destroyed */
       }
-      if (!stderrStream.destroyed) {
+      try {
         stderrStream.destroy();
+      } catch {
+        /* already destroyed */
       }
     };
 
     // Track stdout buffer size and reject if limit exceeded
     stdoutStream.on("data", (chunk: Buffer) => {
       if (bufferExceeded) return;
-      const buffer = Buffer.from(chunk);
-      stdoutSize += buffer.length;
-      if (stdoutSize > maxBuffer) {
+
+      // Check BEFORE allocating buffer to prevent race condition
+      if (stdoutSize + chunk.length > maxBuffer) {
         bufferExceeded = true;
         cleanup();
         return;
       }
-      stdoutChunks.push(buffer);
+
+      stdoutSize += chunk.length;
+      stdoutChunks.push(chunk); // chunk is already a Buffer, no need to copy
     });
 
     // Track stderr buffer size and reject if limit exceeded
     stderrStream.on("data", (chunk: Buffer) => {
       if (bufferExceeded) return;
-      const buffer = Buffer.from(chunk);
-      stderrSize += buffer.length;
-      if (stderrSize > maxBuffer) {
+
+      // Check BEFORE allocating buffer to prevent race condition
+      if (stderrSize + chunk.length > maxBuffer) {
         bufferExceeded = true;
         cleanup();
         return;
       }
-      stderrChunks.push(buffer);
+
+      stderrSize += chunk.length;
+      stderrChunks.push(chunk); // chunk is already a Buffer, no need to copy
     });
 
     try {

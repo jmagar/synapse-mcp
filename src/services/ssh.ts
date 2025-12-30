@@ -1,30 +1,4 @@
 import { HostConfig } from "../types.js";
-import { SSHService } from "./ssh-service.js";
-import { SSHConnectionPoolImpl } from "./ssh-pool.js";
-
-/**
- * Temporary global SSH service for backward compatibility
- * @deprecated Use ServiceContainer.getSSHService() instead
- */
-let globalSSHService: SSHService | null = null;
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function getGlobalSSHService(): SSHService {
-  if (!globalSSHService) {
-    const pool = new SSHConnectionPoolImpl({
-      maxConnections: parseInt(process.env.HOMELAB_SSH_MAX_CONNECTIONS || "5", 10),
-      idleTimeoutMs: parseInt(process.env.HOMELAB_SSH_IDLE_TIMEOUT_MS || "60000", 10),
-      connectionTimeoutMs: parseInt(process.env.HOMELAB_SSH_CONNECTION_TIMEOUT_MS || "5000", 10),
-      enableHealthChecks: process.env.HOMELAB_SSH_ENABLE_HEALTH_CHECKS !== "false",
-      healthCheckIntervalMs: parseInt(
-        process.env.HOMELAB_SSH_HEALTH_CHECK_INTERVAL_MS || "30000",
-        10
-      )
-    });
-    globalSSHService = new SSHService(pool);
-  }
-  return globalSSHService;
-}
 
 /**
  * Sanitize string for safe shell usage

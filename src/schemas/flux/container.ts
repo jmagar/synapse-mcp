@@ -234,3 +234,39 @@ export const containerTopSchema = z.preprocess(
     })
     .describe("Show running processes in a container")
 );
+
+// Type exports for each container subaction
+export type ContainerListInput = z.infer<typeof containerListSchema>;
+export type ContainerStartInput = z.infer<typeof containerStartSchema>;
+export type ContainerStopInput = z.infer<typeof containerStopSchema>;
+export type ContainerRestartInput = z.infer<typeof containerRestartSchema>;
+export type ContainerPauseInput = z.infer<typeof containerPauseSchema>;
+export type ContainerResumeInput = z.infer<typeof containerResumeSchema>;
+export type ContainerLogsInput = z.infer<typeof containerLogsSchema>;
+export type ContainerStatsInput = z.infer<typeof containerStatsSchema>;
+export type ContainerInspectInput = z.infer<typeof containerInspectSchema>;
+export type ContainerSearchInput = z.infer<typeof containerSearchSchema>;
+export type ContainerPullInput = z.infer<typeof containerPullSchema>;
+export type ContainerRecreateInput = z.infer<typeof containerRecreateSchema>;
+export type ContainerExecInput = z.infer<typeof containerExecSchema>;
+export type ContainerTopInput = z.infer<typeof containerTopSchema>;
+
+/**
+ * Union type of all container action inputs
+ * Used for type-safe handling of container subactions
+ */
+export type ContainerActionInput =
+  | ContainerListInput
+  | ContainerStartInput
+  | ContainerStopInput
+  | ContainerRestartInput
+  | ContainerPauseInput
+  | ContainerResumeInput
+  | ContainerLogsInput
+  | ContainerStatsInput
+  | ContainerInspectInput
+  | ContainerSearchInput
+  | ContainerPullInput
+  | ContainerRecreateInput
+  | ContainerExecInput
+  | ContainerTopInput;

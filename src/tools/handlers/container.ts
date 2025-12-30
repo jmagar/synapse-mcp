@@ -1,8 +1,20 @@
 // src/tools/handlers/container.ts
 import type { ServiceContainer } from '../../services/container.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
+import type {
+  ContainerActionInput,
+  ContainerListInput,
+  ContainerLogsInput,
+  ContainerStatsInput,
+  ContainerInspectInput,
+  ContainerSearchInput,
+  ContainerPullInput,
+  ContainerRecreateInput,
+  ContainerExecInput,
+  ContainerTopInput
+} from '../../schemas/flux/container.js';
 import { loadHostConfigs } from '../../services/docker.js';
-import { ResponseFormat } from '../../types.js';
+import { ResponseFormat, type ContainerStats } from '../../types.js';
 import {
   formatContainersMarkdown,
   formatLogsMarkdown,
@@ -13,6 +25,13 @@ import {
   formatInspectSummaryMarkdown
 } from '../../formatters/index.js';
 import { logError } from '../../utils/errors.js';
+
+/**
+ * Type guard to check if input has container_id field
+ */
+function hasContainerId(input: ContainerActionInput): input is ContainerActionInput & { container_id: string } {
+  return 'container_id' in input && typeof input.container_id === 'string';
+}
 
 const resolveNonEmptyString = (value: unknown): string | undefined => {
   if (typeof value !== 'string') {
@@ -38,17 +57,26 @@ export async function handleContainerAction(
   const hosts = loadHostConfigs();
   const format = input.response_format ?? ResponseFormat.MARKDOWN;
 
-  // Use type assertion for accessing subaction-specific fields validated by Zod
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const inp = input as any;
+  // Cast to the container action union type - validated by Zod
+  const inp = input as ContainerActionInput;
 
-  switch (input.subaction) {
+  switch (inp.subaction) {
     case 'list': {
+      const listInput = inp as ContainerListInput;
+      // Map schema state values to service state values
+      // Schema uses 'exited'/'restarting' but service uses 'stopped'
+      const stateMap: Record<string, 'running' | 'stopped' | 'paused' | undefined> = {
+        all: undefined,
+        running: 'running',
+        exited: 'stopped',
+        paused: 'paused',
+        restarting: 'running' // restarting containers are treated as running
+      };
       const containers = await dockerService.listContainers(hosts, {
-        state: inp.state === 'all' ? undefined : inp.state,
-        nameFilter: inp.name_filter,
-        imageFilter: inp.image_filter,
-        labelFilter: inp.label_filter
+        state: stateMap[listInput.state] ?? undefined,
+        nameFilter: listInput.name_filter,
+        imageFilter: listInput.image_filter,
+        labelFilter: listInput.label_filter
       });
 
       if (format === ResponseFormat.JSON) {
@@ -56,8 +84,8 @@ export async function handleContainerAction(
       }
 
       // Apply pagination
-      const offset = inp.offset ?? 0;
-      const limit = inp.limit ?? 50;
+      const offset = listInput.offset ?? 0;
+      const limit = listInput.limit ?? 50;
       const total = containers.length;
       const paginatedContainers = containers.slice(offset, offset + limit);
       const hasMore = offset + limit < total;
@@ -69,6 +97,9 @@ export async function handleContainerAction(
     case 'stop':
     case 'restart':
     case 'pause': {
+      if (!hasContainerId(inp)) {
+        throw new Error('container_id is required');
+      }
       const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
         throw new Error(`Container not found: ${inp.container_id}`);
@@ -78,6 +109,9 @@ export async function handleContainerAction(
     }
 
     case 'resume': {
+      if (!hasContainerId(inp)) {
+        throw new Error('container_id is required');
+      }
       const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
         throw new Error(`Container not found: ${inp.container_id}`);
@@ -88,37 +122,39 @@ export async function handleContainerAction(
     }
 
     case 'logs': {
-      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      const logsInput = inp as ContainerLogsInput;
+      const found = await dockerService.findContainerHost(logsInput.container_id, hosts);
       if (!found) {
-        throw new Error(`Container not found: ${inp.container_id}`);
+        throw new Error(`Container not found: ${logsInput.container_id}`);
       }
 
-      const logs = await dockerService.getContainerLogs(inp.container_id, found.host, {
-        lines: inp.lines,
-        since: inp.since,
-        until: inp.until,
-        stream: inp.stream === 'both' ? 'all' : inp.stream
+      const logs = await dockerService.getContainerLogs(logsInput.container_id, found.host, {
+        lines: logsInput.lines,
+        since: logsInput.since,
+        until: logsInput.until,
+        stream: logsInput.stream === 'both' ? 'all' : logsInput.stream
       });
 
       // Apply grep filter if specified
-      const filteredLogs = inp.grep
-        ? logs.filter((log: { message: string }) => log.message.includes(inp.grep))
+      const filteredLogs = logsInput.grep
+        ? logs.filter((log) => log.message.includes(logsInput.grep as string))
         : logs;
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify(filteredLogs, null, 2);
       }
-      return formatLogsMarkdown(filteredLogs, inp.container_id, found.host.name);
+      return formatLogsMarkdown(filteredLogs, logsInput.container_id, found.host.name);
     }
 
     case 'stats': {
+      const statsInput = inp as ContainerStatsInput;
       // If container_id is provided, get stats for specific container
-      if (inp.container_id) {
-        const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      if (statsInput.container_id) {
+        const found = await dockerService.findContainerHost(statsInput.container_id, hosts);
         if (!found) {
-          throw new Error(`Container not found: ${inp.container_id}`);
+          throw new Error(`Container not found: ${statsInput.container_id}`);
         }
-        const stats = await dockerService.getContainerStats(inp.container_id, found.host);
+        const stats = await dockerService.getContainerStats(statsInput.container_id, found.host);
 
         if (format === ResponseFormat.JSON) {
           return JSON.stringify(stats, null, 2);
@@ -140,8 +176,9 @@ export async function handleContainerAction(
         }
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const allStats = (await Promise.all(statsPromises)).filter((s): s is { stats: any; host: string } => s !== null);
+      const allStats = (await Promise.all(statsPromises)).filter(
+        (s): s is { stats: ContainerStats; host: string } => s !== null
+      );
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify(allStats, null, 2);
@@ -152,18 +189,23 @@ export async function handleContainerAction(
     }
 
     case 'inspect': {
-      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      const inspectInput = inp as ContainerInspectInput;
+      const found = await dockerService.findContainerHost(inspectInput.container_id, hosts);
       if (!found) {
-        throw new Error(`Container not found: ${inp.container_id}`);
+        throw new Error(`Container not found: ${inspectInput.container_id}`);
       }
-      const inspection = await dockerService.inspectContainer(inp.container_id, found.host);
+      const inspection = await dockerService.inspectContainer(inspectInput.container_id, found.host);
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify(inspection, null, 2);
       }
 
       // If summary mode, use summary formatter
-      if (inp.summary) {
+      if (inspectInput.summary) {
+        // Type for port bindings from Docker API
+        type PortBinding = { HostIp: string; HostPort: string } | undefined;
+        type PortBindings = PortBinding[] | null;
+
         const summary = {
           id: inspection.Id.slice(0, 12),
           name: inspection.Name.replace(/^\//, ''),
@@ -174,14 +216,13 @@ export async function handleContainerAction(
           restartCount: inspection.RestartCount,
           ports: Object.entries(inspection.NetworkSettings.Ports || {})
             .filter(([, bindings]) => bindings && bindings.length > 0)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .map(([containerPort, bindings]: [string, any]) => {
+            .map(([containerPort, bindings]: [string, PortBindings]) => {
               const binding = bindings?.[0];
               return binding
                 ? `${binding.HostIp || '0.0.0.0'}:${binding.HostPort} → ${containerPort}`
                 : containerPort;
             }),
-          mounts: (inspection.Mounts || []).map((m: { Source: string; Destination: string; Type: string }) => ({
+          mounts: (inspection.Mounts || []).map((m) => ({
             src: m.Source,
             dst: m.Destination,
             type: m.Type
@@ -194,13 +235,14 @@ export async function handleContainerAction(
         return formatInspectSummaryMarkdown(summary);
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return formatInspectMarkdown(inspection as any, found.host.name);
+      // Docker.ContainerInspectInfo is compatible with ContainerInspectInfo
+      return formatInspectMarkdown(inspection, found.host.name);
     }
 
     case 'search': {
+      const searchInput = inp as ContainerSearchInput;
       const containers = await dockerService.listContainers(hosts, {
-        nameFilter: inp.query
+        nameFilter: searchInput.query
       });
 
       if (format === ResponseFormat.JSON) {
@@ -208,25 +250,26 @@ export async function handleContainerAction(
       }
 
       // Apply pagination
-      const offset = inp.offset ?? 0;
-      const limit = inp.limit ?? 50;
+      const offset = searchInput.offset ?? 0;
+      const limit = searchInput.limit ?? 50;
       const total = containers.length;
       const paginatedContainers = containers.slice(offset, offset + limit);
 
-      return formatSearchResultsMarkdown(paginatedContainers, inp.query, total);
+      return formatSearchResultsMarkdown(paginatedContainers, searchInput.query, total);
     }
 
     case 'pull': {
-      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      const pullInput = inp as ContainerPullInput;
+      const found = await dockerService.findContainerHost(pullInput.container_id, hosts);
       if (!found) {
-        throw new Error(`Container not found: ${inp.container_id}`);
+        throw new Error(`Container not found: ${pullInput.container_id}`);
       }
-      const inputImage = resolveNonEmptyString(inp.image);
+      const inputImage = resolveNonEmptyString(pullInput.image);
       let image = resolveNonEmptyString(found.container?.Image);
 
       if (!image) {
         try {
-          const inspection = await dockerService.inspectContainer(inp.container_id, found.host);
+          const inspection = await dockerService.inspectContainer(pullInput.container_id, found.host);
           image = resolveNonEmptyString(inspection?.Config?.Image);
         } catch (error) {
           if (!inputImage) {
@@ -238,39 +281,41 @@ export async function handleContainerAction(
       image = image ?? inputImage;
 
       if (!image) {
-        throw new Error(`Cannot determine image for container: ${inp.container_id}`);
+        throw new Error(`Cannot determine image for container: ${pullInput.container_id}`);
       }
       const result = await dockerService.pullImage(image, found.host);
       return `Pulled image ${image}: ${result.status}`;
     }
 
     case 'recreate': {
-      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      const recreateInput = inp as ContainerRecreateInput;
+      const found = await dockerService.findContainerHost(recreateInput.container_id, hosts);
       if (!found) {
-        throw new Error(`Container not found: ${inp.container_id}`);
+        throw new Error(`Container not found: ${recreateInput.container_id}`);
       }
-      const result = await dockerService.recreateContainer(inp.container_id, found.host, {
-        pull: inp.pull
+      const result = await dockerService.recreateContainer(recreateInput.container_id, found.host, {
+        pull: recreateInput.pull
       });
       return `Container recreated: ${result.containerId} (${result.status})`;
     }
 
     case 'exec': {
-      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      const execInput = inp as ContainerExecInput;
+      const found = await dockerService.findContainerHost(execInput.container_id, hosts);
       if (!found) {
-        throw new Error(`Container not found: ${inp.container_id}`);
+        throw new Error(`Container not found: ${execInput.container_id}`);
       }
 
-      const result = await dockerService.execContainer(inp.container_id, found.host, {
-        command: inp.command,
-        user: inp.user,
-        workdir: inp.workdir
+      const result = await dockerService.execContainer(execInput.container_id, found.host, {
+        command: execInput.command,
+        user: execInput.user,
+        workdir: execInput.workdir
       });
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify({
           host: found.host.name,
-          container: inp.container_id,
+          container: execInput.container_id,
           ...result
         }, null, 2);
       }
@@ -279,38 +324,42 @@ export async function handleContainerAction(
         ? `\n\n**stderr**\n\n\`\`\`\n${result.stderr}\n\`\`\``
         : '';
 
-      return `## Exec - ${inp.container_id} (${found.host.name})\n\n` +
+      return `## Exec - ${execInput.container_id} (${found.host.name})\n\n` +
         `**exitCode:** ${result.exitCode}\n\n` +
         `**stdout**\n\n\`\`\`\n${result.stdout}\n\`\`\`` +
         stderrBlock;
     }
 
     case 'top': {
-      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      const topInput = inp as ContainerTopInput;
+      const found = await dockerService.findContainerHost(topInput.container_id, hosts);
       if (!found) {
-        throw new Error(`Container not found: ${inp.container_id}`);
+        throw new Error(`Container not found: ${topInput.container_id}`);
       }
 
-      const result = await dockerService.getContainerProcesses(inp.container_id, found.host);
+      const result = await dockerService.getContainerProcesses(topInput.container_id, found.host);
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify({
           host: found.host.name,
-          container: inp.container_id,
+          container: topInput.container_id,
           ...result
         }, null, 2);
       }
 
       const header = result.titles.join(' ');
-      const rows = result.processes.map((row: string[]) => row.join(' '));
+      const rows = result.processes.map((row) => row.join(' '));
       const output = [header, ...rows].join('\n').trim();
 
-      return `## Processes - ${inp.container_id} (${found.host.name})\n\n\`\`\`\n${output}\n\`\`\``;
+      return `## Processes - ${topInput.container_id} (${found.host.name})\n\n\`\`\`\n${output}\n\`\`\``;
     }
 
-    default:
+    default: {
       // This should never be reached due to Zod validation
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      throw new Error(`Unknown subaction: ${(input as any).subaction}`);
+      // Type assertion needed here to get the subaction for error message
+      // since the switch is exhaustive, this is only for runtime safety
+      const exhaustiveCheck: never = inp;
+      throw new Error(`Unknown subaction: ${(exhaustiveCheck as ContainerActionInput).subaction}`);
+    }
   }
 }
