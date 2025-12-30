@@ -1,6 +1,6 @@
 // src/schemas/flux/index.test.ts
 import { describe, it, expect } from 'vitest';
-import { FluxSchema } from './index.js';
+import { FluxSchema, FLUX_SUBACTION_COUNT } from './index.js';
 
 describe('FluxSchema', () => {
   it('should validate container:list', () => {
@@ -65,10 +65,7 @@ describe('FluxSchema', () => {
   });
 
   it('should count 39 total subactions', () => {
-    // Access the inner discriminated union options
-    // FluxSchema is a pipe, so we need to get the out schema
-    const innerSchema = (FluxSchema as any)._def.out;
-    const options = innerSchema._def?.options;
-    expect(options?.length).toBe(39);
+    // Use exported constant instead of accessing Zod internals
+    expect(FLUX_SUBACTION_COUNT).toBe(39);
   });
 });

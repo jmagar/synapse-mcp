@@ -115,6 +115,9 @@ const allSchemas = [
   hostMountsSchema
 ].map(unwrapPreprocess) as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]];
 
+/** Total number of subactions in the Flux schema */
+export const FLUX_SUBACTION_COUNT = allSchemas.length;
+
 /**
  * Flux Tool Schema - Docker infrastructure management
  *
