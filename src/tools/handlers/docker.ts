@@ -152,7 +152,7 @@ export async function handleDockerAction(
       }
 
       const imageName = inp.image as string;
-      const force = inp.force as boolean;
+      const force = (inp.force as boolean | undefined) ?? false;
       const result = await dockerService.removeImage(imageName, hostConfig, { force });
 
       if (format === ResponseFormat.JSON) {
