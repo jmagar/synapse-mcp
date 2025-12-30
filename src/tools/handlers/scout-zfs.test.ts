@@ -240,8 +240,10 @@ describe('Scout ZFS Handler', () => {
         limit: 10
       } as unknown as ScoutInput, mockContainer as ServiceContainer);
 
-      // Should only show first 10 snapshots
+      // Should only show first 10 snapshots (snap-0 through snap-9)
       expect(result).toContain('snap-0');
+      expect(result).toContain('snap-9');
+      expect(result).not.toContain('snap-10');
       expect(result).not.toContain('snap-50');
     });
   });
