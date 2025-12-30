@@ -41,11 +41,10 @@ async function updateReadme(): Promise<void> {
     `#### scout\n\n${scoutDesc}\n`
   );
 
-  // Verify that replacements occurred
+  // Check if README needs updating
   if (updated === readme) {
-    console.error('⚠️  WARNING: No changes detected in README');
-    console.error('Regex patterns may not match current README structure');
-    process.exit(1);
+    console.log('✓ README already up-to-date');
+    return; // Success - no changes needed
   }
 
   // Write updated README
