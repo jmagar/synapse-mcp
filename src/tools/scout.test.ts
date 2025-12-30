@@ -2,6 +2,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleScoutTool } from './scout.js';
 import type { ServiceContainer } from '../services/container.js';
+import { DEFAULT_DOCKER_SOCKET } from '../constants.js';
+import * as dockerService from '../services/docker.js';
 
 describe('Scout Tool Handler', () => {
   let mockContainer: ServiceContainer;
@@ -75,12 +77,27 @@ describe('Scout Tool Handler', () => {
   describe('routing', () => {
     it('should route nodes action to simple handler', async () => {
       // nodes action just lists configured hosts
-      const result = await handleScoutTool(
-        { action: 'nodes' },
-        mockContainer
-      );
-      // Should return the host list (from loadHostConfigs mock)
-      expect(result).toBeDefined();
+      const loadHostConfigsSpy = vi.spyOn(dockerService, 'loadHostConfigs').mockReturnValue([
+        {
+          name: 'local',
+          host: 'localhost',
+          protocol: 'http',
+          port: 2375,
+          dockerSocketPath: DEFAULT_DOCKER_SOCKET
+        }
+      ]);
+
+      try {
+        const result = await handleScoutTool(
+          { action: 'nodes' },
+          mockContainer
+        );
+        // Should return the host list (from loadHostConfigs mock)
+        expect(result).toContain('local');
+        expect(result).toContain('localhost');
+      } finally {
+        loadHostConfigsSpy.mockRestore();
+      }
     });
 
     it('should route peek action to simple handler', async () => {
@@ -134,14 +151,14 @@ describe('Scout Tool Handler', () => {
       await expect(handleScoutTool(
         { action: 'invalid' },
         mockContainer
-      )).rejects.toThrow();
+      )).rejects.toThrow(/Scout input validation failed:.*invalid_union/i);
     });
 
     it('should reject invalid target format for peek', async () => {
       await expect(handleScoutTool(
         { action: 'peek', target: 'invalid' },
         mockContainer
-      )).rejects.toThrow();
+      )).rejects.toThrow(/Scout input validation failed:.*Must be 'hostname:\/path' format/);
     });
   });
 });

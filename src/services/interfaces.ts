@@ -2,9 +2,13 @@ import type {
   HostConfig,
   ContainerInfo,
   ContainerStats,
+  ContainerExecResult,
+  ContainerProcessList,
   HostStatus,
   LogEntry,
-  ImageInfo
+  ImageInfo,
+  DockerNetworkInfo,
+  DockerVolumeInfo
 } from "../types.js";
 import type Docker from "dockerode";
 import type { NodeSSH } from "node-ssh";
@@ -100,6 +104,34 @@ export interface IDockerService {
   getContainerStats(containerId: string, host: HostConfig): Promise<ContainerStats>;
 
   /**
+   * Execute a command inside a container.
+   *
+   * @param containerId - Container ID or name
+   * @param host - Host configuration where container is located
+   * @param options - Exec options
+   * @param options.command - Command to execute (allowlisted)
+   * @param options.user - Run as specific user
+   * @param options.workdir - Working directory
+   * @param options.timeout - Execution timeout in ms (default 30s, max 5min)
+   * @returns Exec result with stdout, stderr, and exit code
+   * @throws Error if timeout exceeded or buffer limit exceeded
+   */
+  execContainer(
+    containerId: string,
+    host: HostConfig,
+    options: { command: string; user?: string; workdir?: string; timeout?: number }
+  ): Promise<ContainerExecResult>;
+
+  /**
+   * Get running processes inside a container.
+   *
+   * @param containerId - Container ID or name
+   * @param host - Host configuration where container is located
+   * @returns Process list with titles and rows
+   */
+  getContainerProcesses(containerId: string, host: HostConfig): Promise<ContainerProcessList>;
+
+  /**
    * Find which host a container is running on.
    * Searches across all provided hosts.
    *
@@ -128,6 +160,22 @@ export interface IDockerService {
    * @returns Array of images with their details and host information
    */
   listImages(hosts: HostConfig[], options?: ListImagesOptions): Promise<ImageInfo[]>;
+
+  /**
+   * List Docker networks across multiple hosts.
+   *
+   * @param hosts - Array of host configurations to query
+   * @returns Array of network details with host information
+   */
+  listNetworks(hosts: HostConfig[]): Promise<DockerNetworkInfo[]>;
+
+  /**
+   * List Docker volumes across multiple hosts.
+   *
+   * @param hosts - Array of host configurations to query
+   * @returns Array of volume details with host information
+   */
+  listVolumes(hosts: HostConfig[]): Promise<DockerVolumeInfo[]>;
 
   /**
    * Get detailed information about a container.

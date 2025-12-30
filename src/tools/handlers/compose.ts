@@ -92,6 +92,9 @@ export async function handleComposeAction(
     }
 
     case 'down': {
+      if (inp.remove_volumes && !inp.force) {
+        throw new Error('Compose down with remove_volumes requires force=true to prevent accidental data loss');
+      }
       await composeService.composeDown(hostConfig, inp.project, inp.remove_volumes ?? false);
       return `Project '${inp.project}' stopped successfully on ${hostConfig.name}`;
     }

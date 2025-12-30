@@ -14,6 +14,15 @@ import {
 } from '../../formatters/index.js';
 import { logError } from '../../utils/errors.js';
 
+const resolveNonEmptyString = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
 /**
  * Handle all container subactions
  */
@@ -212,7 +221,22 @@ export async function handleContainerAction(
       if (!found) {
         throw new Error(`Container not found: ${inp.container_id}`);
       }
-      const image = found.container.Image;
+      const inputImage = resolveNonEmptyString(inp.image);
+      let image = resolveNonEmptyString(found.container?.Image);
+
+      if (!image) {
+        try {
+          const inspection = await dockerService.inspectContainer(inp.container_id, found.host);
+          image = resolveNonEmptyString(inspection?.Config?.Image);
+        } catch (error) {
+          if (!inputImage) {
+            throw error;
+          }
+        }
+      }
+
+      image = image ?? inputImage;
+
       if (!image) {
         throw new Error(`Cannot determine image for container: ${inp.container_id}`);
       }
@@ -231,11 +255,58 @@ export async function handleContainerAction(
       return `Container recreated: ${result.containerId} (${result.status})`;
     }
 
-    // NOTE: 'exec' and 'top' subactions are NOT in the schema yet
-    // because handlers are not implemented. When implementing:
-    // 1. Add exec: execContainer method to IDockerService
-    // 2. Add top: getContainerProcesses method to IDockerService
-    // 3. Re-add containerExecSchema and containerTopSchema to flux/index.ts
+    case 'exec': {
+      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      if (!found) {
+        throw new Error(`Container not found: ${inp.container_id}`);
+      }
+
+      const result = await dockerService.execContainer(inp.container_id, found.host, {
+        command: inp.command,
+        user: inp.user,
+        workdir: inp.workdir
+      });
+
+      if (format === ResponseFormat.JSON) {
+        return JSON.stringify({
+          host: found.host.name,
+          container: inp.container_id,
+          ...result
+        }, null, 2);
+      }
+
+      const stderrBlock = result.stderr
+        ? `\n\n**stderr**\n\n\`\`\`\n${result.stderr}\n\`\`\``
+        : '';
+
+      return `## Exec - ${inp.container_id} (${found.host.name})\n\n` +
+        `**exitCode:** ${result.exitCode}\n\n` +
+        `**stdout**\n\n\`\`\`\n${result.stdout}\n\`\`\`` +
+        stderrBlock;
+    }
+
+    case 'top': {
+      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      if (!found) {
+        throw new Error(`Container not found: ${inp.container_id}`);
+      }
+
+      const result = await dockerService.getContainerProcesses(inp.container_id, found.host);
+
+      if (format === ResponseFormat.JSON) {
+        return JSON.stringify({
+          host: found.host.name,
+          container: inp.container_id,
+          ...result
+        }, null, 2);
+      }
+
+      const header = result.titles.join(' ');
+      const rows = result.processes.map((row: string[]) => row.join(' '));
+      const output = [header, ...rows].join('\n').trim();
+
+      return `## Processes - ${inp.container_id} (${found.host.name})\n\n\`\`\`\n${output}\n\`\`\``;
+    }
 
     default:
       // This should never be reached due to Zod validation

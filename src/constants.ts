@@ -30,6 +30,13 @@ export const MAX_FILE_SIZE_LIMIT = 10485760; // 10MB
 export const DEFAULT_COMMAND_TIMEOUT = 30000; // 30s
 export const MAX_COMMAND_TIMEOUT = 300000; // 300s (5 min)
 
+// Container exec timeout limits (milliseconds)
+export const DEFAULT_EXEC_TIMEOUT = 30000; // 30s
+export const MAX_EXEC_TIMEOUT = 300000; // 300s (5 min)
+
+// Container exec buffer limits (bytes)
+export const DEFAULT_EXEC_MAX_BUFFER = 10485760; // 10MB per stream
+
 // Tree depth limits
 export const DEFAULT_TREE_DEPTH = 3;
 export const MAX_TREE_DEPTH = 10;

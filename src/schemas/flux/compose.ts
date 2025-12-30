@@ -5,7 +5,8 @@ import {
   paginationSchema,
   hostSchema,
   projectSchema,
-  preprocessWithDiscriminator
+  preprocessWithDiscriminator,
+  jsFilterSchema
 } from "../common.js";
 import { DEFAULT_LOG_LINES, MAX_LOG_LINES } from "../../constants.js";
 
@@ -69,8 +70,16 @@ export const composeDownSchema = z.preprocess(
       host: hostSchema,
       project: projectSchema,
       remove_volumes: z.boolean().default(false).describe("Delete volumes (destructive!)"),
+      force: z.boolean().default(false).describe("Required when remove_volumes=true to confirm destructive action"),
       response_format: responseFormatSchema
     })
+    .refine(
+      (data) => !data.remove_volumes || data.force,
+      {
+        message: "force=true is required when remove_volumes=true to prevent accidental data loss",
+        path: ["force"]
+      }
+    )
     .describe("Stop a Docker Compose project")
 );
 
@@ -101,7 +110,7 @@ export const composeLogsSchema = z.preprocess(
       lines: z.number().int().min(1).max(MAX_LOG_LINES).default(DEFAULT_LOG_LINES),
       since: z.string().optional(),
       until: z.string().optional(),
-      grep: z.string().optional(),
+      grep: jsFilterSchema.optional(),
       response_format: responseFormatSchema
     })
     .describe("Get Docker Compose project logs")

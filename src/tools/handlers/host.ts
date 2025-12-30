@@ -4,7 +4,8 @@ import type { FluxInput } from '../../schemas/flux/index.js';
 import { loadHostConfigs } from '../../services/docker.js';
 import { ResponseFormat } from '../../types.js';
 import { formatHostStatusMarkdown, formatHostResourcesMarkdown } from '../../formatters/index.js';
-import { validateSSHArg } from '../../utils/index.js';
+import { escapeShellArg, validateSSHArg, validateSystemdServiceName } from '../../utils/index.js';
+import { logError } from '../../utils/errors.js';
 
 /**
  * Handle all host subactions
@@ -19,16 +20,13 @@ export async function handleHostAction(
     throw new Error(`Invalid action for host handler: ${input.action}`);
   }
 
+  const hostName = getHostName(input);
   const dockerService = container.getDockerService();
   const sshService = container.getSSHService();
   const hosts = loadHostConfigs();
   const format = input.response_format ?? ResponseFormat.MARKDOWN;
 
-  // Use type assertion to access subaction-specific fields
-  const inp = input as Record<string, unknown>;
-
   // Find the target host (can query all hosts if not specified for some actions)
-  const hostName = inp.host as string | undefined;
   const hostConfig = hostName ? hosts.find(h => h.name === hostName) : undefined;
 
   // For most operations, require the host
@@ -36,7 +34,7 @@ export async function handleHostAction(
     throw new Error(`Host not found: ${hostName}`);
   }
 
-  switch (inp.subaction) {
+  switch (input.subaction) {
     case 'status': {
       // For status, we can check all hosts or specific host
       const targetHosts = hostConfig ? [hostConfig] : hosts;
@@ -55,6 +53,10 @@ export async function handleHostAction(
               error: undefined
             };
           } catch (err) {
+            logError(err, {
+              operation: 'handleHostAction:status',
+              metadata: { host: h.name, action: 'status' }
+            });
             return {
               name: h.name,
               connected: false,
@@ -87,6 +89,10 @@ export async function handleHostAction(
             const resources = await sshService.getHostResources(h);
             return { host: h.name, resources, error: undefined };
           } catch (err) {
+            logError(err, {
+              operation: 'handleHostAction:resources',
+              metadata: { host: h.name, action: 'resources' }
+            });
             return {
               host: h.name,
               resources: null,
@@ -147,8 +153,8 @@ export async function handleHostAction(
         throw new Error('Host is required for host:services');
       }
 
-      const state = inp.state as string | undefined;
-      const service = inp.service as string | undefined;
+      const state = getOptionalString(input.state, 'state');
+      const service = getOptionalString(input.service, 'service');
 
       // SECURITY: Validate user-provided parameters to prevent command injection
       // The SSH service joins args with spaces and executes as shell command,
@@ -157,16 +163,18 @@ export async function handleHostAction(
         validateSSHArg(state, 'state');
       }
       if (service) {
-        validateSSHArg(service, 'service');
+        validateSystemdServiceName(service);
       }
 
       // Build systemctl command based on options
       const args = ['list-units', '--type=service', '--no-pager'];
       if (state && state !== 'all') {
-        args.push(`--state=${state}`);
+        const safeState = escapeShellArg(state);
+        args.push(`--state=${safeState}`);
       }
       if (service) {
-        args.push(service);
+        const safeService = escapeShellArg(service);
+        args.push(safeService);
       }
 
       const output = await sshService.executeSSHCommand(
@@ -231,6 +239,30 @@ export async function handleHostAction(
 
     default:
       // This should never be reached due to Zod validation
-      throw new Error(`Unknown subaction: ${inp.subaction}`);
+      throw new Error(`Unknown subaction: ${input.subaction}`);
   }
+}
+
+function getHostName(input: FluxInput): string | undefined {
+  if (!('host' in input)) {
+    return undefined;
+  }
+  const hostValue = input.host;
+  if (hostValue === undefined) {
+    return undefined;
+  }
+  if (typeof hostValue === 'string') {
+    return hostValue;
+  }
+  throw new Error('Invalid host: expected string');
+}
+
+function getOptionalString(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  throw new Error(`Invalid ${fieldName}: expected string`);
 }

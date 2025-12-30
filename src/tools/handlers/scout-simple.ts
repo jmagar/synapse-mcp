@@ -4,7 +4,7 @@ import type { ScoutInput } from '../../schemas/scout/index.js';
 import { loadHostConfigs } from '../../services/docker.js';
 import type { HostConfig } from '../../types.js';
 import { ResponseFormat } from '../../types.js';
-import { DEFAULT_MAX_FILE_SIZE } from '../../constants.js';
+import { DEFAULT_COMMAND_TIMEOUT, DEFAULT_MAX_FILE_SIZE, MAX_COMMAND_TIMEOUT } from '../../constants.js';
 import { escapeShellArg } from '../../utils/path-security.js';
 
 // Simple actions that this handler can process
@@ -225,13 +225,17 @@ export async function handleScoutSimpleAction(
     }
 
     case 'emit': {
-      const inp = input as { targets: string[]; command?: string };
+      const inp = input as { targets: string[]; command?: string; timeout?: unknown };
 
       if (!inp.command) {
         throw new Error('emit requires a command parameter');
       }
 
       const command = inp.command;
+      const timeoutValue = Number(inp.timeout);
+      const timeout = Number.isFinite(timeoutValue) && timeoutValue > 0 && timeoutValue <= MAX_COMMAND_TIMEOUT
+        ? timeoutValue
+        : DEFAULT_COMMAND_TIMEOUT;
 
       // Execute command on all targets in parallel
       const results = await Promise.all(
@@ -240,7 +244,7 @@ export async function handleScoutSimpleAction(
           const hostConfig = findHost(hostName);
 
           try {
-            const result = await fileService.executeCommand(hostConfig, path, command, 30000);
+            const result = await fileService.executeCommand(hostConfig, path, command, timeout);
             return { host: hostName, path, stdout: result.stdout, exitCode: result.exitCode, error: undefined };
           } catch (err) {
             return { host: hostName, path, stdout: '', exitCode: -1, error: err instanceof Error ? err.message : 'Unknown error' };
@@ -309,22 +313,21 @@ export async function handleScoutSimpleAction(
       // Apply filters
       const grepFilter = inp.grep;
       const userFilter = inp.user;
-      if (grepFilter) {
-        const lines = output.split('\n');
-        const header = lines[0] || '';
-        const filtered = lines.slice(1).filter(line => line.includes(grepFilter));
-        output = [header, ...filtered.slice(0, inp.limit || 50)].join('\n');
-      } else if (inp.limit) {
-        const lines = output.split('\n');
-        output = [lines[0], ...lines.slice(1, inp.limit + 1)].join('\n');
-      }
+      const lines = output.split('\n');
+      const header = lines[0] || '';
+      let filtered = lines.slice(1);
 
       if (userFilter) {
-        const lines = output.split('\n');
-        const header = lines[0] || '';
-        const filtered = lines.slice(1).filter(line => line.startsWith(userFilter));
-        output = [header, ...filtered].join('\n');
+        filtered = filtered.filter(line => line.startsWith(userFilter));
       }
+      if (grepFilter) {
+        filtered = filtered.filter(line => line.includes(grepFilter));
+      }
+      if (inp.limit) {
+        filtered = filtered.slice(0, inp.limit);
+      }
+
+      output = [header, ...filtered].join('\n');
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify({ host: inp.host, processes: output }, null, 2);

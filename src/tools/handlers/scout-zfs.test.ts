@@ -5,6 +5,7 @@ import type { ServiceContainer } from '../../services/container.js';
 import type { ISSHService } from '../../services/interfaces.js';
 import type { ScoutInput } from '../../schemas/scout/index.js';
 import { ResponseFormat } from '../../types.js';
+import { loadHostConfigs } from '../../services/docker.js';
 
 // Mock loadHostConfigs
 vi.mock('../../services/docker.js', async (importOriginal) => {
@@ -73,6 +74,19 @@ describe('Scout ZFS Handler', () => {
         'zpool',
         expect.arrayContaining(['list', 'tank'])
       );
+    });
+
+    it('should reject invalid pool name', async () => {
+      await expect(
+        handleZfsAction({
+          action: 'zfs',
+          subaction: 'pools',
+          host: 'tootie',
+          pool: 'tank;rm -rf /'
+        } as unknown as ScoutInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow(/Pool name must start with a letter/i);
+
+      expect(mockSSHService.executeSSHCommand).not.toHaveBeenCalled();
     });
 
     it('should return JSON format when requested', async () => {
@@ -169,7 +183,7 @@ describe('Scout ZFS Handler', () => {
         action: 'zfs',
         subaction: 'datasets',
         host: 'tootie',
-        pool: 'tank/data',
+        pool: 'tank',
         recursive: true
       } as unknown as ScoutInput, mockContainer as ServiceContainer);
 
@@ -224,6 +238,19 @@ describe('Scout ZFS Handler', () => {
       );
     });
 
+    it('should reject invalid dataset name', async () => {
+      await expect(
+        handleZfsAction({
+          action: 'zfs',
+          subaction: 'snapshots',
+          host: 'tootie',
+          dataset: 'tank/data;rm -rf /'
+        } as unknown as ScoutInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow(/Dataset name must start with a letter/i);
+
+      expect(mockSSHService.executeSSHCommand).not.toHaveBeenCalled();
+    });
+
     it('should limit number of snapshots', async () => {
       const snapshotLines = Array.from({ length: 100 }, (_, i) =>
         `tank/data@snap-${i}     10G      -       2.0T  -`
@@ -246,6 +273,17 @@ describe('Scout ZFS Handler', () => {
       expect(result).not.toContain('snap-10');
       expect(result).not.toContain('snap-50');
     });
+
+    it('should reject a zero snapshot limit', async () => {
+      await expect(
+        handleZfsAction({
+          action: 'zfs',
+          subaction: 'snapshots',
+          host: 'tootie',
+          limit: 0
+        } as unknown as ScoutInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow(/Scout ZFS input validation failed/i);
+    });
   });
 
   describe('error handling', () => {
@@ -258,9 +296,17 @@ describe('Scout ZFS Handler', () => {
       ).rejects.toThrow('Invalid action for zfs handler');
     });
 
+    it('should throw when host is missing', async () => {
+      await expect(
+        handleZfsAction({
+          action: 'zfs',
+          subaction: 'pools'
+        } as unknown as ScoutInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow(/Scout ZFS input validation failed/i);
+    });
+
     it('should throw on unknown host', async () => {
-      // Re-mock to return empty hosts array
-      vi.mocked(await import('../../services/docker.js')).loadHostConfigs.mockReturnValue([]);
+      vi.mocked(loadHostConfigs).mockReturnValueOnce([]);
 
       await expect(
         handleZfsAction({

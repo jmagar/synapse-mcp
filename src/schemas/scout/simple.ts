@@ -1,6 +1,6 @@
 // src/schemas/scout/simple.ts
 import { z } from 'zod';
-import { responseFormatSchema, hostSchema } from '../common.js';
+import { responseFormatSchema, hostSchema, jsFilterSchema } from '../common.js';
 import {
   DEFAULT_TREE_DEPTH,
   MAX_TREE_DEPTH,
@@ -78,12 +78,16 @@ export const scoutDeltaSchema = z.object({
   target: z.string().optional().describe('File destination for comparison'),
   content: z.string().optional().describe('String content for comparison'),
   response_format: responseFormatSchema
-}).describe('Compare files or content between locations');
+}).refine(
+  data => data.target || data.content,
+  { message: 'Either target or content must be provided for comparison' }
+).describe('Compare files or content between locations');
 
 export const scoutEmitSchema = z.object({
   action: z.literal('emit'),
   targets: z.array(scoutTargetSchema).min(1).describe('Array of remote locations'),
   command: z.string().optional().describe('Shell command to execute on all targets'),
+  timeout: z.number().int().min(1).max(MAX_COMMAND_TIMEOUT).default(DEFAULT_COMMAND_TIMEOUT),
   response_format: responseFormatSchema
 }).describe('Multi-host operations');
 
@@ -97,7 +101,7 @@ export const scoutBeamSchema = z.object({
 export const scoutPsSchema = z.object({
   action: z.literal('ps'),
   host: hostSchema,
-  grep: z.string().optional().describe('Filter output containing this string'),
+  grep: jsFilterSchema.optional().describe('Filter output containing this string'),
   user: z.string().optional().describe('Filter processes by username'),
   sort: z.enum(['cpu', 'mem', 'pid', 'time']).default('cpu'),
   limit: z.number().int().min(1).max(1000).default(50),

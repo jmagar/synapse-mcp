@@ -180,7 +180,7 @@ describe('ScoutSchema', () => {
       { action: 'peek', target: 'host:/path' },
       { action: 'exec', target: 'host:/path', command: 'ls' },
       { action: 'find', target: 'host:/path', pattern: '*.txt' },
-      { action: 'delta', source: '/local/file' },
+      { action: 'delta', source: '/local/file', target: 'host:/path' },
       { action: 'emit', targets: ['host:/path'] },
       { action: 'beam', source: '/local', destination: 'host:/remote' },
       { action: 'ps', host: 'testhost' },

@@ -155,6 +155,7 @@ Stop a running container.
 #### Parameters
 
 - **container_id**: Container name or ID
+- **image**: Explicit image to pull if container metadata is missing (optional)
 - **host**: Target Docker host (optional)
 
 #### Examples
@@ -221,7 +222,7 @@ Get container logs with optional filtering.
 - **lines**: Number of log lines to retrieve (default: 100, max: 10000)
 - **since**: ISO 8601 timestamp (e.g., "2024-01-15T10:00:00Z") or relative (e.g., "1h", "30m")
 - **until**: ISO 8601 timestamp or relative time
-- **grep**: Filter log lines containing this string (case-sensitive)
+- **grep**: Filter log lines containing this string (case-sensitive; no shell metacharacters; max 200 chars)
 - **stream**: Controls output streams - `stdout` | `stderr` | `both` (default: `both`)
 
 #### Examples
@@ -458,7 +459,7 @@ Get Docker Compose project logs.
 - **lines**: Number of log lines to retrieve (default: 100, max: 10000)
 - **since**: ISO 8601 timestamp or relative time (e.g., "1h", "30m")
 - **until**: ISO 8601 timestamp or relative time
-- **grep**: Filter log lines containing this string (case-sensitive)
+- **grep**: Filter log lines containing this string (case-sensitive; no shell metacharacters; max 200 chars)
 
 #### Examples
 
@@ -942,6 +943,13 @@ const paginationSchema = {
   offset: z.number().int().min(0).optional().default(0),
 };
 
+const safeGrepSchema = z.string()
+  .min(1)
+  .max(200)
+  .refine((value) => !/[;&|`$()<>{}[\]\\"\n\r\t']/.test(value), {
+    message: "Grep pattern contains shell metacharacters",
+  });
+
 // Example container subaction schemas
 const containerListSchema = z.object({
   action: z.literal("container"),
@@ -965,7 +973,7 @@ const containerLogsSchema = z.object({
   lines: z.number().int().min(1).max(10000).optional().default(100),
   since: z.string().optional(), // ISO 8601 or relative (e.g., "1h", "30m")
   until: z.string().optional(),
-  grep: z.string().optional(),
+  grep: safeGrepSchema.optional(),
   stream: z.enum(["stdout", "stderr", "both"]).optional().default("both"),
   response_format: responseFormatSchema.optional(),
 });
@@ -1005,7 +1013,7 @@ const composeLogsSchema = z.object({
   lines: z.number().int().min(1).max(10000).optional().default(100),
   since: z.string().optional(),
   until: z.string().optional(),
-  grep: z.string().optional(),
+  grep: safeGrepSchema.optional(),
   response_format: responseFormatSchema.optional(),
 });
 
@@ -1208,7 +1216,7 @@ List and search processes on a remote host.
 ### Parameters
 
 - **host**: SSH hostname
-- **grep**: Filter output containing this string (case-sensitive)
+- **grep**: Filter output containing this string (case-sensitive; no shell metacharacters; max 200 chars)
 - **user**: Filter processes by username
 - **sort**: Sort order - `cpu` | `mem` | `pid` | `time` (default: `cpu`)
 - **limit**: Maximum results to return (default: 50, max: 1000)
@@ -1323,7 +1331,7 @@ Access system log files (/var/log).
 
 - **host**: SSH hostname (required)
 - **lines**: Number of log lines to retrieve (default: 100, max: 10000)
-- **grep**: Filter log lines containing this string (case-sensitive)
+- **grep**: Filter log lines containing this string (case-sensitive; no shell metacharacters; max 200 chars)
 
 #### Examples
 
@@ -1345,7 +1353,7 @@ Access systemd journal logs.
 - **until**: ISO 8601 timestamp or relative time
 - **unit**: Systemd unit name to filter (e.g., "docker.service", "nginx.service")
 - **priority**: Log level filter - `emerg` | `alert` | `crit` | `err` | `warning` | `notice` | `info` | `debug`
-- **grep**: Filter log lines containing this string (case-sensitive)
+- **grep**: Filter log lines containing this string (case-sensitive; no shell metacharacters; max 200 chars)
 
 #### Examples
 
@@ -1366,7 +1374,7 @@ Access kernel ring buffer logs.
 
 - **host**: SSH hostname (required)
 - **lines**: Number of log lines to retrieve (default: 100, max: 10000)
-- **grep**: Filter log lines containing this string (case-sensitive)
+- **grep**: Filter log lines containing this string (case-sensitive; no shell metacharacters; max 200 chars)
 
 #### Examples
 
@@ -1384,7 +1392,7 @@ Access authentication logs.
 
 - **host**: SSH hostname (required)
 - **lines**: Number of log lines to retrieve (default: 100, max: 10000)
-- **grep**: Filter log lines containing this string (case-sensitive)
+- **grep**: Filter log lines containing this string (case-sensitive; no shell metacharacters; max 200 chars)
 
 #### Examples
 
@@ -1493,7 +1501,7 @@ const scoutLogsSchema = z.discriminatedUnion("subaction", [
     subaction: z.literal("syslog"),
     host: z.string(),
     lines: z.number().int().min(1).max(10000).optional(),
-    grep: z.string().optional(),
+    grep: safeGrepSchema.optional(),
   }),
   // Systemd journal
   z.object({
@@ -1505,7 +1513,7 @@ const scoutLogsSchema = z.discriminatedUnion("subaction", [
     until: z.string().optional(), // ISO 8601
     unit: z.string().optional(), // systemd unit
     priority: z.enum(["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]).optional(),
-    grep: z.string().optional(),
+    grep: safeGrepSchema.optional(),
   }),
   // Kernel ring buffer
   z.object({
@@ -1513,7 +1521,7 @@ const scoutLogsSchema = z.discriminatedUnion("subaction", [
     subaction: z.literal("dmesg"),
     host: z.string(),
     lines: z.number().int().min(1).max(10000).optional(),
-    grep: z.string().optional(),
+    grep: safeGrepSchema.optional(),
   }),
   // Authentication logs
   z.object({
@@ -1521,7 +1529,7 @@ const scoutLogsSchema = z.discriminatedUnion("subaction", [
     subaction: z.literal("auth"),
     host: z.string(),
     lines: z.number().int().min(1).max(10000).optional(),
-    grep: z.string().optional(),
+    grep: safeGrepSchema.optional(),
   }),
 ]);
 
@@ -1579,7 +1587,7 @@ const scoutExecSchema = z.object({
 const scoutPsSchema = z.object({
   action: z.literal("ps"),
   host: z.string().min(1),
-  grep: z.string().optional(),
+  grep: safeGrepSchema.optional(),
   user: z.string().optional(),
   sort: z.enum(["cpu", "mem", "pid", "time"]).optional().default("cpu"),
   limit: z.number().int().min(1).max(1000).optional().default(50),
@@ -1614,6 +1622,8 @@ function handleHelp(tool: 'flux' | 'scout', topic?: string, format: 'markdown' |
   return formatDetailedHelp(match, format);
 }
 ```
+
+**Grep validation note:** Help output does not enforce validation, but all `grep` fields are validated by the schemas. Patterns must not include shell metacharacters and must be 1–200 characters.
 
 ### Schema Composition Patterns
 

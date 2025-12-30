@@ -89,6 +89,21 @@ describe('Scout Simple Schemas', () => {
       });
       expect(result.content).toBe('127.0.0.1 localhost');
     });
+
+    it('should require target or content', () => {
+      const result = scoutDeltaSchema.safeParse({
+        action: 'delta',
+        source: 'tootie:/etc/hosts'
+      });
+
+      expect(result.success).toBe(false);
+      if (result.success) {
+        return;
+      }
+      expect(result.error.issues[0]?.message).toBe(
+        'Either target or content must be provided for comparison'
+      );
+    });
   });
 
   describe('scoutEmitSchema', () => {
@@ -99,6 +114,16 @@ describe('Scout Simple Schemas', () => {
         command: 'echo hello'
       });
       expect(result.targets).toHaveLength(2);
+    });
+
+    it('should accept optional timeout override', () => {
+      const result = scoutEmitSchema.parse({
+        action: 'emit',
+        targets: ['host1:/tmp'],
+        command: 'echo hello',
+        timeout: 45000
+      });
+      expect(result.timeout).toBe(45000);
     });
   });
 
@@ -124,6 +149,25 @@ describe('Scout Simple Schemas', () => {
       });
       expect(result.sort).toBe('mem');
       expect(result.limit).toBe(20);
+    });
+
+    it('should allow grep patterns with shell chars (JS-side filtering)', () => {
+      // ps grep uses jsFilterSchema since filtering is done in JavaScript
+      // with String.includes(), not passed to shell
+      const result = scoutPsSchema.parse({
+        action: 'ps',
+        host: 'tootie',
+        grep: "[nginx] error"
+      });
+      expect(result.grep).toBe("[nginx] error");
+    });
+
+    it('should reject grep patterns with control characters', () => {
+      expect(() => scoutPsSchema.parse({
+        action: 'ps',
+        host: 'tootie',
+        grep: "nginx\x00inject"
+      })).toThrow(/control characters/);
     });
 
     it('should default sort to cpu', () => {

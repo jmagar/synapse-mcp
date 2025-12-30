@@ -5,6 +5,7 @@ import type { ServiceContainer } from '../../services/container.js';
 import type { ISSHService } from '../../services/interfaces.js';
 import type { ScoutInput } from '../../schemas/scout/index.js';
 import { ResponseFormat } from '../../types.js';
+import { loadHostConfigs } from '../../services/docker.js';
 
 // Mock loadHostConfigs
 vi.mock('../../services/docker.js', async (importOriginal) => {
@@ -259,9 +260,9 @@ describe('Scout Logs Handler', () => {
   });
 
   describe('grep pattern security validation', () => {
-    beforeEach(async () => {
+    beforeEach(() => {
       // Reset mock to return valid host
-      vi.mocked(await import('../../services/docker.js')).loadHostConfigs.mockReturnValue([
+      vi.mocked(loadHostConfigs).mockReturnValue([
         { name: 'tootie', host: 'tootie', protocol: 'http', port: 2375 }
       ]);
     });
@@ -366,7 +367,7 @@ describe('Scout Logs Handler', () => {
 
     it('should throw on unknown host', async () => {
       // Re-mock to return empty hosts array
-      vi.mocked(await import('../../services/docker.js')).loadHostConfigs.mockReturnValue([]);
+      vi.mocked(loadHostConfigs).mockReturnValue([]);
 
       await expect(
         handleLogsAction({
@@ -380,7 +381,7 @@ describe('Scout Logs Handler', () => {
 
     it('should handle SSH command failure', async () => {
       // Reset mock
-      vi.mocked(await import('../../services/docker.js')).loadHostConfigs.mockReturnValue([
+      vi.mocked(loadHostConfigs).mockReturnValue([
         { name: 'tootie', host: 'tootie', protocol: 'http', port: 2375 }
       ]);
 

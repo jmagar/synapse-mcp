@@ -6,7 +6,9 @@ export {
   escapeShellArg,
   isSystemPath,
   SSHArgSecurityError,
-  validateSSHArg
+  validateSSHArg,
+  validateSystemdServiceName,
+  SYSTEMD_SERVICE_NAME_PATTERN
 } from "./path-security.js";
 
 export { generateHelp, formatHelpMarkdown, formatHelpJson } from "./help.js";

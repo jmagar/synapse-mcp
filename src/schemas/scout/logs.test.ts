@@ -37,6 +37,15 @@ describe('Scout Logs Schema', () => {
     expect(result.grep).toBe('USB');
   });
 
+  it('should reject grep patterns with shell metacharacters', () => {
+    expect(() => scoutLogsSchema.parse({
+      action: 'logs',
+      subaction: 'syslog',
+      host: 'tootie',
+      grep: "oops'; rm -rf /"
+    })).toThrow();
+  });
+
   it('should validate auth logs', () => {
     const result = scoutLogsSchema.parse({
       action: 'logs',

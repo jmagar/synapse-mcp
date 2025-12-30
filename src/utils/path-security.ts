@@ -47,6 +47,12 @@ const DANGEROUS_HOST_CHARS = /[;|$`&<>(){}[\]'"\\!#*?]/;
 const SHELL_METACHARACTERS = /[;&|`$()<>{}[\]\\"\n\r\t]/;
 
 /**
+ * Pattern for valid systemd service names
+ * Allows alphanumeric characters plus @ . _ -
+ */
+export const SYSTEMD_SERVICE_NAME_PATTERN = /^[a-zA-Z0-9@._-]+$/;
+
+/**
  * Validates hostname format to prevent command injection
  *
  * @param host - Hostname to validate
@@ -110,6 +116,24 @@ export function validateSSHArg(arg: string, paramName: string): void {
       `${paramName} too long: maximum 500 characters allowed`,
       arg.substring(0, 50),
       paramName
+    );
+  }
+}
+
+/**
+ * Validates systemd service name to prevent command injection and malformed units
+ *
+ * @param service - Service name to validate
+ * @throws SSHArgSecurityError if service is invalid
+ */
+export function validateSystemdServiceName(service: string): void {
+  validateSSHArg(service, "service");
+
+  if (!SYSTEMD_SERVICE_NAME_PATTERN.test(service)) {
+    throw new SSHArgSecurityError(
+      "Invalid service name: only letters, numbers, @, ., _, and - are allowed",
+      service.substring(0, 50),
+      "service"
     );
   }
 }

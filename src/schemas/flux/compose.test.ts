@@ -14,6 +14,16 @@ import {
 
 describe("Compose Schemas", () => {
   describe("composeListSchema", () => {
+    it("should reject mismatched action", () => {
+      expect(() =>
+        composeListSchema.parse({
+          action: "container",
+          subaction: "list",
+          host: "tootie"
+        })
+      ).toThrow();
+    });
+
     it("should require host", () => {
       expect(() =>
         composeListSchema.parse({
@@ -54,6 +64,17 @@ describe("Compose Schemas", () => {
   });
 
   describe("composeStatusSchema", () => {
+    it("should reject mismatched subaction", () => {
+      expect(() =>
+        composeStatusSchema.parse({
+          action: "compose",
+          subaction: "list",
+          host: "tootie",
+          project: "plex"
+        })
+      ).toThrow();
+    });
+
     it("should require host and project", () => {
       expect(() =>
         composeStatusSchema.parse({
@@ -86,6 +107,17 @@ describe("Compose Schemas", () => {
   });
 
   describe("composeUpSchema", () => {
+    it("should reject mismatched action", () => {
+      expect(() =>
+        composeUpSchema.parse({
+          action: "container",
+          subaction: "up",
+          host: "tootie",
+          project: "plex"
+        })
+      ).toThrow();
+    });
+
     it("should default detach to true", () => {
       const result = composeUpSchema.parse({
         action: "compose",
@@ -109,6 +141,17 @@ describe("Compose Schemas", () => {
   });
 
   describe("composeDownSchema", () => {
+    it("should reject mismatched subaction", () => {
+      expect(() =>
+        composeDownSchema.parse({
+          action: "compose",
+          subaction: "logs",
+          host: "tootie",
+          project: "plex"
+        })
+      ).toThrow();
+    });
+
     it("should default remove_volumes to false", () => {
       const result = composeDownSchema.parse({
         action: "compose",
@@ -119,19 +162,54 @@ describe("Compose Schemas", () => {
       expect(result.remove_volumes).toBe(false);
     });
 
-    it("should allow remove_volumes to be true", () => {
+    it("should reject remove_volumes without force", () => {
+      expect(() =>
+        composeDownSchema.parse({
+          action: "compose",
+          subaction: "down",
+          host: "tootie",
+          project: "plex",
+          remove_volumes: true
+        })
+      ).toThrow(/force=true is required/);
+    });
+
+    it("should allow remove_volumes with force=true", () => {
       const result = composeDownSchema.parse({
         action: "compose",
         subaction: "down",
         host: "tootie",
         project: "plex",
-        remove_volumes: true
+        remove_volumes: true,
+        force: true
       });
       expect(result.remove_volumes).toBe(true);
+      expect(result.force).toBe(true);
+    });
+
+    it("should default force to false", () => {
+      const result = composeDownSchema.parse({
+        action: "compose",
+        subaction: "down",
+        host: "tootie",
+        project: "plex"
+      });
+      expect(result.force).toBe(false);
     });
   });
 
   describe("composeRestartSchema", () => {
+    it("should reject mismatched action", () => {
+      expect(() =>
+        composeRestartSchema.parse({
+          action: "container",
+          subaction: "restart",
+          host: "tootie",
+          project: "plex"
+        })
+      ).toThrow();
+    });
+
     it("should validate minimal restart", () => {
       const result = composeRestartSchema.parse({
         action: "compose",
@@ -144,6 +222,42 @@ describe("Compose Schemas", () => {
   });
 
   describe("composeLogsSchema", () => {
+    it("should reject mismatched subaction", () => {
+      expect(() =>
+        composeLogsSchema.parse({
+          action: "compose",
+          subaction: "pull",
+          host: "tootie",
+          project: "plex"
+        })
+      ).toThrow();
+    });
+
+    it("should allow grep patterns with brackets and quotes (JS filtering)", () => {
+      // jsFilterSchema is less strict than shellGrepSchema since it's used
+      // for JavaScript String.includes() filtering, not shell grep
+      const result = composeLogsSchema.parse({
+        action: "compose",
+        subaction: "logs",
+        host: "tootie",
+        project: "plex",
+        grep: "[ERROR] User 'admin'"
+      });
+      expect(result.grep).toBe("[ERROR] User 'admin'");
+    });
+
+    it("should reject grep patterns with control characters", () => {
+      expect(() =>
+        composeLogsSchema.parse({
+          action: "compose",
+          subaction: "logs",
+          host: "tootie",
+          project: "plex",
+          grep: "error\x00injection"
+        })
+      ).toThrow(/control characters/);
+    });
+
     it("should default lines to 50", () => {
       const result = composeLogsSchema.parse({
         action: "compose",
@@ -194,6 +308,17 @@ describe("Compose Schemas", () => {
   });
 
   describe("composeBuildSchema", () => {
+    it("should reject mismatched action", () => {
+      expect(() =>
+        composeBuildSchema.parse({
+          action: "container",
+          subaction: "build",
+          host: "tootie",
+          project: "app"
+        })
+      ).toThrow();
+    });
+
     it("should default no_cache to false", () => {
       const result = composeBuildSchema.parse({
         action: "compose",
@@ -219,6 +344,17 @@ describe("Compose Schemas", () => {
   });
 
   describe("composePullSchema", () => {
+    it("should reject mismatched subaction", () => {
+      expect(() =>
+        composePullSchema.parse({
+          action: "compose",
+          subaction: "recreate",
+          host: "tootie",
+          project: "app"
+        })
+      ).toThrow();
+    });
+
     it("should validate minimal pull", () => {
       const result = composePullSchema.parse({
         action: "compose",
@@ -242,6 +378,17 @@ describe("Compose Schemas", () => {
   });
 
   describe("composeRecreateSchema", () => {
+    it("should reject mismatched action", () => {
+      expect(() =>
+        composeRecreateSchema.parse({
+          action: "container",
+          subaction: "recreate",
+          host: "tootie",
+          project: "app"
+        })
+      ).toThrow();
+    });
+
     it("should validate minimal recreate", () => {
       const result = composeRecreateSchema.parse({
         action: "compose",

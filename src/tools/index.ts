@@ -5,6 +5,7 @@ import { handleFluxTool } from './flux.js';
 import { handleScoutTool } from './scout.js';
 import { FluxSchema } from '../schemas/flux/index.js';
 import { ScoutSchema } from '../schemas/scout/index.js';
+import { logError } from '../utils/errors.js';
 
 /**
  * Register Flux and Scout tools with the MCP server
@@ -29,8 +30,20 @@ export function registerTools(server: McpServer, container?: ServiceContainer): 
       }
     },
     async (params: unknown) => {
-      const result = await handleFluxTool(params, container);
-      return { content: [{ type: 'text', text: result }] };
+      try {
+        const result = await handleFluxTool(params, container);
+        return { content: [{ type: 'text', text: result }] };
+      } catch (error) {
+        logError(error, {
+          operation: 'flux:handler',
+          metadata: {
+            message: 'Flux tool execution failed',
+            params,
+            container: { type: container.constructor.name }
+          }
+        });
+        throw error;
+      }
     }
   );
 
@@ -49,8 +62,20 @@ export function registerTools(server: McpServer, container?: ServiceContainer): 
       }
     },
     async (params: unknown) => {
-      const result = await handleScoutTool(params, container);
-      return { content: [{ type: 'text', text: result }] };
+      try {
+        const result = await handleScoutTool(params, container);
+        return { content: [{ type: 'text', text: result }] };
+      } catch (error) {
+        logError(error, {
+          operation: 'scout:handler',
+          metadata: {
+            message: 'Scout tool execution failed',
+            params,
+            container: { type: container.constructor.name }
+          }
+        });
+        throw error;
+      }
     }
   );
 }

@@ -1,6 +1,7 @@
 // src/tools/handlers/scout-zfs.ts
 import type { ServiceContainer } from '../../services/container.js';
 import type { ScoutInput } from '../../schemas/scout/index.js';
+import { scoutZfsSchema } from '../../schemas/scout/zfs.js';
 import { loadHostConfigs } from '../../services/docker.js';
 import { ResponseFormat } from '../../types.js';
 
@@ -19,21 +20,24 @@ export async function handleZfsAction(
 
   const sshService = container.getSSHService();
   const hosts = loadHostConfigs();
-  const format = input.response_format ?? ResponseFormat.MARKDOWN;
-
-  // Use type assertion to access subaction-specific fields
-  const inp = input as Record<string, unknown>;
+  // Validate pool/dataset inputs at the handler boundary before SSH execution.
+  const parsed = scoutZfsSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(`Scout ZFS input validation failed: ${JSON.stringify(parsed.error.issues)}`);
+  }
+  const validated = parsed.data;
+  const format = validated.response_format ?? ResponseFormat.MARKDOWN;
 
   // Find the target host
-  const hostName = inp.host as string;
+  const hostName = validated.host;
   const hostConfig = hosts.find(h => h.name === hostName);
   if (!hostConfig) {
     throw new Error(`Host not found: ${hostName}`);
   }
 
-  switch (inp.subaction) {
+  switch (validated.subaction) {
     case 'pools': {
-      const pool = inp.pool as string | undefined;
+      const { pool } = validated;
 
       // Build zpool list command
       const args = ['list'];
@@ -51,9 +55,7 @@ export async function handleZfsAction(
     }
 
     case 'datasets': {
-      const pool = inp.pool as string | undefined;
-      const type = inp.type as string | undefined;
-      const recursive = inp.recursive as boolean | undefined;
+      const { pool, type, recursive } = validated;
 
       // Build zfs list command
       const args = ['list'];
@@ -80,9 +82,7 @@ export async function handleZfsAction(
     }
 
     case 'snapshots': {
-      const pool = inp.pool as string | undefined;
-      const dataset = inp.dataset as string | undefined;
-      const limit = inp.limit as number | undefined;
+      const { pool, dataset, limit } = validated;
 
       // Build zfs list command for snapshots
       const args = ['list', '-t', 'snapshot'];
@@ -97,7 +97,7 @@ export async function handleZfsAction(
       let output = await sshService.executeSSHCommand(hostConfig, 'zfs', args);
 
       // Apply limit if specified
-      if (limit) {
+      if (limit !== undefined) {
         const lines = output.split('\n');
         const header = lines[0] || '';
         const snapshotLines = lines.slice(1, limit + 1);
@@ -112,6 +112,6 @@ export async function handleZfsAction(
     }
 
     default:
-      throw new Error(`Unknown subaction: ${inp.subaction}`);
+      throw new Error('Unknown subaction');
   }
 }

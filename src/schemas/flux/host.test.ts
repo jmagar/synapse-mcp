@@ -84,6 +84,16 @@ describe("Host Schemas", () => {
       expect(result.state).toBe("running");
     });
 
+    it("should reject invalid service names", () => {
+      expect(() =>
+        hostServicesSchema.parse({
+          action: "host",
+          subaction: "services",
+          service: "docker;rm -rf /"
+        })
+      ).toThrowError(/Service name must contain only valid systemd characters/);
+    });
+
     it("should default state to all", () => {
       const result = hostServicesSchema.parse({
         action: "host",

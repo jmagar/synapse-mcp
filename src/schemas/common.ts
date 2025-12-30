@@ -14,7 +14,7 @@ import { DEFAULT_LIMIT, MAX_LIMIT } from "../constants.js";
  * Defaults to markdown for human-readable output
  */
 export const responseFormatSchema = z
-  .nativeEnum(ResponseFormat)
+  .enum(Object.values(ResponseFormat) as [ResponseFormat, ...ResponseFormat[]])
   .default(ResponseFormat.MARKDOWN)
   .describe("Output format: 'markdown' or 'json'");
 
@@ -52,12 +52,50 @@ export const containerIdSchema = z.string().min(1).describe("Container name or I
 /**
  * Project name schema for Docker Compose
  */
-export const projectSchema = z.string().min(1).describe("Docker Compose project name");
+export const projectSchema = z
+  .string()
+  .min(1)
+  .regex(/^[a-zA-Z0-9_-]+$/, "Project name must be alphanumeric with dashes/underscores")
+  .describe("Docker Compose project name");
 
 /**
  * Image name schema with optional tag
  */
 export const imageSchema = z.string().min(1).describe("Image name with optional tag");
+
+/**
+ * Shell grep pattern schema with strict safety validation
+ * SECURITY: Rejects shell metacharacters to prevent command injection (CWE-78)
+ * Used ONLY for patterns passed to shell grep command (e.g., scout-logs)
+ */
+export const shellGrepSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^[^;&|`$()<>{}[\]\\\"\n\r\t']+$/, "Grep pattern contains shell metacharacters")
+  .describe("Shell-safe grep pattern (shell metacharacters not allowed)");
+
+/**
+ * Backwards-compatible alias for existing schema imports.
+ */
+export const safeGrepSchema = shellGrepSchema;
+
+/**
+ * JavaScript filter pattern schema with relaxed validation
+ * Used for patterns that are only used with String.includes() in JavaScript
+ * (e.g., container logs, compose logs, scout ps)
+ *
+ * Allows characters like [], quotes, parentheses that are commonly found in log messages
+ * (e.g., "[ERROR]", "User 'admin'", "(deprecated)")
+ *
+ * Still rejects control characters and newlines to prevent log injection/confusion
+ */
+export const jsFilterSchema = z
+  .string()
+  .min(1)
+  .max(500)
+  .regex(/^[^\x00-\x1f]+$/, "Filter pattern contains control characters")
+  .describe("Filter pattern for JavaScript String.includes() matching");
 
 /**
  * ZFS pool name schema with security validation
@@ -92,6 +130,44 @@ export const zfsDatasetSchema = z
   .max(255)
   .regex(/^[a-zA-Z][a-zA-Z0-9_\-./@#]*$/, "Dataset name must start with a letter and contain only alphanumeric, dashes, underscores, periods, slashes, @, or #")
   .describe("ZFS dataset name (can include path like pool/dataset, snapshot @, or bookmark #)");
+
+/**
+ * Exec user schema with security validation
+ * SECURITY: Prevents command injection by validating Docker exec user format
+ * Valid formats:
+ *   - Simple username: root, www-data, app_user
+ *   - Numeric UID: 1000
+ *   - UID:GID: 1000:1000
+ *   - username:groupname: www-data:www-data
+ * Must start with alphanumeric or underscore (not hyphen to prevent option injection)
+ */
+export const execUserSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(
+    /^[a-zA-Z0-9_][a-zA-Z0-9_-]*(?::[a-zA-Z0-9_][a-zA-Z0-9_-]*)?$|^\d+(?::\d+)?$/,
+    "User must be a valid username, uid, username:groupname, or uid:gid format"
+  )
+  .describe("User to run command as (e.g., root, 1000, 1000:1000)");
+
+/**
+ * Exec workdir schema with security validation
+ * SECURITY: Prevents path traversal and command injection
+ * Requirements:
+ *   - Must be an absolute path (starts with /)
+ *   - Only allows safe characters: alphanumeric, underscore, hyphen, period, forward slash
+ *   - Does NOT allow: shell metacharacters, directory traversal (..), variable expansion ($)
+ */
+export const execWorkdirSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .regex(/^\/[a-zA-Z0-9_\-.\/]*$/, "Working directory must be an absolute path with safe characters only")
+  .refine((path) => !path.includes(".."), {
+    message: "Working directory cannot contain directory traversal (..)"
+  })
+  .describe("Absolute path for working directory");
 
 /**
  * Preprocessor to inject composite discriminator key

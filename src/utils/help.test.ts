@@ -4,6 +4,9 @@ import { generateHelp, formatHelpMarkdown, formatHelpJson } from "./help.js";
 import { FluxSchema } from "../schemas/flux/index.js";
 import { ScoutSchema } from "../schemas/scout/index.js";
 
+const EXPECTED_FLUX_ACTION_COUNT = 39; // 14 container + 9 compose + 9 docker + 7 host
+const EXPECTED_SCOUT_ACTION_COUNT = 16; // 9 simple + 3 zfs subactions + 4 logs subactions
+
 describe("Help Handler", () => {
   const testSchema = z.discriminatedUnion("action_subaction", [
     z
@@ -94,11 +97,11 @@ describe("Help Handler", () => {
   });
 
   describe("Integration with FluxSchema", () => {
-    it("should generate help for all 35 flux actions (4 not yet implemented)", () => {
+  it("should generate help for all 39 flux actions", () => {
       const help = generateHelp(FluxSchema);
-      // 12 container + 9 compose + 7 docker + 7 host = 35
-      // (exec, top, networks, volumes not yet implemented)
-      expect(help.length).toBe(35);
+      // 14 container + 9 compose + 7 docker + 7 host = 37
+      // (networks, volumes implemented)
+      expect(help.length).toBe(EXPECTED_FLUX_ACTION_COUNT);
     });
 
     it("should filter by specific action", () => {
@@ -116,7 +119,7 @@ describe("Help Handler", () => {
     it("should generate help for all 16 scout actions (9 simple + 3 zfs + 4 logs)", () => {
       const help = generateHelp(ScoutSchema);
       // 9 simple + 3 zfs subactions + 4 logs subactions = 16
-      expect(help.length).toBe(16);
+      expect(help.length).toBe(EXPECTED_SCOUT_ACTION_COUNT);
     });
 
     it("should filter by nested action with subaction", () => {

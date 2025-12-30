@@ -28,6 +28,8 @@ describe('Docker Handler', () => {
       getDockerDiskUsage: vi.fn(),
       pruneDocker: vi.fn(),
       listImages: vi.fn(),
+      listNetworks: vi.fn(),
+      listVolumes: vi.fn(),
       pullImage: vi.fn(),
       buildImage: vi.fn(),
       removeImage: vi.fn()
@@ -325,28 +327,79 @@ describe('Docker Handler', () => {
     });
   });
 
-  // NOTE: 'networks' and 'volumes' subactions are NOT in the schema
-  // These tests verify that the handler correctly rejects unknown subactions
-  // When implementing these, re-add the schemas to flux/index.ts first
-  describe('networks subaction (not yet implemented)', () => {
-    it('should throw unknown subaction for networks', async () => {
-      await expect(handleDockerAction({
+  describe('networks subaction', () => {
+    it('should list docker networks', async () => {
+      (mockDockerService.listNetworks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'net-1', name: 'bridge', driver: 'bridge', scope: 'local', hostName: 'tootie' }
+      ]);
+
+      const result = await handleDockerAction({
         action: 'docker',
         subaction: 'networks',
         action_subaction: 'docker:networks',
         host: 'tootie'
-      } as unknown as FluxInput, mockContainer as ServiceContainer)).rejects.toThrow('Unknown subaction');
+      } as unknown as FluxInput, mockContainer as ServiceContainer);
+
+      expect(mockDockerService.listNetworks).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ name: 'tootie' })])
+      );
+      expect(result).toContain('bridge');
+    });
+
+    it('should return JSON format for networks', async () => {
+      (mockDockerService.listNetworks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'net-1', name: 'bridge', driver: 'bridge', scope: 'local', hostName: 'tootie' }
+      ]);
+
+      const result = await handleDockerAction({
+        action: 'docker',
+        subaction: 'networks',
+        action_subaction: 'docker:networks',
+        host: 'tootie',
+        response_format: ResponseFormat.JSON
+      } as unknown as FluxInput, mockContainer as ServiceContainer);
+
+      const parsed = JSON.parse(result);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].name).toBe('bridge');
     });
   });
 
-  describe('volumes subaction (not yet implemented)', () => {
-    it('should throw unknown subaction for volumes', async () => {
-      await expect(handleDockerAction({
+  describe('volumes subaction', () => {
+    it('should list docker volumes', async () => {
+      (mockDockerService.listVolumes as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { name: 'plex_data', driver: 'local', scope: 'local', hostName: 'tootie' }
+      ]);
+
+      const result = await handleDockerAction({
         action: 'docker',
         subaction: 'volumes',
         action_subaction: 'docker:volumes',
         host: 'tootie'
-      } as unknown as FluxInput, mockContainer as ServiceContainer)).rejects.toThrow('Unknown subaction');
+      } as unknown as FluxInput, mockContainer as ServiceContainer);
+
+      expect(mockDockerService.listVolumes).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ name: 'tootie' })])
+      );
+      expect(result).toContain('plex_data');
+    });
+
+    it('should return JSON format for volumes', async () => {
+      (mockDockerService.listVolumes as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { name: 'plex_data', driver: 'local', scope: 'local', hostName: 'tootie' }
+      ]);
+
+      const result = await handleDockerAction({
+        action: 'docker',
+        subaction: 'volumes',
+        action_subaction: 'docker:volumes',
+        host: 'tootie',
+        response_format: ResponseFormat.JSON
+      } as unknown as FluxInput, mockContainer as ServiceContainer);
+
+      const parsed = JSON.parse(result);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].name).toBe('plex_data');
     });
   });
 

@@ -5,9 +5,12 @@ import {
   paginationSchema,
   hostSchema,
   containerIdSchema,
-  preprocessWithDiscriminator
+  preprocessWithDiscriminator,
+  jsFilterSchema,
+  execUserSchema,
+  execWorkdirSchema
 } from "../common.js";
-import { DEFAULT_LOG_LINES, MAX_LOG_LINES } from "../../constants.js";
+import { DEFAULT_LOG_LINES, MAX_LOG_LINES, DEFAULT_EXEC_TIMEOUT, MAX_EXEC_TIMEOUT } from "../../constants.js";
 
 /**
  * Container subaction schemas for Flux tool (14 subactions)
@@ -113,7 +116,7 @@ export const containerLogsSchema = z.preprocess(
       lines: z.number().int().min(1).max(MAX_LOG_LINES).default(DEFAULT_LOG_LINES),
       since: z.string().optional().describe('ISO 8601 timestamp or relative time (e.g., "1h")'),
       until: z.string().optional().describe("ISO 8601 timestamp or relative time"),
-      grep: z.string().optional().describe("Filter log lines containing this string"),
+      grep: jsFilterSchema.optional().describe("Filter log lines containing this string"),
       stream: z.enum(["stdout", "stderr", "both"]).default("both"),
       response_format: responseFormatSchema
     })
@@ -172,6 +175,7 @@ export const containerPullSchema = z.preprocess(
       action: z.literal("container"),
       subaction: z.literal("pull"),
       container_id: containerIdSchema,
+      image: z.string().trim().min(1).optional().describe("Explicit image to pull if container metadata is missing"),
       host: hostSchema.optional(),
       response_format: responseFormatSchema
     })
@@ -203,8 +207,15 @@ export const containerExecSchema = z.preprocess(
       container_id: containerIdSchema,
       host: hostSchema.optional(),
       command: z.string().min(1).describe("Shell command to execute"),
-      user: z.string().optional().describe("Run as specific user"),
-      workdir: z.string().optional().describe("Working directory for command execution"),
+      user: execUserSchema.optional().describe("Run as specific user (e.g., root, 1000, 1000:1000)"),
+      workdir: execWorkdirSchema.optional().describe("Absolute path for working directory"),
+      timeout: z
+        .number()
+        .int()
+        .min(1000)
+        .max(MAX_EXEC_TIMEOUT)
+        .default(DEFAULT_EXEC_TIMEOUT)
+        .describe("Execution timeout in milliseconds (default 30s, max 5min)"),
       response_format: responseFormatSchema
     })
     .describe("Execute command inside a container")

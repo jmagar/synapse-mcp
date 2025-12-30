@@ -39,7 +39,11 @@ export async function handleScoutTool(
   }
 
   // Validate input against Scout schema
-  const validated = ScoutSchema.parse(input) as ScoutInput;
+  const parsed = ScoutSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(`Scout input validation failed: ${JSON.stringify(parsed.error.issues)}`);
+  }
+  const validated = parsed.data as ScoutInput;
 
   // Route to appropriate handler based on action
   switch (validated.action) {
@@ -65,4 +69,3 @@ export async function handleScoutTool(
       throw new Error(`Unknown action: ${(validated as { action: string }).action}`);
   }
 }
-

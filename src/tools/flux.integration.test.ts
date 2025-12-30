@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { FluxSchema } from '../schemas/flux/index.js';
 
 describe('Flux Integration', () => {
-  describe('container subactions (12 implemented + 2 pending)', () => {
+  describe('container subactions (14 implemented)', () => {
     it('should validate container:list', () => {
       expect(() => FluxSchema.parse({ action: 'container', subaction: 'list' })).not.toThrow();
     });
@@ -48,17 +48,34 @@ describe('Flux Integration', () => {
       expect(() => FluxSchema.parse({ action: 'container', subaction: 'pull', container_id: 'test' })).not.toThrow();
     });
 
+    it('should validate container:pull with explicit image', () => {
+      expect(() => FluxSchema.parse({
+        action: 'container',
+        subaction: 'pull',
+        container_id: 'test',
+        image: 'nginx:latest'
+      })).not.toThrow();
+    });
+
     it('should validate container:recreate', () => {
       expect(() => FluxSchema.parse({ action: 'container', subaction: 'recreate', container_id: 'test' })).not.toThrow();
     });
 
-    // NOTE: container:exec and container:top are NOT in schema yet (handlers not implemented)
-    it('should reject container:exec (not yet implemented)', () => {
-      expect(() => FluxSchema.parse({ action: 'container', subaction: 'exec', container_id: 'test', command: 'ls' })).toThrow();
+    it('should validate container:exec', () => {
+      expect(() => FluxSchema.parse({
+        action: 'container',
+        subaction: 'exec',
+        container_id: 'test',
+        command: 'ls'
+      })).not.toThrow();
     });
 
-    it('should reject container:top (not yet implemented)', () => {
-      expect(() => FluxSchema.parse({ action: 'container', subaction: 'top', container_id: 'test' })).toThrow();
+    it('should validate container:top', () => {
+      expect(() => FluxSchema.parse({
+        action: 'container',
+        subaction: 'top',
+        container_id: 'test'
+      })).not.toThrow();
     });
 
     it('should reject container:unpause (replaced by resume)', () => {
@@ -104,7 +121,7 @@ describe('Flux Integration', () => {
     });
   });
 
-  describe('docker subactions (7 implemented + 2 pending)', () => {
+  describe('docker subactions (9)', () => {
     it('should validate docker:info', () => {
       expect(() => FluxSchema.parse({ action: 'docker', subaction: 'info', host: 'tootie' })).not.toThrow();
     });
@@ -133,13 +150,12 @@ describe('Flux Integration', () => {
       expect(() => FluxSchema.parse({ action: 'docker', subaction: 'rmi', host: 'tootie', image: 'nginx:latest' })).not.toThrow();
     });
 
-    // NOTE: docker:networks and docker:volumes are NOT in schema yet (handlers not implemented)
-    it('should reject docker:networks (not yet implemented)', () => {
-      expect(() => FluxSchema.parse({ action: 'docker', subaction: 'networks', host: 'tootie' })).toThrow();
+    it('should validate docker:networks', () => {
+      expect(() => FluxSchema.parse({ action: 'docker', subaction: 'networks', host: 'tootie' })).not.toThrow();
     });
 
-    it('should reject docker:volumes (not yet implemented)', () => {
-      expect(() => FluxSchema.parse({ action: 'docker', subaction: 'volumes', host: 'tootie' })).toThrow();
+    it('should validate docker:volumes', () => {
+      expect(() => FluxSchema.parse({ action: 'docker', subaction: 'volumes', host: 'tootie' })).not.toThrow();
     });
   });
 

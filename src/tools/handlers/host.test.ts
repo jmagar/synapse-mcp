@@ -6,6 +6,7 @@ import type { IDockerService, ISSHService } from '../../services/interfaces.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
 import { ResponseFormat } from '../../types.js';
 import { loadHostConfigs } from '../../services/docker.js';
+import { logError } from '../../utils/errors.js';
 
 // Mock loadHostConfigs
 vi.mock('../../services/docker.js', async (importOriginal) => {
@@ -18,12 +19,17 @@ vi.mock('../../services/docker.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../../utils/errors.js', () => ({
+  logError: vi.fn()
+}));
+
 describe('Host Handler', () => {
   let mockDockerService: Partial<IDockerService>;
   let mockSSHService: Partial<ISSHService>;
   let mockContainer: Partial<ServiceContainer>;
 
   beforeEach(() => {
+    vi.mocked(logError).mockClear();
     mockDockerService = {
       listContainers: vi.fn(),
       getDockerInfo: vi.fn()
@@ -88,6 +94,27 @@ describe('Host Handler', () => {
 
       expect(result).toContain('Offline');
       expect(result).toContain('Connection refused');
+    });
+
+    it('should log errors when docker status fails', async () => {
+      const error = new Error('Connection refused');
+      (mockDockerService.getDockerInfo as ReturnType<typeof vi.fn>)
+        .mockRejectedValue(error);
+
+      await handleHostAction({
+        action: 'host',
+        subaction: 'status',
+        action_subaction: 'host:status',
+        host: 'tootie'
+      } as unknown as FluxInput, mockContainer as ServiceContainer);
+
+      expect(logError).toHaveBeenCalledWith(
+        error,
+        expect.objectContaining({
+          operation: 'handleHostAction:status',
+          metadata: expect.objectContaining({ host: 'tootie', action: 'status' })
+        })
+      );
     });
 
     it('should return JSON format when requested', async () => {
@@ -169,6 +196,26 @@ describe('Host Handler', () => {
       expect(parsed.host).toBe('tootie');
       expect(parsed.resources.cpu.usagePercent).toBe(45.2);
     });
+
+    it('should log errors when resources fetch fails', async () => {
+      const error = new Error('Resource lookup failed');
+      (mockSSHService.getHostResources as ReturnType<typeof vi.fn>).mockRejectedValue(error);
+
+      await handleHostAction({
+        action: 'host',
+        subaction: 'resources',
+        action_subaction: 'host:resources',
+        host: 'tootie'
+      } as unknown as FluxInput, mockContainer as ServiceContainer);
+
+      expect(logError).toHaveBeenCalledWith(
+        error,
+        expect.objectContaining({
+          operation: 'handleHostAction:resources',
+          metadata: expect.objectContaining({ host: 'tootie', action: 'resources' })
+        })
+      );
+    });
   });
 
   describe('info subaction', () => {
@@ -245,7 +292,7 @@ describe('Host Handler', () => {
       expect(mockSSHService.executeSSHCommand).toHaveBeenCalledWith(
         expect.anything(),
         'systemctl',
-        expect.arrayContaining(['--state=failed'])
+        expect.arrayContaining(["--state='failed'"])
       );
     });
 
@@ -265,8 +312,20 @@ describe('Host Handler', () => {
       expect(mockSSHService.executeSSHCommand).toHaveBeenCalledWith(
         expect.anything(),
         'systemctl',
-        expect.arrayContaining(['nginx'])
+        expect.arrayContaining(["'nginx'"])
       );
+    });
+
+    it('should reject service name with whitespace', async () => {
+      await expect(
+        handleHostAction({
+          action: 'host',
+          subaction: 'services',
+          action_subaction: 'host:services',
+          host: 'tootie',
+          service: 'nginx service'
+        } as unknown as FluxInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow(/Invalid.*service/i);
     });
 
     it('should reject service name with command injection attempt', async () => {
@@ -368,6 +427,17 @@ describe('Host Handler', () => {
           host: 'unknown-host'
         } as unknown as FluxInput, mockContainer as ServiceContainer)
       ).rejects.toThrow('Host not found');
+    });
+
+    it('should throw on non-string host value', async () => {
+      await expect(
+        handleHostAction({
+          action: 'host',
+          subaction: 'status',
+          action_subaction: 'host:status',
+          host: 123
+        } as unknown as FluxInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow('Invalid host');
     });
   });
 });

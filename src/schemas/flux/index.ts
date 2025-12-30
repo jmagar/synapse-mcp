@@ -3,8 +3,6 @@ import { z } from "zod";
 import { preprocessWithDiscriminator } from "../common.js";
 
 // Import all schemas
-// NOTE: containerExecSchema and containerTopSchema are defined but NOT exported here
-// because their handlers are not yet implemented. Re-add them when implementing handlers.
 import {
   containerListSchema,
   containerStartSchema,
@@ -17,7 +15,9 @@ import {
   containerInspectSchema,
   containerSearchSchema,
   containerPullSchema,
-  containerRecreateSchema
+  containerRecreateSchema,
+  containerExecSchema,
+  containerTopSchema
 } from "./container.js";
 
 import {
@@ -32,8 +32,6 @@ import {
   composeRecreateSchema
 } from "./compose.js";
 
-// NOTE: dockerNetworksSchema and dockerVolumesSchema are defined but NOT exported here
-// because their handlers are not yet implemented. Re-add them when implementing handlers.
 import {
   dockerInfoSchema,
   dockerDfSchema,
@@ -41,7 +39,9 @@ import {
   dockerImagesSchema,
   dockerPullSchema,
   dockerBuildSchema,
-  dockerRmiSchema
+  dockerRmiSchema,
+  dockerNetworksSchema,
+  dockerVolumesSchema
 } from "./docker.js";
 
 import {
@@ -71,7 +71,7 @@ function unwrapPreprocess(schema: z.ZodTypeAny): z.ZodTypeAny {
 
 // All inner schemas (unwrapped from preprocess)
 const allSchemas = [
-  // Container (12 - exec and top not yet implemented)
+  // Container (14)
   containerListSchema,
   containerStartSchema,
   containerStopSchema,
@@ -84,6 +84,8 @@ const allSchemas = [
   containerSearchSchema,
   containerPullSchema,
   containerRecreateSchema,
+  containerExecSchema,
+  containerTopSchema,
   // Compose (9)
   composeListSchema,
   composeStatusSchema,
@@ -94,7 +96,7 @@ const allSchemas = [
   composeBuildSchema,
   composePullSchema,
   composeRecreateSchema,
-  // Docker (7 - networks and volumes not yet implemented)
+  // Docker (9)
   dockerInfoSchema,
   dockerDfSchema,
   dockerPruneSchema,
@@ -102,6 +104,8 @@ const allSchemas = [
   dockerPullSchema,
   dockerBuildSchema,
   dockerRmiSchema,
+  dockerNetworksSchema,
+  dockerVolumesSchema,
   // Host (7)
   hostStatusSchema,
   hostResourcesSchema,
@@ -113,19 +117,17 @@ const allSchemas = [
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ].map(unwrapPreprocess) as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]];
 
-/** Total number of subactions in the Flux schema (4 not yet implemented) */
+/** Total number of subactions in the Flux schema */
 export const FLUX_SUBACTION_COUNT = allSchemas.length;
 
 /**
  * Flux Tool Schema - Docker infrastructure management
  *
  * Actions: 4 (container, compose, docker, host)
- * Subactions: 35 total (4 not yet implemented)
- *   - container: 12 (list, start, stop, restart, pause, resume, logs, stats, inspect, search, pull, recreate)
- *     - NOT YET IMPLEMENTED: exec, top
+ * Subactions: 39 total
+ *   - container: 14 (list, start, stop, restart, pause, resume, logs, stats, inspect, search, pull, recreate, exec, top)
  *   - compose: 9 (list, status, up, down, restart, logs, build, pull, recreate)
- *   - docker: 7 (info, df, prune, images, pull, build, rmi)
- *     - NOT YET IMPLEMENTED: networks, volumes
+ *   - docker: 9 (info, df, prune, images, pull, build, rmi, networks, volumes)
  *   - host: 7 (status, resources, info, uptime, services, network, mounts)
  *
  * Uses composite discriminator: action_subaction (e.g., "container:list")

@@ -110,6 +110,70 @@ export async function handleDockerAction(
       return formatImagesMarkdown(paginatedImages, total, offset);
     }
 
+    case 'networks': {
+      // Can query all hosts or specific host
+      const targetHosts = hostConfig ? [hostConfig] : hosts;
+      const networks = await dockerService.listNetworks(targetHosts);
+
+      if (format === ResponseFormat.JSON) {
+        return JSON.stringify(networks, null, 2);
+      }
+
+      const offset = (inp.offset as number) ?? 0;
+      const limit = (inp.limit as number) ?? 50;
+      const total = networks.length;
+      const paginatedNetworks = networks.slice(offset, offset + limit);
+
+      const lines = ['## Docker Networks', ''];
+      if (total === 0) {
+        lines.push('No networks found.');
+        return lines.join('\n');
+      }
+
+      let currentHost = '';
+      for (const network of paginatedNetworks) {
+        if (network.hostName !== currentHost) {
+          currentHost = network.hostName;
+          lines.push(`### ${currentHost}`);
+        }
+        lines.push(`- ${network.name} (${network.driver}, ${network.scope})`);
+      }
+
+      return lines.join('\n');
+    }
+
+    case 'volumes': {
+      // Can query all hosts or specific host
+      const targetHosts = hostConfig ? [hostConfig] : hosts;
+      const volumes = await dockerService.listVolumes(targetHosts);
+
+      if (format === ResponseFormat.JSON) {
+        return JSON.stringify(volumes, null, 2);
+      }
+
+      const offset = (inp.offset as number) ?? 0;
+      const limit = (inp.limit as number) ?? 50;
+      const total = volumes.length;
+      const paginatedVolumes = volumes.slice(offset, offset + limit);
+
+      const lines = ['## Docker Volumes', ''];
+      if (total === 0) {
+        lines.push('No volumes found.');
+        return lines.join('\n');
+      }
+
+      let currentHost = '';
+      for (const volume of paginatedVolumes) {
+        if (volume.hostName !== currentHost) {
+          currentHost = volume.hostName;
+          lines.push(`### ${currentHost}`);
+        }
+        lines.push(`- ${volume.name} (${volume.driver}, ${volume.scope})`);
+      }
+
+      return lines.join('\n');
+    }
+
     case 'pull': {
       if (!hostConfig) {
         throw new Error('Host is required for docker:pull');
@@ -161,11 +225,6 @@ export async function handleDockerAction(
 
       return `Image '${imageName}' removed from ${hostConfig.name}: ${result.status}`;
     }
-
-    // NOTE: 'networks' and 'volumes' subactions are NOT in the schema yet
-    // because handlers are not implemented. When implementing:
-    // 1. Add listNetworks/listVolumes methods to IDockerService
-    // 2. Re-add dockerNetworksSchema and dockerVolumesSchema to flux/index.ts
 
     default:
       // This should never be reached due to Zod validation

@@ -3,16 +3,31 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleFluxTool } from './flux.js';
 import type { ServiceContainer } from '../services/container.js';
 
+const createMockContainer = (
+  overrides: Partial<ServiceContainer> = {}
+): ServiceContainer => {
+  const baseContainer = {
+    getDockerService: vi.fn(() => ({})),
+    setDockerService: vi.fn(),
+    getSSHConnectionPool: vi.fn(() => ({})),
+    setSSHConnectionPool: vi.fn(),
+    getSSHService: vi.fn(() => ({})),
+    setSSHService: vi.fn(),
+    getComposeService: vi.fn(() => ({})),
+    setComposeService: vi.fn(),
+    getFileService: vi.fn(() => ({})),
+    setFileService: vi.fn(),
+    cleanup: vi.fn().mockResolvedValue(undefined)
+  };
+
+  return { ...baseContainer, ...overrides } as ServiceContainer;
+};
+
 describe('Flux Tool Handler', () => {
   let mockContainer: ServiceContainer;
 
   beforeEach(() => {
-    mockContainer = {
-      getDockerService: vi.fn(),
-      getSSHService: vi.fn(),
-      getComposeService: vi.fn(),
-      getFileService: vi.fn()
-    } as unknown as ServiceContainer;
+    mockContainer = createMockContainer();
   });
 
   describe('help system', () => {

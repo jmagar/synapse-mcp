@@ -49,6 +49,15 @@ describe('FluxSchema', () => {
     expect(result.action_subaction).toBe('host:services');
   });
 
+  it('should reject host:services with invalid service name', () => {
+    expect(() => FluxSchema.parse({
+      action: 'host',
+      subaction: 'services',
+      host: 'tootie',
+      service: 'docker service'
+    })).toThrow(/service/i);
+  });
+
   it('should reject invalid action', () => {
     expect(() => FluxSchema.parse({
       action: 'invalid',
@@ -64,10 +73,8 @@ describe('FluxSchema', () => {
     })).toThrow();
   });
 
-  it('should count 35 total subactions (4 not yet implemented)', () => {
+  it('should count 39 total subactions', () => {
     // Use exported constant instead of accessing Zod internals
-    // NOTE: 4 subactions removed until handlers implemented:
-    //   - container:exec, container:top, docker:networks, docker:volumes
-    expect(FLUX_SUBACTION_COUNT).toBe(35);
+    expect(FLUX_SUBACTION_COUNT).toBe(39);
   });
 });

@@ -34,6 +34,68 @@ describe('Scout ZFS Schema', () => {
     expect(result.limit).toBe(50);
   });
 
+  it('should validate pools with health filter', () => {
+    const result = scoutZfsSchema.parse({
+      action: 'zfs',
+      subaction: 'pools',
+      host: 'dookie',
+      health: 'degraded'
+    });
+    expect(result.health).toBe('degraded');
+  });
+
+  it('should validate datasets with type filter', () => {
+    const result = scoutZfsSchema.parse({
+      action: 'zfs',
+      subaction: 'datasets',
+      host: 'dookie',
+      type: 'volume'
+    });
+    expect(result.type).toBe('volume');
+  });
+
+  it('should validate snapshots limit at minimum', () => {
+    const result = scoutZfsSchema.parse({
+      action: 'zfs',
+      subaction: 'snapshots',
+      host: 'dookie',
+      pool: 'tank',
+      limit: 1
+    });
+    expect(result.limit).toBe(1);
+  });
+
+  it('should validate snapshots limit at maximum', () => {
+    const result = scoutZfsSchema.parse({
+      action: 'zfs',
+      subaction: 'snapshots',
+      host: 'dookie',
+      pool: 'tank',
+      limit: 1000
+    });
+    expect(result.limit).toBe(1000);
+  });
+
+  it('should reject snapshots limit below minimum', () => {
+    expect(() => scoutZfsSchema.parse({
+      action: 'zfs',
+      subaction: 'snapshots',
+      host: 'dookie',
+      pool: 'tank',
+      limit: 0
+    })).toThrow();
+  });
+
+  it('should reject snapshots limit exceeding maximum', () => {
+    expect(() => scoutZfsSchema.parse({
+      action: 'zfs',
+      subaction: 'snapshots',
+      host: 'dookie',
+      pool: 'tank',
+      limit: 1001
+    })).toThrow();
+  });
+
   it('should reject invalid subaction', () => {
     expect(() => scoutZfsSchema.parse({
       action: 'zfs',

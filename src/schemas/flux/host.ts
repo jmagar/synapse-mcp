@@ -1,6 +1,7 @@
 // src/schemas/flux/host.ts
 import { z } from "zod";
 import { responseFormatSchema, hostSchema, preprocessWithDiscriminator } from "../common.js";
+import { SYSTEMD_SERVICE_NAME_PATTERN } from "../../utils/index.js";
 
 /**
  * Host subaction schemas for Flux tool (7 subactions)
@@ -66,7 +67,14 @@ export const hostServicesSchema = z.preprocess(
       action: z.literal("host"),
       subaction: z.literal("services"),
       host: hostSchema.optional(),
-      service: z.string().optional().describe("Specific systemd service name"),
+      service: z
+        .string()
+        .regex(
+          SYSTEMD_SERVICE_NAME_PATTERN,
+          "Service name must contain only valid systemd characters"
+        )
+        .optional()
+        .describe("Specific systemd service name"),
       state: z.enum(["running", "stopped", "failed", "all"]).default("all"),
       response_format: responseFormatSchema
     })

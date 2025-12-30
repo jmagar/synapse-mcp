@@ -171,6 +171,7 @@ describe('Compose Handler', () => {
         action_subaction: 'compose:down',
         host: 'tootie',
         project: 'plex',
+        force: true,
         remove_volumes: true
       } as unknown as FluxInput, mockContainer as ServiceContainer);
 
@@ -179,6 +180,21 @@ describe('Compose Handler', () => {
         'plex',
         true
       );
+    });
+
+    it('should require force when removing volumes', async () => {
+      await expect(
+        handleComposeAction({
+          action: 'compose',
+          subaction: 'down',
+          action_subaction: 'compose:down',
+          host: 'tootie',
+          project: 'plex',
+          remove_volumes: true
+        } as unknown as FluxInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow('Compose down with remove_volumes requires force=true to prevent accidental data loss');
+
+      expect(mockComposeService.composeDown).not.toHaveBeenCalled();
     });
   });
 

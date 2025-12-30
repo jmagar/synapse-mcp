@@ -52,6 +52,13 @@ describe("FileService", () => {
       expect(result.content.length).toBeLessThanOrEqual(1000);
       expect(result.truncated).toBe(true);
     });
+
+    it("rejects invalid maxSize values", async () => {
+      await expect(fileService.readFile(testHost, "/etc/hosts", Number.NaN)).rejects.toThrow(
+        /maxSize must be an integer between 1 and/
+      );
+      expect(mockSSHService.executeSSHCommand).not.toHaveBeenCalled();
+    });
   });
 
   describe("listDirectory", () => {

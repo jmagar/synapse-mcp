@@ -2,16 +2,22 @@ import Docker from "dockerode";
 import { readFileSync, existsSync } from "fs";
 import { homedir, hostname } from "os";
 import { join } from "path";
+import { PassThrough } from "stream";
 import {
   HostConfig,
   ContainerInfo,
   ContainerStats,
+  ContainerExecResult,
+  ContainerProcessList,
   HostStatus,
   LogEntry,
-  ImageInfo
+  ImageInfo,
+  DockerNetworkInfo,
+  DockerVolumeInfo
 } from "../types.js";
-import { DEFAULT_DOCKER_SOCKET, API_TIMEOUT, ENV_HOSTS_CONFIG } from "../constants.js";
+import { DEFAULT_DOCKER_SOCKET, API_TIMEOUT, ENV_HOSTS_CONFIG, DEFAULT_EXEC_TIMEOUT, DEFAULT_EXEC_MAX_BUFFER } from "../constants.js";
 import { HostOperationError, logError } from "../utils/errors.js";
+import { validateCommandAllowlist } from "../utils/command-security.js";
 import type { IDockerService } from "./interfaces.js";
 
 /**
@@ -373,6 +379,162 @@ export class DockerService implements IDockerService {
   }
 
   /**
+   * Execute a command inside a container.
+   *
+   * @param containerId - Container ID or name
+   * @param host - Host configuration
+   * @param options - Execution options
+   * @param options.command - Shell command to execute
+   * @param options.user - Optional user to run as
+   * @param options.workdir - Optional working directory
+   * @param options.timeout - Optional timeout in ms (default 30s, max 5min)
+   * @returns Promise resolving to stdout, stderr, and exit code
+   * @throws Error if timeout exceeded or buffer limit exceeded
+   */
+  async execContainer(
+    containerId: string,
+    host: HostConfig,
+    options: { command: string; user?: string; workdir?: string; timeout?: number }
+  ): Promise<ContainerExecResult> {
+    const container = await this.getContainer(containerId, host);
+    const parts = validateCommandAllowlist(options.command);
+    const timeout = options.timeout ?? DEFAULT_EXEC_TIMEOUT;
+    const maxBuffer = DEFAULT_EXEC_MAX_BUFFER;
+
+    const exec = await container.exec({
+      Cmd: parts,
+      AttachStdout: true,
+      AttachStderr: true,
+      User: options.user,
+      WorkingDir: options.workdir
+    });
+
+    const stream = await exec.start({ hijack: true, stdin: false });
+    const stdoutStream = new PassThrough();
+    const stderrStream = new PassThrough();
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutSize = 0;
+    let stderrSize = 0;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let bufferExceeded = false;
+
+    /**
+     * Clean up all streams and clear timeout.
+     * This function is idempotent and safe to call multiple times.
+     */
+    const cleanup = (): void => {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      // Destroy all streams to release resources
+      if (!stream.destroyed) {
+        stream.destroy();
+      }
+      if (!stdoutStream.destroyed) {
+        stdoutStream.destroy();
+      }
+      if (!stderrStream.destroyed) {
+        stderrStream.destroy();
+      }
+    };
+
+    // Track stdout buffer size and reject if limit exceeded
+    stdoutStream.on("data", (chunk: Buffer) => {
+      if (bufferExceeded) return;
+      const buffer = Buffer.from(chunk);
+      stdoutSize += buffer.length;
+      if (stdoutSize > maxBuffer) {
+        bufferExceeded = true;
+        cleanup();
+        return;
+      }
+      stdoutChunks.push(buffer);
+    });
+
+    // Track stderr buffer size and reject if limit exceeded
+    stderrStream.on("data", (chunk: Buffer) => {
+      if (bufferExceeded) return;
+      const buffer = Buffer.from(chunk);
+      stderrSize += buffer.length;
+      if (stderrSize > maxBuffer) {
+        bufferExceeded = true;
+        cleanup();
+        return;
+      }
+      stderrChunks.push(buffer);
+    });
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        // Set up timeout
+        timeoutId = setTimeout(() => {
+          cleanup();
+          reject(new Error(`Exec timeout: command exceeded ${timeout}ms limit`));
+        }, timeout);
+
+        // Handle stream errors with cleanup
+        const handleError = (err: Error): void => {
+          cleanup();
+          reject(err);
+        };
+
+        stream.on("error", handleError);
+        stdoutStream.on("error", handleError);
+        stderrStream.on("error", handleError);
+
+        // Check for buffer exceeded after each data event
+        const checkBufferExceeded = (): void => {
+          if (bufferExceeded) {
+            reject(new Error(`Buffer limit exceeded: output exceeded ${maxBuffer} bytes`));
+          }
+        };
+        stdoutStream.on("data", checkBufferExceeded);
+        stderrStream.on("data", checkBufferExceeded);
+
+        stream.on("end", () => {
+          if (bufferExceeded) {
+            reject(new Error(`Buffer limit exceeded: output exceeded ${maxBuffer} bytes`));
+          } else {
+            cleanup();
+            resolve();
+          }
+        });
+
+        this.getDockerClient(host).modem.demuxStream(stream, stdoutStream, stderrStream);
+      });
+
+      const inspection = await exec.inspect();
+
+      return {
+        stdout: Buffer.concat(stdoutChunks).toString().trimEnd(),
+        stderr: Buffer.concat(stderrChunks).toString().trimEnd(),
+        exitCode: inspection.ExitCode ?? 0
+      };
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
+  }
+
+  /**
+   * List running processes inside a container.
+   */
+  async getContainerProcesses(
+    containerId: string,
+    host: HostConfig
+  ): Promise<ContainerProcessList> {
+    const container = await this.getContainer(containerId, host);
+    const result = await container.top();
+
+    return {
+      titles: result.Titles ?? [],
+      processes: result.Processes ?? []
+    };
+  }
+
+  /**
    * Get host status overview (parallel execution)
    */
   async getHostStatus(hosts: HostConfig[]): Promise<HostStatus[]> {
@@ -425,6 +587,32 @@ export class DockerService implements IDockerService {
   }
 
   /**
+   * List Docker networks across all hosts (parallel execution)
+   */
+  async listNetworks(hosts: HostConfig[]): Promise<DockerNetworkInfo[]> {
+    const results = await Promise.allSettled(
+      hosts.map((host) => this.listNetworksOnHost(host))
+    );
+
+    return results
+      .filter((r): r is PromiseFulfilledResult<DockerNetworkInfo[]> => r.status === "fulfilled")
+      .flatMap((r) => r.value);
+  }
+
+  /**
+   * List Docker volumes across all hosts (parallel execution)
+   */
+  async listVolumes(hosts: HostConfig[]): Promise<DockerVolumeInfo[]> {
+    const results = await Promise.allSettled(
+      hosts.map((host) => this.listVolumesOnHost(host))
+    );
+
+    return results
+      .filter((r): r is PromiseFulfilledResult<DockerVolumeInfo[]> => r.status === "fulfilled")
+      .flatMap((r) => r.value);
+  }
+
+  /**
    * List images from a single host (internal helper)
    */
   private async listImagesOnHost(
@@ -442,6 +630,47 @@ export class DockerService implements IDockerService {
       size: img.Size,
       created: new Date(img.Created * 1000).toISOString(),
       containers: img.Containers || 0,
+      hostName: host.name
+    }));
+  }
+
+  /**
+   * List Docker networks from a single host (internal helper)
+   */
+  private async listNetworksOnHost(host: HostConfig): Promise<DockerNetworkInfo[]> {
+    const docker = this.getDockerClient(host);
+    const networks = await docker.listNetworks();
+
+    return networks.map((network) => ({
+      id: network.Id,
+      name: network.Name,
+      driver: network.Driver,
+      scope: network.Scope,
+      created: network.Created,
+      internal: network.Internal,
+      attachable: network.Attachable,
+      ingress: network.Ingress,
+      hostName: host.name
+    }));
+  }
+
+  /**
+   * List Docker volumes from a single host (internal helper)
+   */
+  private async listVolumesOnHost(host: HostConfig): Promise<DockerVolumeInfo[]> {
+    const docker = this.getDockerClient(host);
+    const result = await docker.listVolumes();
+    const volumes = result?.Volumes ?? [];
+
+    return volumes.map((volume) => ({
+      name: volume.Name,
+      driver: volume.Driver,
+      scope: volume.Scope,
+      mountpoint: volume.Mountpoint,
+      createdAt: typeof (volume as { CreatedAt?: string }).CreatedAt === "string"
+        ? (volume as { CreatedAt?: string }).CreatedAt
+        : undefined,
+      labels: volume.Labels ?? undefined,
       hostName: host.name
     }));
   }

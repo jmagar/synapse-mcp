@@ -8,6 +8,14 @@ import {
   preprocessWithDiscriminator
 } from "../common.js";
 
+const safeBuildPathSchema = z
+  .string()
+  .min(1)
+  .regex(/^[a-zA-Z0-9._\-/]+$/, "Path contains invalid characters")
+  .refine((path) => path.startsWith("/"), "Path must be absolute")
+  .refine((path) => !path.split("/").includes(".."), "Path traversal not allowed")
+  .refine((path) => !path.split("/").includes("."), "Path traversal not allowed");
+
 /**
  * Docker subaction schemas for Flux tool (9 subactions)
  */
@@ -90,9 +98,9 @@ export const dockerBuildSchema = z.preprocess(
       action: z.literal("docker"),
       subaction: z.literal("build"),
       host: hostSchema,
-      context: z.string().min(1).describe("Path to build context directory"),
+      context: safeBuildPathSchema.describe("Path to build context directory"),
       tag: z.string().min(1).describe("Image name:tag for the built image"),
-      dockerfile: z.string().default("Dockerfile").describe("Path to Dockerfile"),
+      dockerfile: safeBuildPathSchema.optional().describe("Path to Dockerfile"),
       no_cache: z.boolean().default(false),
       response_format: responseFormatSchema
     })

@@ -47,6 +47,17 @@ export interface ContainerStats {
   blockWrite: number;
 }
 
+export interface ContainerExecResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+export interface ContainerProcessList {
+  titles: string[];
+  processes: string[][];
+}
+
 // Log entry with metadata
 export interface LogEntry {
   timestamp: string;
@@ -113,5 +124,27 @@ export interface ImageInfo {
   size: number;
   created: string;
   containers: number;
+  hostName: string;
+}
+
+export interface DockerNetworkInfo {
+  id: string;
+  name: string;
+  driver: string;
+  scope: string;
+  created?: string;
+  internal?: boolean;
+  attachable?: boolean;
+  ingress?: boolean;
+  hostName: string;
+}
+
+export interface DockerVolumeInfo {
+  name: string;
+  driver: string;
+  scope: string;
+  mountpoint?: string;
+  createdAt?: string;
+  labels?: Record<string, string>;
   hostName: string;
 }

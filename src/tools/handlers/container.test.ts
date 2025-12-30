@@ -4,6 +4,7 @@ import { handleContainerAction } from './container.js';
 import type { ServiceContainer } from '../../services/container.js';
 import type { IDockerService } from '../../services/interfaces.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
+import { ResponseFormat } from '../../types.js';
 
 describe('Container Handler', () => {
   let mockDockerService: Partial<IDockerService>;
@@ -18,7 +19,9 @@ describe('Container Handler', () => {
       inspectContainer: vi.fn().mockResolvedValue({}),
       findContainerHost: vi.fn().mockResolvedValue(null),
       pullImage: vi.fn().mockResolvedValue({ status: 'success' }),
-      recreateContainer: vi.fn().mockResolvedValue({ status: 'success', containerId: 'new123' })
+      recreateContainer: vi.fn().mockResolvedValue({ status: 'success', containerId: 'new123' }),
+      execContainer: vi.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+      getContainerProcesses: vi.fn().mockResolvedValue({ titles: [], processes: [] })
     };
     mockContainer = {
       getDockerService: () => mockDockerService
@@ -284,6 +287,64 @@ describe('Container Handler', () => {
       expect(mockDockerService.pullImage).toHaveBeenCalled();
     });
 
+    it('should use inspected image when container image is missing', async () => {
+      mockDockerService.findContainerHost.mockResolvedValue({
+        host: { name: 'tootie' },
+        container: { Id: 'abc123' }
+      });
+      mockDockerService.inspectContainer.mockResolvedValue({
+        Config: { Image: 'nginx:stable' }
+      });
+
+      await handleContainerAction({
+        action: 'container',
+        subaction: 'pull',
+        action_subaction: 'container:pull',
+        container_id: 'abc123'
+      } as FluxInput, mockContainer);
+
+      expect(mockDockerService.inspectContainer).toHaveBeenCalledWith('abc123', expect.anything());
+      expect(mockDockerService.pullImage).toHaveBeenCalledWith('nginx:stable', expect.anything());
+    });
+
+    it('should use input image when container image cannot be resolved', async () => {
+      mockDockerService.findContainerHost.mockResolvedValue({
+        host: { name: 'tootie' },
+        container: { Id: 'abc123' }
+      });
+      mockDockerService.inspectContainer.mockResolvedValue({
+        Config: {}
+      });
+
+      await handleContainerAction({
+        action: 'container',
+        subaction: 'pull',
+        action_subaction: 'container:pull',
+        container_id: 'abc123',
+        image: 'redis:latest'
+      } as FluxInput, mockContainer);
+
+      expect(mockDockerService.pullImage).toHaveBeenCalledWith('redis:latest', expect.anything());
+    });
+
+    it('should throw when input image is empty and container image is missing', async () => {
+      mockDockerService.findContainerHost.mockResolvedValue({
+        host: { name: 'tootie' },
+        container: { Id: 'abc123' }
+      });
+      mockDockerService.inspectContainer.mockResolvedValue({
+        Config: {}
+      });
+
+      await expect(handleContainerAction({
+        action: 'container',
+        subaction: 'pull',
+        action_subaction: 'container:pull',
+        container_id: 'abc123',
+        image: '   '
+      } as FluxInput, mockContainer)).rejects.toThrow('Cannot determine image for container: abc123');
+    });
+
     it('should throw error when container has no Image property', async () => {
       mockDockerService.findContainerHost.mockResolvedValue({
         host: { name: 'tootie' },
@@ -317,6 +378,114 @@ describe('Container Handler', () => {
       expect(mockDockerService.recreateContainer).toHaveBeenCalledWith(
         'nginx', expect.anything(), expect.objectContaining({ pull: true })
       );
+    });
+  });
+
+  describe('exec subaction', () => {
+    it('should execute command inside container', async () => {
+      mockDockerService.findContainerHost.mockResolvedValue({
+        host: { name: 'tootie' },
+        container: { Id: 'abc123' }
+      });
+      mockDockerService.execContainer.mockResolvedValue({
+        stdout: 'nginx: configuration file /etc/nginx/nginx.conf test is successful',
+        stderr: '',
+        exitCode: 0
+      });
+
+      const result = await handleContainerAction({
+        action: 'container',
+        subaction: 'exec',
+        action_subaction: 'container:exec',
+        container_id: 'nginx',
+        command: 'nginx -t'
+      } as FluxInput, mockContainer);
+
+      expect(mockDockerService.execContainer).toHaveBeenCalledWith(
+        'nginx',
+        expect.anything(),
+        expect.objectContaining({ command: 'nginx -t' })
+      );
+      expect(result).toContain('nginx.conf');
+    });
+
+    it('should return JSON format for exec', async () => {
+      mockDockerService.findContainerHost.mockResolvedValue({
+        host: { name: 'tootie' },
+        container: { Id: 'abc123' }
+      });
+      mockDockerService.execContainer.mockResolvedValue({
+        stdout: 'hello',
+        stderr: '',
+        exitCode: 0
+      });
+
+      const result = await handleContainerAction({
+        action: 'container',
+        subaction: 'exec',
+        action_subaction: 'container:exec',
+        container_id: 'nginx',
+        command: 'echo hello',
+        response_format: ResponseFormat.JSON
+      } as FluxInput, mockContainer);
+
+      const parsed = JSON.parse(result);
+      expect(parsed.stdout).toBe('hello');
+      expect(parsed.exitCode).toBe(0);
+    });
+  });
+
+  describe('top subaction', () => {
+    it('should list container processes', async () => {
+      mockDockerService.findContainerHost.mockResolvedValue({
+        host: { name: 'tootie' },
+        container: { Id: 'abc123' }
+      });
+      mockDockerService.getContainerProcesses.mockResolvedValue({
+        titles: ['PID', 'USER', 'CMD'],
+        processes: [
+          ['1', 'root', 'nginx'],
+          ['7', 'nginx', 'worker']
+        ]
+      });
+
+      const result = await handleContainerAction({
+        action: 'container',
+        subaction: 'top',
+        action_subaction: 'container:top',
+        container_id: 'nginx'
+      } as FluxInput, mockContainer);
+
+      expect(mockDockerService.getContainerProcesses).toHaveBeenCalledWith(
+        'nginx',
+        expect.anything()
+      );
+      expect(result).toContain('PID');
+      expect(result).toContain('nginx');
+      expect(result).toContain('worker');
+    });
+
+    it('should return JSON format for top', async () => {
+      mockDockerService.findContainerHost.mockResolvedValue({
+        host: { name: 'tootie' },
+        container: { Id: 'abc123' }
+      });
+      mockDockerService.getContainerProcesses.mockResolvedValue({
+        titles: ['PID', 'CMD'],
+        processes: [['1', 'nginx']]
+      });
+
+      const result = await handleContainerAction({
+        action: 'container',
+        subaction: 'top',
+        action_subaction: 'container:top',
+        container_id: 'nginx',
+        response_format: ResponseFormat.JSON
+      } as FluxInput, mockContainer);
+
+      const parsed = JSON.parse(result);
+      expect(parsed.titles).toEqual(['PID', 'CMD']);
+      expect(parsed.processes).toHaveLength(1);
     });
   });
 

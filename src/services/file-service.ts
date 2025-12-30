@@ -3,8 +3,6 @@ import type { ISSHService, IFileService } from "./interfaces.js";
 import { validateSecurePath, escapeShellArg, isSystemPath } from "../utils/path-security.js";
 import { validateHostForSsh } from "./ssh.js";
 import {
-  ALLOWED_COMMANDS,
-  ENV_ALLOW_ANY_COMMAND,
   DEFAULT_COMMAND_TIMEOUT,
   MAX_COMMAND_TIMEOUT,
   MAX_TREE_DEPTH,
@@ -12,6 +10,7 @@ import {
   MAX_DIFF_CONTEXT_LINES,
   MAX_FILE_SIZE_LIMIT
 } from "../constants.js";
+import { buildSafeShellCommand } from "../utils/command-security.js";
 
 /**
  * Validates that a number is a safe positive integer for shell interpolation.
@@ -52,35 +51,7 @@ export class FileService implements IFileService {
    *   Fix: Split into ["ls", "-la;", "rm", "-rf", "/"], escape each part
    */
   private validateAndEscapeCommand(command: string): string {
-    const allowAny = process.env[ENV_ALLOW_ANY_COMMAND] === "true";
-
-    // Split command into parts (handles multiple spaces)
-    const parts = command.trim().split(/\s+/).filter((p) => p.length > 0);
-
-    if (parts.length === 0) {
-      throw new Error("Command cannot be empty");
-    }
-
-    const baseCommand = parts[0];
-
-    // Validate base command against allowlist (unless bypassed)
-    if (!allowAny && !ALLOWED_COMMANDS.has(baseCommand)) {
-      throw new Error(
-        `Command '${baseCommand}' not in allowed list. ` +
-          `Allowed: ${[...ALLOWED_COMMANDS].join(", ")}. ` +
-          `Set ${ENV_ALLOW_ANY_COMMAND}=true to allow any command.`
-      );
-    }
-
-    // Escape all arguments individually to prevent injection
-    // Base command is NOT escaped (it's validated against allowlist)
-    // Arguments ARE escaped to prevent shell metacharacter injection
-    if (parts.length === 1) {
-      return baseCommand;
-    }
-
-    const escapedArgs = parts.slice(1).map((arg) => escapeShellArg(arg));
-    return `${baseCommand} ${escapedArgs.join(" ")}`;
+    return buildSafeShellCommand(command);
   }
 
   /**
@@ -291,6 +262,11 @@ export class FileService implements IFileService {
     //
     //   Step 1: Escape for remote shell -> "cat > '/data/my file.txt'"
     //   Step 2: Escape for source shell -> "'cat > '\\'''/data/my file.txt'\\''''"
+    //
+    // Example for targetPath = "/path/with \"quote\"":
+    //
+    //   remoteCmdUnescaped: cat > '/path/with "quote"'
+    //   remoteCmdForSourceShell: 'cat > '\''/path/with "quote"'\'''
     //
     // The source shell strips the outer quotes and escapes, then SSH passes
     // "cat > '/data/my file.txt'" to the remote shell, which handles it correctly.

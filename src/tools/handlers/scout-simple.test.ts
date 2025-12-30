@@ -246,6 +246,25 @@ describe('Scout Simple Handlers', () => {
       expect(result).toContain('tootie');
       expect(result).toContain('lolcow');
     });
+
+    it('should allow a custom timeout override', async () => {
+      (mockFileService.executeCommand as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ stdout: 'done\n', exitCode: 0 });
+
+      await handleScoutSimpleAction({
+        action: 'emit',
+        targets: ['tootie:/tmp'],
+        command: 'uptime',
+        timeout: '45000'
+      } as unknown as ScoutInput, mockContainer as ServiceContainer);
+
+      expect(mockFileService.executeCommand).toHaveBeenCalledWith(
+        expect.anything(),
+        '/tmp',
+        'uptime',
+        45000
+      );
+    });
   });
 
   describe('beam action', () => {
@@ -304,10 +323,11 @@ describe('Scout Simple Handlers', () => {
     it('should filter by grep pattern', async () => {
       (mockSSHService.executeSSHCommand as ReturnType<typeof vi.fn>).mockResolvedValue(
         'USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\n' +
-        'root       123 10.0  2.0 100000 20000 ?        S    Dec01   1:00 /usr/bin/dockerd\n'
+        'root       123 10.0  2.0 100000 20000 ?        S    Dec01   1:00 /usr/bin/dockerd\n' +
+        'root       456  0.5  0.1  50000  8000 ?        S    Dec01   0:10 /usr/bin/nginx\n'
       );
 
-      await handleScoutSimpleAction({
+      const result = await handleScoutSimpleAction({
         action: 'ps',
         host: 'tootie',
         grep: 'docker',
@@ -315,12 +335,39 @@ describe('Scout Simple Handlers', () => {
         limit: 50
       } as ScoutInput, mockContainer as ServiceContainer);
 
-      // The command should include grep filtering
-      expect(mockSSHService.executeSSHCommand).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.stringMatching(/ps/),
-        expect.anything()
+      expect(result).toContain('dockerd');
+      expect(result).not.toContain('nginx');
+    });
+
+    it('applies user and grep filters before limit and preserves header', async () => {
+      const header = 'USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND';
+      (mockSSHService.executeSSHCommand as ReturnType<typeof vi.fn>).mockResolvedValue(
+        `${header}\n` +
+        'root       101  2.0  1.0  10000  2000 ?        S    Dec01   0:10 /usr/bin/python\n' +
+        'alice      202  1.0  0.5   9000  1500 ?        S    Dec01   0:05 /usr/bin/python\n' +
+        'alice      303  0.5  0.2   8000  1200 ?        S    Dec01   0:03 /usr/bin/node\n'
       );
+
+      const result = await handleScoutSimpleAction({
+        action: 'ps',
+        host: 'tootie',
+        grep: 'python',
+        user: 'alice',
+        limit: 1,
+        response_format: ResponseFormat.JSON
+      } as ScoutInput, mockContainer as ServiceContainer);
+
+      const parsed = JSON.parse(result);
+      const lines = parsed.processes.split('\n');
+
+      expect(lines).toHaveLength(2);
+      if (lines.length !== 2) {
+        return;
+      }
+
+      expect(lines[0]).toBe(header);
+      expect(lines[1]).toContain('alice');
+      expect(lines[1]).toContain('python');
     });
   });
 

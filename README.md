@@ -11,7 +11,7 @@ Designed for use with Claude Code and other MCP-compatible clients.
 - **Docker Compose**: Full project management (up, down, restart, logs, build, pull, recreate)
 - **Image operations**: List, pull, build, remove Docker images
 - **Host operations**: Status checks, resource monitoring, systemd services, network info
-- **Log retrieval**: Advanced filtering with time ranges, grep, stream selection
+- **Log retrieval**: Advanced filtering with time ranges, grep (safe patterns only), stream selection
 - **Resource monitoring**: Real-time CPU, memory, network, I/O statistics
 - **Smart search**: Find containers by name, image, or labels across all hosts
 - **Pagination & filtering**: All list operations support limits, offsets, and filtering
@@ -21,7 +21,7 @@ Designed for use with Claude Code and other MCP-compatible clients.
 - **Remote execution**: Execute commands with allowlist security
 - **Process monitoring**: List and filter processes by user, CPU, memory
 - **ZFS management**: Pools, datasets, snapshots with health monitoring
-- **System logs**: Access syslog, journald, dmesg, auth logs with filtering
+- **System logs**: Access syslog, journald, dmesg, auth logs with filtering (safe grep patterns only)
 - **Disk monitoring**: Filesystem usage across all mounts
 - **Multi-host operations**: Execute commands or read files across multiple hosts (emit)
 

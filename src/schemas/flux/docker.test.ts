@@ -125,16 +125,16 @@ describe("Docker Schemas", () => {
         host: "tootie",
         context: "/path/to/app",
         tag: "myapp:latest",
-        dockerfile: "Dockerfile.prod",
+        dockerfile: "/path/to/app/Dockerfile.prod",
         no_cache: true
       });
       expect(result.context).toBe("/path/to/app");
       expect(result.tag).toBe("myapp:latest");
-      expect(result.dockerfile).toBe("Dockerfile.prod");
+      expect(result.dockerfile).toBe("/path/to/app/Dockerfile.prod");
       expect(result.no_cache).toBe(true);
     });
 
-    it("should default dockerfile and no_cache", () => {
+    it("should default no_cache", () => {
       const result = dockerBuildSchema.parse({
         action: "docker",
         subaction: "build",
@@ -142,8 +142,29 @@ describe("Docker Schemas", () => {
         context: "/app",
         tag: "test:v1"
       });
-      expect(result.dockerfile).toBe("Dockerfile");
+      expect(result.dockerfile).toBeUndefined();
       expect(result.no_cache).toBe(false);
+    });
+
+    it("should reject relative context paths", () => {
+      expect(() => dockerBuildSchema.parse({
+        action: "docker",
+        subaction: "build",
+        host: "tootie",
+        context: "app",
+        tag: "test:v1"
+      })).toThrow();
+    });
+
+    it("should reject traversal in dockerfile path", () => {
+      expect(() => dockerBuildSchema.parse({
+        action: "docker",
+        subaction: "build",
+        host: "tootie",
+        context: "/app",
+        tag: "test:v1",
+        dockerfile: "/app/../Dockerfile"
+      })).toThrow();
     });
   });
 
