@@ -32,7 +32,7 @@ npm-debug.log*
 coverage/
 
 # Config with secrets
-homelab.config.json
+synapse.config.json
 
 # Runner script artifacts
 .server.pid
