@@ -58,7 +58,7 @@ export async function handleFluxTool(
  * Placeholder handler for container actions
  * Will be implemented in Task 16
  */
-function handleContainerAction(input: FluxInput, _container: ServiceContainer): Promise<string> {
+function handleContainerAction(input: FluxInput, _container: ServiceContainer): never {
   // Type guard to ensure we have container action
   if (input.action !== 'container') {
     throw new Error(`Invalid action for container handler: ${input.action}`);
@@ -70,7 +70,7 @@ function handleContainerAction(input: FluxInput, _container: ServiceContainer): 
  * Placeholder handler for compose actions
  * Will be implemented in Task 17
  */
-function handleComposeAction(input: FluxInput, _container: ServiceContainer): Promise<string> {
+function handleComposeAction(input: FluxInput, _container: ServiceContainer): never {
   // Type guard to ensure we have compose action
   if (input.action !== 'compose') {
     throw new Error(`Invalid action for compose handler: ${input.action}`);
@@ -82,7 +82,7 @@ function handleComposeAction(input: FluxInput, _container: ServiceContainer): Pr
  * Placeholder handler for docker actions
  * Will be implemented in Task 18
  */
-function handleDockerAction(input: FluxInput, _container: ServiceContainer): Promise<string> {
+function handleDockerAction(input: FluxInput, _container: ServiceContainer): never {
   // Type guard to ensure we have docker action
   if (input.action !== 'docker') {
     throw new Error(`Invalid action for docker handler: ${input.action}`);
@@ -94,7 +94,7 @@ function handleDockerAction(input: FluxInput, _container: ServiceContainer): Pro
  * Placeholder handler for host actions
  * Will be implemented in Task 19
  */
-function handleHostAction(input: FluxInput, _container: ServiceContainer): Promise<string> {
+function handleHostAction(input: FluxInput, _container: ServiceContainer): never {
   // Type guard to ensure we have host action
   if (input.action !== 'host') {
     throw new Error(`Invalid action for host handler: ${input.action}`);
