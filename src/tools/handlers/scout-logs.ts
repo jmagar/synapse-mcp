@@ -6,6 +6,32 @@ import { loadHostConfigs } from '../../services/docker.js';
 import { ResponseFormat } from '../../types.js';
 
 /**
+ * Format logs response based on response format
+ */
+function formatLogsResponse(
+  format: ResponseFormat,
+  data: {
+    host: string;
+    subaction: string;
+    [key: string]: unknown;
+  },
+  output: string
+): string {
+  if (format === ResponseFormat.JSON) {
+    return JSON.stringify(
+      {
+        ...data,
+        output: output.trim()
+      },
+      null,
+      2
+    );
+  }
+
+  return output.trim();
+}
+
+/**
  * Handle all logs subactions
  *
  * Subactions: syslog, journal, dmesg, auth
@@ -61,17 +87,16 @@ export async function handleLogsAction(
         output = await sshService.executeSSHCommand(hostConfig, command, args);
       }
 
-      if (format === ResponseFormat.JSON) {
-        return JSON.stringify({
+      return formatLogsResponse(
+        format,
+        {
           host: hostConfig.name,
           subaction: 'syslog',
           lines,
-          grep,
-          output: output.trim()
-        }, null, 2);
-      }
-
-      return output.trim();
+          grep
+        },
+        output
+      );
     }
 
     case 'journal': {
@@ -95,10 +120,17 @@ export async function handleLogsAction(
         args.push('-p', validatedInput.priority);
       }
 
-      const output = await sshService.executeSSHCommand(hostConfig, 'journalctl', args);
+      let output = await sshService.executeSSHCommand(hostConfig, 'journalctl', args);
 
-      if (format === ResponseFormat.JSON) {
-        return JSON.stringify({
+      // Apply local grep filtering if provided
+      if (grep) {
+        const outputLines = output.split('\n');
+        output = outputLines.filter(line => line.includes(grep)).join('\n');
+      }
+
+      return formatLogsResponse(
+        format,
+        {
           host: hostConfig.name,
           subaction: 'journal',
           lines,
@@ -106,11 +138,10 @@ export async function handleLogsAction(
           since: validatedInput.since,
           until: validatedInput.until,
           priority: validatedInput.priority,
-          output: output.trim()
-        }, null, 2);
-      }
-
-      return output.trim();
+          grep
+        },
+        output
+      );
     }
 
     case 'dmesg': {
@@ -135,17 +166,16 @@ export async function handleLogsAction(
         output = outputLines.slice(-lines).join('\n');
       }
 
-      if (format === ResponseFormat.JSON) {
-        return JSON.stringify({
+      return formatLogsResponse(
+        format,
+        {
           host: hostConfig.name,
           subaction: 'dmesg',
           lines,
-          grep,
-          output: output.trim()
-        }, null, 2);
-      }
-
-      return output.trim();
+          grep
+        },
+        output
+      );
     }
 
     case 'auth': {
@@ -165,17 +195,16 @@ export async function handleLogsAction(
         output = await sshService.executeSSHCommand(hostConfig, command, args);
       }
 
-      if (format === ResponseFormat.JSON) {
-        return JSON.stringify({
+      return formatLogsResponse(
+        format,
+        {
           host: hostConfig.name,
           subaction: 'auth',
           lines,
-          grep,
-          output: output.trim()
-        }, null, 2);
-      }
-
-      return output.trim();
+          grep
+        },
+        output
+      );
     }
 
     default: {
