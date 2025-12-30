@@ -36,6 +36,49 @@ Designed for use with Claude Code and other MCP-compatible clients.
 
 The server provides two powerful tools with discriminated union schemas for O(1) validation:
 
+### Available Tools
+
+#### flux
+
+Docker infrastructure management with 39 operations across 4 action types:
+
+**container (14 operations)**
+- list, start, stop, restart, pause, resume, logs, stats, inspect, search, pull, recreate, exec, top
+
+**compose (9 operations)**
+- list, status, up, down, restart, logs, build, pull, recreate
+
+**docker (9 operations)**
+- info, df, prune, images, pull, build, rmi, networks, volumes
+
+**host (7 operations)**
+- status, resources, info, uptime, services, network, mounts
+
+#### scout
+
+SSH remote operations with 11 actions:
+
+**Simple actions (9)**
+- nodes, peek, exec, find, delta, emit, beam, ps, df
+
+**Nested actions (2)**
+- zfs: pools, datasets, snapshots (3 subactions)
+- logs: syslog, journal, dmesg, auth (4 subactions)
+
+### Getting Help
+
+Both tools include auto-generated help:
+
+```json
+{ "action": "help" }
+{ "action": "help", "topic": "container:resume" }
+{ "action": "help", "format": "json" }
+```
+
+**Breaking change from V2:** The unified `homelab` tool has been completely removed and replaced with `flux` and `scout`.
+
+---
+
 ### Tool 1: `flux` - Docker Infrastructure Management
 
 **4 actions, 39 subactions** - State changes, lifecycle control, destructive operations.
