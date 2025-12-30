@@ -40,7 +40,7 @@ The server provides two powerful tools with discriminated union schemas for O(1)
 
 #### flux
 
-Docker infrastructure management with 39 operations across 4 action types:
+Docker infrastructure management - container, compose, docker, and host operations
 
 **container (14 operations)**
 - list, start, stop, restart, pause, resume, logs, stats, inspect, search, pull, recreate, exec, top
@@ -56,7 +56,7 @@ Docker infrastructure management with 39 operations across 4 action types:
 
 #### scout
 
-SSH remote operations with 11 actions:
+SSH remote operations - file, process, and system inspection
 
 **Simple actions (9)**
 - nodes, peek, exec, find, delta, emit, beam, ps, df
