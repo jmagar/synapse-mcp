@@ -247,6 +247,62 @@ describe('Host Handler', () => {
         expect.arrayContaining(['--state=failed'])
       );
     });
+
+    it('should accept valid service name', async () => {
+      (mockSSHService.executeSSHCommand as ReturnType<typeof vi.fn>).mockResolvedValue(
+        'nginx.service             loaded active running A high performance web server'
+      );
+
+      await handleHostAction({
+        action: 'host',
+        subaction: 'services',
+        action_subaction: 'host:services',
+        host: 'tootie',
+        service: 'nginx'
+      } as unknown as FluxInput, mockContainer as ServiceContainer);
+
+      expect(mockSSHService.executeSSHCommand).toHaveBeenCalledWith(
+        expect.anything(),
+        'systemctl',
+        expect.arrayContaining(['nginx'])
+      );
+    });
+
+    it('should reject service name with command injection attempt', async () => {
+      await expect(
+        handleHostAction({
+          action: 'host',
+          subaction: 'services',
+          action_subaction: 'host:services',
+          host: 'tootie',
+          service: 'nginx; cat /etc/passwd'
+        } as unknown as FluxInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow('Invalid service name');
+    });
+
+    it('should reject service name with shell metacharacters', async () => {
+      await expect(
+        handleHostAction({
+          action: 'host',
+          subaction: 'services',
+          action_subaction: 'host:services',
+          host: 'tootie',
+          service: 'nginx|rm -rf /'
+        } as unknown as FluxInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow('Invalid service name');
+    });
+
+    it('should reject state with command injection attempt', async () => {
+      await expect(
+        handleHostAction({
+          action: 'host',
+          subaction: 'services',
+          action_subaction: 'host:services',
+          host: 'tootie',
+          state: 'running; whoami'
+        } as unknown as FluxInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow('Invalid state value');
+    });
   });
 
   describe('network subaction', () => {

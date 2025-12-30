@@ -149,6 +149,16 @@ export async function handleHostAction(
       const state = inp.state as string | undefined;
       const service = inp.service as string | undefined;
 
+      // SECURITY: Validate service name to prevent command injection
+      if (service && !/^[a-zA-Z0-9_-]+$/.test(service)) {
+        throw new Error(`Invalid service name: ${service}`);
+      }
+
+      // SECURITY: Validate state parameter to prevent command injection
+      if (state && !/^[a-zA-Z0-9_-]+$/.test(state)) {
+        throw new Error(`Invalid state value: ${state}`);
+      }
+
       // Build systemctl command based on options
       const args = ['list-units', '--type=service', '--no-pager'];
       if (state && state !== 'all') {
