@@ -5,6 +5,7 @@ import type { ServiceContainer } from '../../services/container.js';
 import type { IDockerService } from '../../services/interfaces.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
 import { ResponseFormat } from '../../types.js';
+import { loadHostConfigs } from '../../services/docker.js';
 
 // Mock loadHostConfigs
 vi.mock('../../services/docker.js', async (importOriginal) => {
@@ -339,7 +340,7 @@ describe('Docker Handler', () => {
 
     it('should throw on unknown host', async () => {
       // Re-mock to return empty hosts array
-      vi.mocked(await import('../../services/docker.js')).loadHostConfigs.mockReturnValue([]);
+      vi.mocked(loadHostConfigs).mockReturnValue([]);
 
       await expect(
         handleDockerAction({
