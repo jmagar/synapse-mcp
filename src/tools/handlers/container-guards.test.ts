@@ -91,7 +91,7 @@ describe('Container type guards', () => {
           response_format: 'markdown' as const
         },
         guard: isContainerListInput,
-        specificChecks: (input: ContainerListInput) => {
+        specificChecks: (input: ContainerListInput): void => {
           expect(input.state).toBe('running');
         }
       },
@@ -106,7 +106,7 @@ describe('Container type guards', () => {
           response_format: 'markdown' as const
         },
         guard: isContainerLogsInput,
-        specificChecks: (input: ContainerLogsInput) => {
+        specificChecks: (input: ContainerLogsInput): void => {
           expect(input.lines).toBe(100);
           expect(input.container_id).toBe('abc123');
         }
@@ -121,7 +121,7 @@ describe('Container type guards', () => {
           response_format: 'markdown' as const
         },
         guard: isContainerStatsInput,
-        specificChecks: (input: ContainerStatsInput) => {
+        specificChecks: (input: ContainerStatsInput): void => {
           expect(input.container_id).toBe('abc123');
         }
       },
@@ -136,7 +136,7 @@ describe('Container type guards', () => {
           response_format: 'markdown' as const
         },
         guard: isContainerInspectInput,
-        specificChecks: (input: ContainerInspectInput) => {
+        specificChecks: (input: ContainerInspectInput): void => {
           expect(input.summary).toBe(true);
           expect(input.container_id).toBe('abc123');
         }
@@ -151,7 +151,7 @@ describe('Container type guards', () => {
           response_format: 'markdown' as const
         },
         guard: isContainerSearchInput,
-        specificChecks: (input: ContainerSearchInput) => {
+        specificChecks: (input: ContainerSearchInput): void => {
           expect(input.query).toBe('nginx');
         }
       },
@@ -166,7 +166,7 @@ describe('Container type guards', () => {
           response_format: 'markdown' as const
         },
         guard: isContainerPullInput,
-        specificChecks: (input: ContainerPullInput) => {
+        specificChecks: (input: ContainerPullInput): void => {
           expect(input.image).toBe('nginx:latest');
           expect(input.container_id).toBe('abc123');
         }
@@ -182,7 +182,7 @@ describe('Container type guards', () => {
           response_format: 'markdown' as const
         },
         guard: isContainerRecreateInput,
-        specificChecks: (input: ContainerRecreateInput) => {
+        specificChecks: (input: ContainerRecreateInput): void => {
           expect(input.pull).toBe(true);
           expect(input.container_id).toBe('abc123');
         }
@@ -200,7 +200,7 @@ describe('Container type guards', () => {
           response_format: 'markdown' as const
         },
         guard: isContainerExecInput,
-        specificChecks: (input: ContainerExecInput) => {
+        specificChecks: (input: ContainerExecInput): void => {
           expect(input.command).toBe('ls -la');
           expect(input.user).toBe('root');
           expect(input.timeout).toBe(30000);
@@ -216,12 +216,14 @@ describe('Container type guards', () => {
           response_format: 'markdown' as const
         },
         guard: isContainerTopInput,
-        specificChecks: (input: ContainerTopInput) => {
+        specificChecks: (input: ContainerTopInput): void => {
           expect(input.container_id).toBe('abc123');
         }
       }
     ])('should narrow $name input correctly', ({ name, input, guard, specificChecks }) => {
       if (guard(input as ContainerActionInput)) {
+        // Type is narrowed by guard, but we need to cast for the generic test function
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         specificChecks(input as any);
         expect(input.subaction).toBe(name);
       } else {
@@ -358,7 +360,7 @@ describe('Container type guards', () => {
           response_format: 'markdown' as const
         }
       }
-    ])('$guardName should reject $wrongSubaction', ({ guardName, guard, wrongSubaction, input }) => {
+    ])('$guardName should reject $wrongSubaction', ({ guard, input }) => {
       expect(guard(input as ContainerActionInput)).toBe(false);
     });
   });

@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/homelab-mcp-server/config.schema.json",
+  "title": "Synapse MCP Server Configuration",
+  "description": "Configuration file for the Synapse MCP server - manages Docker infrastructure across multiple hosts",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for IDE validation"
+    },
+    "hosts": {
+      "type": "array",
+      "description": "List of Docker hosts to manage",
+      "items": {
+        "$ref": "#/$defs/HostConfig"
+      },
+      "minItems": 1
+    }
+  },
+  "required": ["hosts"],
+  "additionalProperties": false,
+  "$defs": {
+    "HostConfig": {
+      "type": "object",
+      "description": "Configuration for a single Docker host",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for this host",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "description": "Hostname, IP address, or 'localhost'",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "description": "Docker API port (default: 2375 for http, 2376 for https)",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "protocol": {
+          "type": "string",
+          "description": "Connection protocol",
+          "enum": ["http", "https", "ssh"],
+          "default": "http"
+        },
+        "sshUser": {
+          "type": "string",
+          "description": "SSH username for ssh protocol connections",
+          "minLength": 1
+        },
+        "sshKeyPath": {
+          "type": "string",
+          "description": "Path to SSH private key file",
+          "minLength": 1
+        },
+        "dockerSocketPath": {
+          "type": "string",
+          "description": "Path to Docker socket (for local connections)",
+          "default": "/var/run/docker.sock"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Tags for filtering and grouping hosts",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      },
+      "required": ["name", "host", "protocol"],
+      "additionalProperties": false
+    }
+  }
+}

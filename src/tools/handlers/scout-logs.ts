@@ -37,8 +37,8 @@ function formatLogsResponse(
  * Subactions: syslog, journal, dmesg, auth
  *
  * SECURITY: Defense-in-depth approach to prevent command injection:
- * 1. Grep patterns validated by shellGrepSchema (shell metacharacters rejected)
- * 2. All grep filtering performed locally after command execution
+ * 1. Grep patterns validated by jsFilterSchema (allows log-friendly characters like brackets and quotes)
+ * 2. All grep filtering performed locally using String.includes() after command execution
  * 3. No user input interpolated into shell commands
  * This ensures complete immunity to command injection attacks.
  */

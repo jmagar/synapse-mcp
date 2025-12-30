@@ -3,12 +3,14 @@ import { SSHConnectionPoolImpl } from "./ssh-pool.js";
 import { SSHService } from "./ssh-service.js";
 import { ComposeService } from "./compose.js";
 import { FileService } from "./file-service.js";
+import { LocalExecutorService } from "./local-executor.js";
 import type {
   IDockerService,
   ISSHService,
   IComposeService,
   ISSHConnectionPool,
-  IFileService
+  IFileService,
+  ILocalExecutorService
 } from "./interfaces.js";
 
 /**
@@ -16,9 +18,10 @@ import type {
  * Manages service lifecycle and dependencies.
  *
  * Dependency chain:
+ * - LocalExecutorService (no dependencies)
  * - SSHConnectionPool (no dependencies)
  * - SSHService (requires SSHConnectionPool)
- * - ComposeService (requires SSHService)
+ * - ComposeService (requires SSHService, LocalExecutorService)
  * - FileService (requires SSHService)
  * - DockerService (no dependencies)
  */
@@ -28,6 +31,7 @@ export class ServiceContainer {
   private composeService?: IComposeService;
   private sshPool?: ISSHConnectionPool;
   private fileService?: IFileService;
+  private localExecutor?: ILocalExecutorService;
 
   /**
    * Get Docker service instance (lazy initialization)
@@ -75,10 +79,27 @@ export class ServiceContainer {
   }
 
   /**
+   * Get Local executor service instance (lazy initialization)
+   */
+  getLocalExecutor(): ILocalExecutorService {
+    if (!this.localExecutor) this.localExecutor = new LocalExecutorService();
+    return this.localExecutor;
+  }
+
+  /**
+   * Set Local executor service instance (for testing/overrides)
+   */
+  setLocalExecutor(service: ILocalExecutorService): void {
+    this.localExecutor = service;
+  }
+
+  /**
    * Get Compose service instance (lazy initialization with dependencies)
    */
   getComposeService(): IComposeService {
-    if (!this.composeService) this.composeService = new ComposeService(this.getSSHService());
+    if (!this.composeService) {
+      this.composeService = new ComposeService(this.getSSHService(), this.getLocalExecutor());
+    }
     return this.composeService;
   }
 

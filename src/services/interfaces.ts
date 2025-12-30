@@ -508,6 +508,31 @@ export interface ISSHConnectionPool {
 }
 
 /**
+ * Local command executor interface for executing commands on localhost.
+ * Provides secure command execution using Node.js child_process for local operations
+ * without SSH overhead.
+ */
+export interface ILocalExecutorService {
+  /**
+   * Execute a command locally using Node.js execFile.
+   * Uses execFile (not shell) to prevent command injection.
+   *
+   * @param command - Command to execute (path or binary name)
+   * @param args - Array of command arguments
+   * @param options - Execution options
+   * @param options.timeoutMs - Command timeout in milliseconds (default: 30000)
+   * @param options.cwd - Working directory for command execution
+   * @returns Command output as string (stdout)
+   * @throws Error if command fails, times out, or produces stderr
+   */
+  executeLocalCommand(
+    command: string,
+    args?: string[],
+    options?: { timeoutMs?: number; cwd?: string }
+  ): Promise<string>;
+}
+
+/**
  * Service factory interface for creating service instances with dependency injection.
  * Provides centralized creation of all service instances with proper dependency wiring.
  */
@@ -539,13 +564,22 @@ export interface IServiceFactory {
   createSSHService(pool: ISSHConnectionPool): ISSHService;
 
   /**
+   * Create a local executor service instance.
+   * Local executor runs commands on localhost without SSH.
+   *
+   * @returns Local executor service instance
+   */
+  createLocalExecutor(): ILocalExecutorService;
+
+  /**
    * Create a Docker Compose service instance.
-   * Compose service requires SSH service for executing remote commands.
+   * Compose service requires SSH service for remote commands and local executor for local commands.
    *
    * @param sshService - SSH service to use for remote command execution
+   * @param localExecutor - Local executor service for local command execution
    * @returns Compose service instance
    */
-  createComposeService(sshService: ISSHService): IComposeService;
+  createComposeService(sshService: ISSHService, localExecutor: ILocalExecutorService): IComposeService;
 
   /**
    * Create a File service instance.

@@ -143,12 +143,18 @@ describe('Tool Registration', () => {
   });
 
   it('should not use fallback descriptions', () => {
-    // Ensure .describe() was actually added
+    // Ensure .describe() was actually added with meaningful content
     const fluxDesc = getSchemaDescription(FluxSchema);
     const scoutDesc = getSchemaDescription(ScoutSchema);
-    expect(fluxDesc).not.toBeNull();
-    expect(fluxDesc).not.toBeUndefined();
-    expect(scoutDesc).not.toBeNull();
-    expect(scoutDesc).not.toBeUndefined();
+
+    // Verify descriptions are truthy and have actual content
+    expect(fluxDesc).toBeTruthy();
+    expect(scoutDesc).toBeTruthy();
+    expect(fluxDesc?.length).toBeGreaterThan(0);
+    expect(scoutDesc?.length).toBeGreaterThan(0);
+
+    // Verify they contain expected keywords
+    expect(fluxDesc).toContain('Docker');
+    expect(scoutDesc).toContain('SSH');
   });
 });

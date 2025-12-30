@@ -1,11 +1,31 @@
 // src/tools/handlers/host.ts
 import type { ServiceContainer } from '../../services/container.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
+import type { HostConfig } from '../../types.js';
 import { loadHostConfigs } from '../../services/docker.js';
 import { ResponseFormat } from '../../types.js';
 import { formatHostStatusMarkdown, formatHostResourcesMarkdown } from '../../formatters/index.js';
-import { escapeShellArg, validateSSHArg, validateSystemdServiceName } from '../../utils/index.js';
+import { escapeShellArg, validateSSHArg, validateSystemdServiceName, isLocalHost } from '../../utils/index.js';
 import { logError } from '../../utils/errors.js';
+
+/**
+ * Execute command on local or remote host based on configuration
+ * Routes to LocalExecutor for localhost, SSH for remote hosts
+ */
+async function executeCommand(
+  host: HostConfig,
+  command: string,
+  args: string[],
+  container: ServiceContainer
+): Promise<string> {
+  if (isLocalHost(host)) {
+    const localExecutor = container.getLocalExecutor();
+    return await localExecutor.executeLocalCommand(command, args);
+  } else {
+    const sshService = container.getSSHService();
+    return await sshService.executeSSHCommand(host, command, args);
+  }
+}
 
 /**
  * Handle all host subactions
@@ -117,11 +137,7 @@ export async function handleHostAction(
         throw new Error('Host is required for host:info');
       }
 
-      const output = await sshService.executeSSHCommand(
-        hostConfig,
-        'uname',
-        ['-a']
-      );
+      const output = await executeCommand(hostConfig, 'uname', ['-a'], container);
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify({ host: hostConfig.name, info: output.trim() }, null, 2);
@@ -135,11 +151,7 @@ export async function handleHostAction(
         throw new Error('Host is required for host:uptime');
       }
 
-      const output = await sshService.executeSSHCommand(
-        hostConfig,
-        'uptime',
-        []
-      );
+      const output = await executeCommand(hostConfig, 'uptime', [], container);
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify({ host: hostConfig.name, uptime: output.trim() }, null, 2);
@@ -177,11 +189,7 @@ export async function handleHostAction(
         args.push(safeService);
       }
 
-      const output = await sshService.executeSSHCommand(
-        hostConfig,
-        'systemctl',
-        args
-      );
+      const output = await executeCommand(hostConfig, 'systemctl', args, container);
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify({ host: hostConfig.name, services: output.trim() }, null, 2);
@@ -198,18 +206,10 @@ export async function handleHostAction(
       // Use ip addr or ifconfig
       let output: string;
       try {
-        output = await sshService.executeSSHCommand(
-          hostConfig,
-          'ip',
-          ['addr', 'show']
-        );
+        output = await executeCommand(hostConfig, 'ip', ['addr', 'show'], container);
       } catch {
         // Fallback to ifconfig if ip command not available
-        output = await sshService.executeSSHCommand(
-          hostConfig,
-          'ifconfig',
-          ['-a']
-        );
+        output = await executeCommand(hostConfig, 'ifconfig', ['-a'], container);
       }
 
       if (format === ResponseFormat.JSON) {
@@ -224,11 +224,7 @@ export async function handleHostAction(
         throw new Error('Host is required for host:mounts');
       }
 
-      const output = await sshService.executeSSHCommand(
-        hostConfig,
-        'df',
-        ['-h']
-      );
+      const output = await executeCommand(hostConfig, 'df', ['-h'], container);
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify({ host: hostConfig.name, mounts: output.trim() }, null, 2);

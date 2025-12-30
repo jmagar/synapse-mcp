@@ -23,6 +23,9 @@ importers:
       node-ssh:
         specifier: ^13.2.1
         version: 13.2.1
+      ssh-config:
+        specifier: ^5.0.4
+        version: 5.0.4
       zod:
         specifier: ^4.2.1
         version: 4.2.1
@@ -1438,6 +1441,9 @@ packages:
 
   split-ca@1.0.1:
     resolution: {integrity: sha512-Q5thBSxp5t8WPTTJQS59LrGqOZqOsrhDGDVm8azCqIBjSBd7nd9o2PM+mDulQQkh8h//4U6hFZnc/mul8t5pWQ==}
+
+  ssh-config@5.0.4:
+    resolution: {integrity: sha512-nCCJTY30Alhm8CWhhN8Yr1YAx2WOrDBLMMh7JYGrzCj3qssTPV+v10hYimd+8wJJeV10VrN8lFumawAEfEwjNA==}
 
   ssh2@1.17.0:
     resolution: {integrity: sha512-wPldCk3asibAjQ/kziWQQt1Wh3PgDFpC0XpwclzKcdT1vql6KeYxf5LIt4nlFkUeR8WuphYMKqUA56X4rjbfgQ==}
@@ -3058,6 +3064,8 @@ snapshots:
   source-map-js@1.2.1: {}
 
   split-ca@1.0.1: {}
+
+  ssh-config@5.0.4: {}
 
   ssh2@1.17.0:
     dependencies:

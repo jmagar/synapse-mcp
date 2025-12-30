@@ -1,32 +1,41 @@
 {
-  "$schema": "./config.schema.json",
+  "_comment": "This file is OPTIONAL. Synapse-MCP auto-loads hosts from ~/.ssh/config",
+  "_comment2": "Manual config takes precedence over SSH config for hosts with same name",
+  "_comment3": "Priority: Manual config > SYNAPSE_HOSTS_CONFIG env > SSH config > Local socket",
   "hosts": [
-    {
-      "name": "unraid",
-      "host": "unraid.local",
-      "port": 2375,
-      "protocol": "http",
-      "tags": ["media", "storage"]
-    },
-    {
-      "name": "proxmox-docker",
-      "host": "192.168.1.100",
-      "port": 2375,
-      "protocol": "http",
-      "tags": ["vms"]
-    },
-    {
-      "name": "pi-cluster",
-      "host": "pi1.local",
-      "port": 2375,
-      "protocol": "http",
-      "tags": ["arm", "iot"]
-    },
     {
       "name": "local",
       "host": "localhost",
+      "protocol": "ssh",
+      "dockerSocketPath": "/var/run/docker.sock",
+      "tags": ["local", "development"]
+    },
+    {
+      "name": "remote-server",
+      "host": "192.168.1.100",
+      "port": 22,
+      "protocol": "ssh",
+      "sshUser": "admin",
+      "sshKeyPath": "~/.ssh/id_rsa",
+      "dockerSocketPath": "/var/run/docker.sock",
+      "tags": ["production", "remote"]
+    },
+    {
+      "name": "cloud-host",
+      "host": "server.example.com",
+      "port": 22,
+      "protocol": "ssh",
+      "sshUser": "root",
+      "sshKeyPath": "~/.ssh/id_ed25519",
+      "dockerSocketPath": "/var/run/docker.sock",
+      "tags": ["cloud", "production"]
+    },
+    {
+      "name": "docker-api-host",
+      "host": "docker.local",
+      "port": 2375,
       "protocol": "http",
-      "dockerSocketPath": "/var/run/docker.sock"
+      "tags": ["api-only"]
     }
   ]
 }

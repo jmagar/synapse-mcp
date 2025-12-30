@@ -14,6 +14,7 @@ import {
   formatNetworksMarkdown,
   formatVolumesMarkdown
 } from "./index.js";
+import type { DockerNetworkInfo } from "../types.js";
 
 describe("truncateIfNeeded", () => {
   it("should return text unchanged if under limit", () => {
@@ -298,7 +299,7 @@ describe("docker formatters", () => {
     it("should handle out-of-bounds offset gracefully", () => {
       // When pagination happens at call site with offset >= total count,
       // an empty array is passed to the formatter (e.g., allNetworks.slice(5, 15) with only 2 items)
-      const paginatedNetworks: any[] = [];
+      const paginatedNetworks: DockerNetworkInfo[] = [];
       const result = formatNetworksMarkdown(paginatedNetworks, 2, 5);
       expect(result).toContain("No networks found");
     });

@@ -3,6 +3,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleFluxTool } from './flux.js';
 import type { ServiceContainer } from '../services/container.js';
 
+// Mock loadHostConfigs to provide test host
+vi.mock('../services/docker.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/docker.js')>();
+  return {
+    ...actual,
+    loadHostConfigs: vi.fn().mockReturnValue([
+      { name: 'tootie', host: 'tootie', protocol: 'http', port: 2375 }
+    ])
+  };
+});
+
 const createMockContainer = (
   overrides: Partial<ServiceContainer> = {}
 ): ServiceContainer => {

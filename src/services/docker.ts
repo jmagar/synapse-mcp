@@ -19,6 +19,7 @@ import { DEFAULT_DOCKER_SOCKET, API_TIMEOUT, ENV_HOSTS_CONFIG, DEFAULT_EXEC_TIME
 import { HostOperationError, logError } from "../utils/errors.js";
 import { validateCommandAllowlist } from "../utils/command-security.js";
 import type { IDockerService } from "./interfaces.js";
+import { loadFromSSHConfig, mergeHostConfigs } from "./ssh-config-loader.js";
 
 /**
  * Extended volume type that includes CreatedAt field
@@ -54,6 +55,30 @@ function createDefaultDockerClient(config: HostConfig): Docker {
   if (socketPath) {
     // Unix socket connection
     return new Docker({ socketPath });
+  } else if (config.protocol === "ssh") {
+    // SSH tunneling to Docker socket
+    // Dockerode supports SSH protocol natively via ssh:// URL
+    // Format: ssh://user@host:port
+    const user = config.sshUser || "root";
+    const port = config.port || 22;
+    const sshUrl = `ssh://${user}@${config.host}:${port}`;
+
+    const dockerOptions: Docker.DockerOptions = {
+      protocol: "ssh",
+      host: config.host,
+      port: port,
+      username: user
+    };
+
+    // Add SSH key path if provided
+    if (config.sshKeyPath) {
+      dockerOptions.sshOptions = {
+        agent: process.env.SSH_AUTH_SOCK,
+        privateKey: require("fs").readFileSync(config.sshKeyPath)
+      };
+    }
+
+    return new Docker(dockerOptions);
   } else if (config.protocol === "http" || config.protocol === "https") {
     // Remote TCP connection
     return new Docker({
@@ -1124,14 +1149,17 @@ export class DockerService implements IDockerService {
 }
 
 /**
- * Config file search paths (in order of priority)
+ * Get config file search paths (in order of priority)
+ * Computed at runtime to support testing with env var changes
  */
-const CONFIG_PATHS = [
-  process.env.SYNAPSE_CONFIG_FILE, // Explicit path
-  join(process.cwd(), "synapse.config.json"), // Current directory
-  join(homedir(), ".config", "synapse-mcp", "config.json"), // XDG style
-  join(homedir(), ".synapse-mcp.json") // Dotfile style
-].filter(Boolean) as string[];
+function getConfigPaths(): string[] {
+  return [
+    process.env.SYNAPSE_CONFIG_FILE, // Explicit path
+    join(process.cwd(), "synapse.config.json"), // Current directory
+    join(homedir(), ".config", "synapse-mcp", "config.json"), // XDG style
+    join(homedir(), ".synapse-mcp.json") // Dotfile style
+  ].filter(Boolean) as string[];
+}
 
 /**
  * Auto-add local Docker socket if it exists and isn't already configured
@@ -1173,13 +1201,22 @@ function ensureLocalSocket(hosts: HostConfig[]): HostConfig[] {
 }
 
 /**
- * Load host configurations from config file, env var, or defaults
+ * Load host configurations from SSH config, config file, env var, or defaults
+ *
+ * Priority order:
+ * 1. Manual config file (synapse.config.json) - highest priority
+ * 2. SYNAPSE_HOSTS_CONFIG environment variable
+ * 3. SSH config auto-discovery (~/.ssh/config)
+ * 4. Local Docker socket (fallback)
+ *
+ * Manual hosts completely replace SSH config hosts with the same name.
  */
 export function loadHostConfigs(): HostConfig[] {
-  let hosts: HostConfig[] = [];
+  let manualHosts: HostConfig[] = [];
+  let sshHosts: HostConfig[] = [];
 
-  // 1. Try config file first
-  for (const configPath of CONFIG_PATHS) {
+  // 1. Try manual config file first
+  for (const configPath of getConfigPaths()) {
     if (existsSync(configPath)) {
       try {
         const raw = readFileSync(configPath, "utf-8");
@@ -1187,7 +1224,7 @@ export function loadHostConfigs(): HostConfig[] {
         const configHosts = config.hosts || config; // Support { hosts: [...] } or just [...]
         if (Array.isArray(configHosts) && configHosts.length > 0) {
           console.error(`Loaded ${configHosts.length} hosts from ${configPath}`);
-          hosts = configHosts as HostConfig[];
+          manualHosts = configHosts as HostConfig[];
           break;
         }
       } catch (error) {
@@ -1200,12 +1237,12 @@ export function loadHostConfigs(): HostConfig[] {
   }
 
   // 2. Fall back to env var if no config file
-  if (hosts.length === 0) {
+  if (manualHosts.length === 0) {
     const configJson = process.env[ENV_HOSTS_CONFIG];
     if (configJson) {
       try {
-        hosts = JSON.parse(configJson) as HostConfig[];
-        console.error(`Loaded ${hosts.length} hosts from SYNAPSE_HOSTS_CONFIG env`);
+        manualHosts = JSON.parse(configJson) as HostConfig[];
+        console.error(`Loaded ${manualHosts.length} hosts from SYNAPSE_HOSTS_CONFIG env`);
       } catch (error) {
         logError(error, {
           operation: "loadHostConfigs",
@@ -1215,7 +1252,17 @@ export function loadHostConfigs(): HostConfig[] {
     }
   }
 
-  // 3. If still no hosts, default to local socket only
+  // 3. Load SSH config hosts (auto-discovery)
+  const sshConfigPath = join(homedir(), ".ssh", "config");
+  sshHosts = loadFromSSHConfig(sshConfigPath);
+  if (sshHosts.length > 0) {
+    console.error(`Auto-discovered ${sshHosts.length} hosts from SSH config`);
+  }
+
+  // 4. Merge hosts with manual taking precedence
+  let hosts = mergeHostConfigs(sshHosts, manualHosts);
+
+  // 5. If still no hosts, default to local socket only
   if (hosts.length === 0) {
     console.error("No config found, using local Docker socket");
     return [
@@ -1228,7 +1275,7 @@ export function loadHostConfigs(): HostConfig[] {
     ];
   }
 
-  // 4. Auto-add local socket if exists and not configured
+  // 6. Auto-add local socket if exists and not configured
   return ensureLocalSocket(hosts);
 }
 

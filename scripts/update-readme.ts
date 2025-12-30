@@ -24,8 +24,9 @@ async function updateReadme(): Promise<void> {
   console.log('✓ Scout description:', scoutDesc);
 
   // Find the "Available Tools" section and replace the tool descriptions
-  const toolsTableRegex = /#### flux\n\n([^\n]+)\n/;
-  const scoutTableRegex = /#### scout\n\n([^\n]+)\n/;
+  // Use flexible patterns that support multi-line descriptions and varying whitespace
+  const toolsTableRegex = /#### flux\s*\n+([\s\S]*?)\n+(?=####|##|$)/i;
+  const scoutTableRegex = /#### scout\s*\n+([\s\S]*?)\n+(?=####|##|$)/i;
   
   let updated = readme;
 
@@ -46,18 +47,15 @@ async function updateReadme(): Promise<void> {
   }
 
   // Update flux description
-
-  // Update flux description
-  // Update flux description
   updated = updated.replace(
     toolsTableRegex,
-    `#### flux\n\n${fluxDesc}\n`
+    `#### flux\n\n${fluxDesc}\n\n`
   );
 
   // Update scout description
   updated = updated.replace(
     scoutTableRegex,
-    `#### scout\n\n${scoutDesc}\n`
+    `#### scout\n\n${scoutDesc}\n\n`
   );
 
   // Check if README needs updating

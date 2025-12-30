@@ -309,20 +309,53 @@ describe('Scout Logs Handler', () => {
       ]);
     });
 
-    it('should reject grep patterns with shell metacharacters', async () => {
+    it('should allow log-friendly patterns with brackets and quotes', async () => {
+      (mockSSHService.executeSSHCommand as ReturnType<typeof vi.fn>).mockResolvedValue(
+        'Dec 15 10:00:00 tootie [ERROR] something failed\n'
+      );
+
+      // These patterns are safe since filtering is done in JavaScript, not shell
+      const logPatterns = [
+        '[ERROR]',
+        '[INFO]',
+        "User 'admin'",
+        'status=(failed)',
+        'key="value"',
+        'path: /var/log'
+      ];
+
+      for (const pattern of logPatterns) {
+        await expect(
+          handleLogsAction({
+            action: 'logs',
+            subaction: 'syslog',
+            host: 'tootie',
+            lines: 100,
+            grep: pattern
+          } as unknown as ScoutInput, mockContainer as ServiceContainer)
+        ).resolves.not.toThrow();
+      }
+    });
+
+    it('should reject grep patterns that are too long', async () => {
+      const longPattern = 'a'.repeat(501);
+
+      await expect(
+        handleLogsAction({
+          action: 'logs',
+          subaction: 'syslog',
+          host: 'tootie',
+          lines: 100,
+          grep: longPattern
+        } as unknown as ScoutInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow(/Too big.*500/i);
+    });
+
+    it('should reject patterns with control characters', async () => {
       const maliciousPatterns = [
-        "'; rm -rf / ; echo '",  // Single quote injection
-        '`whoami`',               // Backtick command substitution
-        '$(cat /etc/passwd)',     // Dollar command substitution
-        'foo; bar',               // Semicolon command separator
-        'foo && bar',             // AND operator
-        'foo || bar',             // OR operator
-        'foo | bar',              // Pipe operator
-        'foo > /tmp/out',         // Output redirect
-        'foo < /tmp/in',          // Input redirect
-        '$()',                    // Command substitution
-        '\\n',                    // Backslash escape
-        'foo"bar',                // Double quote
+        'line\ninjection',  // Newline
+        'has\ttab',         // Tab
+        'null\x00byte'      // Null byte
       ];
 
       for (const pattern of maliciousPatterns) {
@@ -334,22 +367,8 @@ describe('Scout Logs Handler', () => {
             lines: 100,
             grep: pattern
           } as unknown as ScoutInput, mockContainer as ServiceContainer)
-        ).rejects.toThrow('shell metacharacters');
+        ).rejects.toThrow('control characters');
       }
-    });
-
-    it('should reject grep patterns that are too long', async () => {
-      const longPattern = 'a'.repeat(201);
-
-      await expect(
-        handleLogsAction({
-          action: 'logs',
-          subaction: 'syslog',
-          host: 'tootie',
-          lines: 100,
-          grep: longPattern
-        } as unknown as ScoutInput, mockContainer as ServiceContainer)
-      ).rejects.toThrow('Too big');
     });
 
     it('should allow safe grep patterns', async () => {
@@ -372,28 +391,37 @@ describe('Scout Logs Handler', () => {
       }
     });
 
-    it('should validate grep patterns for dmesg subaction', async () => {
-      await expect(
-        handleLogsAction({
-          action: 'logs',
-          subaction: 'dmesg',
-          host: 'tootie',
-          lines: 100,
-          grep: "'; rm -rf /"
-        } as unknown as ScoutInput, mockContainer as ServiceContainer)
-      ).rejects.toThrow('shell metacharacters');
+    it('should filter logs using JavaScript String.includes for dmesg', async () => {
+      (mockSSHService.executeSSHCommand as ReturnType<typeof vi.fn>).mockResolvedValue(
+        '[   0.123] USB device connected\n[   0.456] Network initialized\n'
+      );
+
+      const result = await handleLogsAction({
+        action: 'logs',
+        subaction: 'dmesg',
+        host: 'tootie',
+        lines: 100,
+        grep: '[   0.123]'  // Brackets are allowed in jsFilterSchema
+      } as unknown as ScoutInput, mockContainer as ServiceContainer);
+
+      expect(result).toContain('USB device connected');
+      expect(result).not.toContain('Network initialized');
     });
 
-    it('should validate grep patterns for auth subaction', async () => {
-      await expect(
-        handleLogsAction({
-          action: 'logs',
-          subaction: 'auth',
-          host: 'tootie',
-          lines: 100,
-          grep: '$(whoami)'
-        } as unknown as ScoutInput, mockContainer as ServiceContainer)
-      ).rejects.toThrow('shell metacharacters');
+    it('should filter logs using JavaScript String.includes for auth', async () => {
+      (mockSSHService.executeSSHCommand as ReturnType<typeof vi.fn>).mockResolvedValue(
+        "Dec 15 10:00:00 tootie sshd[12345]: Accepted publickey for user 'admin'\n"
+      );
+
+      const result = await handleLogsAction({
+        action: 'logs',
+        subaction: 'auth',
+        host: 'tootie',
+        lines: 100,
+        grep: "'admin'"  // Quotes are allowed in jsFilterSchema
+      } as unknown as ScoutInput, mockContainer as ServiceContainer);
+
+      expect(result).toContain('Accepted publickey');
     });
   });
 

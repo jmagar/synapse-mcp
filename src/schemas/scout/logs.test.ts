@@ -37,35 +37,44 @@ describe('Scout Logs Schema', () => {
     expect(result.grep).toBe('USB');
   });
 
-  it('should reject grep patterns with shell metacharacters', () => {
-    expect(() => scoutLogsSchema.parse({
-      action: 'logs',
-      subaction: 'syslog',
-      host: 'tootie',
-      grep: "oops'; rm -rf /"
-    })).toThrow(/shell metacharacters/i);
+  it('should accept log-friendly patterns with brackets and quotes', () => {
+    // jsFilterSchema allows these since filtering is done in JavaScript, not shell
+    const logPatterns = [
+      '[ERROR]',
+      '[INFO]',
+      "User 'admin'",
+      'status=(failed)',
+      'key="value"',
+      'path: /var/log',
+      'test[injection]'  // Brackets are safe in JS String.includes()
+    ];
+
+    for (const pattern of logPatterns) {
+      const result = scoutLogsSchema.parse({
+        action: 'logs',
+        subaction: 'syslog',
+        host: 'tootie',
+        grep: pattern
+      });
+      expect(result.grep).toBe(pattern);
+    }
   });
 
   it('should reject grep patterns that are too long', () => {
-    const longPattern = 'a'.repeat(201);
+    const longPattern = 'a'.repeat(501);
     expect(() => scoutLogsSchema.parse({
       action: 'logs',
       subaction: 'syslog',
       host: 'tootie',
       grep: longPattern
-    })).toThrow(/too big|maximum.*200/i);
+    })).toThrow(/Too big.*500/i);
   });
 
-  it('should reject various shell injection attempts', () => {
+  it('should reject patterns with control characters', () => {
     const maliciousPatterns = [
-      '`whoami`',
-      '$(cat /etc/passwd)',
-      'foo; rm -rf /',
-      'foo && malicious',
-      'foo | grep secret',
-      'foo > /tmp/output',
-      'test"injection',
-      'test[injection]'
+      'line\ninjection',  // Newline
+      'has\ttab',         // Tab
+      'null\x00byte'      // Null byte
     ];
 
     for (const pattern of maliciousPatterns) {
@@ -74,7 +83,7 @@ describe('Scout Logs Schema', () => {
         subaction: 'dmesg',
         host: 'tootie',
         grep: pattern
-      })).toThrow(/shell metacharacters/i);
+      })).toThrow(/control characters/i);
     }
   });
 

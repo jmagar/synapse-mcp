@@ -13,3 +13,5 @@ export {
 
 export { generateHelp, formatHelpMarkdown, formatHelpJson } from "./help.js";
 export type { HelpEntry, HelpJsonEntry } from "./help.js";
+
+export { isLocalHost } from "./host-utils.js";

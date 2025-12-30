@@ -120,9 +120,9 @@ OPTIONS:
 CONFIGURATION:
   Create a config file at one of these locations (checked in order):
     1. Path specified by SYNAPSE_CONFIG_FILE env var
-    2. ./homelab.config.json (current directory)
-    3. ~/.config/homelab-mcp/config.json
-    4. ~/.homelab-mcp.json
+    2. ./synapse.config.json (current directory)
+    3. ~/.config/synapse-mcp/config.json
+    4. ~/.synapse-mcp.json
 
   Example config file:
   {

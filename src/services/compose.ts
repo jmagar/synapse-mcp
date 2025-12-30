@@ -1,7 +1,8 @@
 import { HostConfig } from "../types.js";
 import { validateHostForSsh } from "./ssh.js";
 import { ComposeOperationError, logError } from "../utils/errors.js";
-import type { ISSHService, IComposeService } from "./interfaces.js";
+import { isLocalHost } from "../utils/host-utils.js";
+import type { ISSHService, IComposeService, ILocalExecutorService } from "./interfaces.js";
 
 /**
  * Validate Docker Compose project name
@@ -108,20 +109,23 @@ function parseComposeStatus(status: string): ComposeProject["status"] {
  * ComposeService class for managing Docker Compose operations with dependency injection
  */
 export class ComposeService implements IComposeService {
-  constructor(private sshService: ISSHService) {}
+  constructor(
+    private sshService: ISSHService,
+    private localExecutor: ILocalExecutorService
+  ) {}
 
   /**
-   * Execute docker compose command on remote host using connection pool
+   * Execute docker compose command on local or remote host
    *
    * SECURITY: Arguments are validated before execution to prevent command injection.
-   * Uses SSH connection pool for better performance.
+   * Uses local executor for localhost, SSH connection pool for remote hosts.
    *
-   * @param host - Host configuration with SSH details
+   * @param host - Host configuration with execution details
    * @param project - Docker Compose project name (validated, alphanumeric only)
    * @param action - Compose action (up, down, restart, etc.)
    * @param extraArgs - Additional arguments (validated for shell metacharacters)
    * @returns Command output
-   * @throws {Error} If validation fails or SSH execution fails
+   * @throws {Error} If validation fails or execution fails
    */
   async composeExec(
     host: HostConfig,
@@ -129,14 +133,29 @@ export class ComposeService implements IComposeService {
     action: string,
     extraArgs: string[] = []
   ): Promise<string> {
-    validateHostForSsh(host);
     validateProjectName(project);
     validateComposeArgs(extraArgs);
 
-    const command = buildComposeCommand(project, action, extraArgs);
+    // Build command parts for docker compose
+    const args = ["compose"];
+    if (project) {
+      args.push("-p", project);
+    }
+    args.push(action);
+    args.push(...extraArgs);
 
     try {
-      return await this.sshService.executeSSHCommand(host, command, [], { timeoutMs: 30000 });
+      // Route to local or SSH executor based on host config
+      if (isLocalHost(host)) {
+        return await this.localExecutor.executeLocalCommand("docker", args, {
+          timeoutMs: 30000
+        });
+      } else {
+        // Remote host - use SSH
+        validateHostForSsh(host);
+        const command = buildComposeCommand(project, action, extraArgs);
+        return await this.sshService.executeSSHCommand(host, command, [], { timeoutMs: 30000 });
+      }
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";
       throw new ComposeOperationError(
@@ -150,17 +169,27 @@ export class ComposeService implements IComposeService {
   }
 
   /**
-   * List all compose projects on a host using connection pool
+   * List all compose projects on a host (local or remote)
    */
   async listComposeProjects(host: HostConfig): Promise<ComposeProject[]> {
-    validateHostForSsh(host);
-
-    const command = buildComposeCommand(null, "ls", ["--format", "json"]);
+    const args = ["--format", "json"];
 
     try {
-      const stdout = await this.sshService.executeSSHCommand(host, command, [], {
-        timeoutMs: 15000
-      });
+      let stdout: string;
+
+      if (isLocalHost(host)) {
+        stdout = await this.localExecutor.executeLocalCommand(
+          "docker",
+          ["compose", "ls", ...args],
+          { timeoutMs: 15000 }
+        );
+      } else {
+        validateHostForSsh(host);
+        const command = buildComposeCommand(null, "ls", args);
+        stdout = await this.sshService.executeSSHCommand(host, command, [], {
+          timeoutMs: 15000
+        });
+      }
 
       if (!stdout.trim()) {
         return [];
@@ -191,18 +220,29 @@ export class ComposeService implements IComposeService {
   }
 
   /**
-   * Get detailed status of a compose project using connection pool
+   * Get detailed status of a compose project (local or remote)
    */
   async getComposeStatus(host: HostConfig, project: string): Promise<ComposeProject> {
-    validateHostForSsh(host);
     validateProjectName(project);
 
-    const command = buildComposeCommand(project, "ps", ["--format", "json"]);
+    const args = ["--format", "json"];
 
     try {
-      const stdout = await this.sshService.executeSSHCommand(host, command, [], {
-        timeoutMs: 15000
-      });
+      let stdout: string;
+
+      if (isLocalHost(host)) {
+        stdout = await this.localExecutor.executeLocalCommand(
+          "docker",
+          ["compose", "-p", project, "ps", ...args],
+          { timeoutMs: 15000 }
+        );
+      } else {
+        validateHostForSsh(host);
+        const command = buildComposeCommand(project, "ps", args);
+        stdout = await this.sshService.executeSSHCommand(host, command, [], {
+          timeoutMs: 15000
+        });
+      }
 
       const services: ComposeServiceInfo[] = [];
 

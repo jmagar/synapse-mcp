@@ -42,28 +42,9 @@ The server provides two powerful tools with discriminated union schemas for O(1)
 
 Docker infrastructure management - container, compose, docker, and host operations
 
-**container (14 operations)**
-- list, start, stop, restart, pause, resume, logs, stats, inspect, search, pull, recreate, exec, top
-
-**compose (9 operations)**
-- list, status, up, down, restart, logs, build, pull, recreate
-
-**docker (9 operations)**
-- info, df, prune, images, pull, build, rmi, networks, volumes
-
-**host (7 operations)**
-- status, resources, info, uptime, services, network, mounts
-
 #### scout
 
 SSH remote operations - file, process, and system inspection
-
-**Simple actions (9)**
-- nodes, peek, exec, find, delta, emit, beam, ps, df
-
-**Nested actions (2)**
-- zfs: pools, datasets, snapshots (3 subactions)
-- logs: syslog, journal, dmesg, auth (4 subactions)
 
 ### Getting Help
 
@@ -248,6 +229,40 @@ pnpm run build
 
 ## Configuration
 
+### SSH Config Auto-Loading
+
+**Zero configuration required!** Synapse-MCP automatically discovers hosts from your `~/.ssh/config` file.
+
+All SSH hosts with a `HostName` directive are automatically available for Docker management via SSH tunneling to the remote Docker socket. Manual configuration is completely optional.
+
+**Priority order:**
+1. Manual config file (highest) - `synapse.config.json`
+2. `SYNAPSE_HOSTS_CONFIG` environment variable
+3. **SSH config auto-discovery** - `~/.ssh/config`
+4. Local Docker socket (fallback)
+
+**Example SSH config:**
+
+```ssh-config
+Host production
+  HostName 192.168.1.100
+  User admin
+  Port 22
+  IdentityFile ~/.ssh/id_ed25519
+
+Host staging
+  HostName 192.168.1.101
+  User deploy
+  Port 2222
+  IdentityFile ~/.ssh/staging_key
+```
+
+Both hosts are immediately available as `flux` targets with SSH tunneling to `/var/run/docker.sock`. No additional configuration needed!
+
+**Manual override:** If you create a `synapse.config.json` entry with the same name as an SSH host, the manual config completely replaces the SSH config (no merging).
+
+### Manual Configuration (Optional)
+
 Create a config file at one of these locations (checked in order):
 
 1. Path in `SYNAPSE_CONFIG_FILE` env var
@@ -261,24 +276,27 @@ Create a config file at one of these locations (checked in order):
 {
   "hosts": [
     {
+      "name": "local",
+      "host": "localhost",
+      "protocol": "ssh",
+      "dockerSocketPath": "/var/run/docker.sock",
+      "tags": ["development"]
+    },
+    {
+      "name": "production",
+      "host": "192.168.1.100",
+      "port": 22,
+      "protocol": "ssh",
+      "sshUser": "admin",
+      "sshKeyPath": "~/.ssh/id_rsa",
+      "tags": ["production"]
+    },
+    {
       "name": "unraid",
       "host": "unraid.local",
       "port": 2375,
       "protocol": "http",
       "tags": ["media", "storage"]
-    },
-    {
-      "name": "proxmox-docker",
-      "host": "192.168.1.100",
-      "port": 2375,
-      "protocol": "http",
-      "tags": ["vms"]
-    },
-    {
-      "name": "local",
-      "host": "localhost",
-      "protocol": "http",
-      "dockerSocketPath": "/var/run/docker.sock"
     }
   ]
 }
@@ -305,6 +323,60 @@ cp synapse.config.example.json ~/.synapse-mcp.json
 | `sshUser` | `string` | SSH username for remote connections (protocol: "ssh") |
 | `sshKeyPath` | `string` | Path to SSH private key for authentication |
 | `tags` | `string[]` | Optional tags for filtering |
+
+### Local vs Remote Execution
+
+The server automatically determines whether to use **local execution** or **SSH** based on your host configuration:
+
+#### Local Execution (No SSH)
+
+Commands run directly on localhost using Node.js for best performance:
+
+```json
+{
+  "name": "local",
+  "host": "localhost",
+  "protocol": "ssh",
+  "dockerSocketPath": "/var/run/docker.sock"
+}
+```
+
+**Requirements**: Host must be `localhost`/`127.x.x.x`/`::1` AND no `sshUser` specified.
+
+**Benefits**:
+- ~10x faster than SSH for Compose and host operations
+- No SSH key management needed
+- Works out of the box
+
+#### Remote Execution (SSH)
+
+Commands run via SSH on remote hosts or when `sshUser` is specified:
+
+```json
+{
+  "name": "production",
+  "host": "192.168.1.100",
+  "protocol": "ssh",
+  "sshUser": "admin",
+  "sshKeyPath": "~/.ssh/id_rsa"
+}
+```
+
+**When SSH is used**:
+- Host is NOT localhost/127.x.x.x
+- `sshUser` is specified (even for localhost)
+- For all Scout operations (file operations always use SSH)
+
+#### Docker API vs Command Execution
+
+These are independent:
+
+| Operation | Local Host | Remote Host |
+|-----------|-----------|-------------|
+| Docker API (container list, stats) | Unix socket | HTTP |
+| Commands (compose, systemctl) | Local `execFile` | SSH |
+
+See [.docs/local-vs-remote-execution.md](.docs/local-vs-remote-execution.md) for detailed architecture documentation.
 
 ### Resource Limits & Defaults
 

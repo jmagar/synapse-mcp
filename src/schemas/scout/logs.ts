@@ -1,6 +1,6 @@
 // src/schemas/scout/logs.ts
 import { z } from 'zod';
-import { responseFormatSchema, hostSchema, shellGrepSchema } from '../common.js';
+import { responseFormatSchema, hostSchema, jsFilterSchema } from '../common.js';
 import { DEFAULT_LOG_LINES, MAX_LOG_LINES } from '../../constants.js';
 
 /**
@@ -13,7 +13,7 @@ export const scoutLogsSchema = z.discriminatedUnion('subaction', [
     subaction: z.literal('syslog'),
     host: hostSchema,
     lines: z.number().int().min(1).max(MAX_LOG_LINES).default(DEFAULT_LOG_LINES),
-    grep: shellGrepSchema.optional(),
+    grep: jsFilterSchema.optional(),
     response_format: responseFormatSchema
   }).describe('Access system log files (/var/log)'),
 
@@ -26,7 +26,7 @@ export const scoutLogsSchema = z.discriminatedUnion('subaction', [
     until: z.string().optional(),
     unit: z.string().optional().describe('Systemd unit name to filter'),
     priority: z.enum(['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug']).optional(),
-    grep: shellGrepSchema.optional(),
+    grep: jsFilterSchema.optional(),
     response_format: responseFormatSchema
   }).describe('Access systemd journal logs'),
 
@@ -35,7 +35,7 @@ export const scoutLogsSchema = z.discriminatedUnion('subaction', [
     subaction: z.literal('dmesg'),
     host: hostSchema,
     lines: z.number().int().min(1).max(MAX_LOG_LINES).default(DEFAULT_LOG_LINES),
-    grep: shellGrepSchema.optional(),
+    grep: jsFilterSchema.optional(),
     response_format: responseFormatSchema
   }).describe('Access kernel ring buffer logs'),
 
@@ -44,7 +44,7 @@ export const scoutLogsSchema = z.discriminatedUnion('subaction', [
     subaction: z.literal('auth'),
     host: hostSchema,
     lines: z.number().int().min(1).max(MAX_LOG_LINES).default(DEFAULT_LOG_LINES),
-    grep: shellGrepSchema.optional(),
+    grep: jsFilterSchema.optional(),
     response_format: responseFormatSchema
   }).describe('Access authentication logs')
 ]);

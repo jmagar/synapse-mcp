@@ -10,7 +10,6 @@ import { handleDockerAction } from './docker.js';
 import type { ServiceContainer } from '../../services/container.js';
 import type { IDockerService } from '../../services/interfaces.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
-import { ResponseFormat } from '../../types.js';
 
 // Mock loadHostConfigs to return multiple hosts
 vi.mock('../../services/docker.js', async (importOriginal) => {
@@ -94,7 +93,7 @@ describe('Multi-Host Pagination Sorting', () => {
       // After sorting by hostName, first 2 should be from hostA and hostB
       expect(result).toContain('custom_net'); // hostA
       expect(result).toContain('overlay_net'); // hostB
-      expect(result).not.toContain('hostC'); // Should not show hostC network
+      expect(result).not.toContain('net-c1'); // hostC network ID (should be excluded)
     });
   });
 
