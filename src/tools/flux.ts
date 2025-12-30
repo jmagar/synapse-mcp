@@ -3,6 +3,9 @@ import { FluxSchema, type FluxInput } from '../schemas/flux/index.js';
 import { generateHelp, formatHelpMarkdown, formatHelpJson } from '../utils/help.js';
 import type { ServiceContainer } from '../services/container.js';
 import { handleContainerAction } from './handlers/container.js';
+import { handleComposeAction } from './handlers/compose.js';
+import { handleDockerAction } from './handlers/docker.js';
+import { handleHostAction } from './handlers/host.js';
 
 interface HelpInput {
   action: 'help';
@@ -53,40 +56,4 @@ export async function handleFluxTool(
       // Zod validation should prevent reaching here
       throw new Error(`Unknown action: ${(validated as { action: string }).action}`);
   }
-}
-
-/**
- * Placeholder handler for compose actions
- * Will be implemented in Task 17
- */
-function handleComposeAction(input: FluxInput, _container: ServiceContainer): never {
-  // Type guard to ensure we have compose action
-  if (input.action !== 'compose') {
-    throw new Error(`Invalid action for compose handler: ${input.action}`);
-  }
-  throw new Error(`Handler not implemented: compose:${input.subaction}`);
-}
-
-/**
- * Placeholder handler for docker actions
- * Will be implemented in Task 18
- */
-function handleDockerAction(input: FluxInput, _container: ServiceContainer): never {
-  // Type guard to ensure we have docker action
-  if (input.action !== 'docker') {
-    throw new Error(`Invalid action for docker handler: ${input.action}`);
-  }
-  throw new Error(`Handler not implemented: docker:${input.subaction}`);
-}
-
-/**
- * Placeholder handler for host actions
- * Will be implemented in Task 19
- */
-function handleHostAction(input: FluxInput, _container: ServiceContainer): never {
-  // Type guard to ensure we have host action
-  if (input.action !== 'host') {
-    throw new Error(`Invalid action for host handler: ${input.action}`);
-  }
-  throw new Error(`Handler not implemented: host:${input.subaction}`);
 }

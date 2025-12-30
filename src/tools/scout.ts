@@ -2,6 +2,9 @@
 import { ScoutSchema, type ScoutInput } from '../schemas/scout/index.js';
 import { generateHelp, formatHelpMarkdown, formatHelpJson } from '../utils/help.js';
 import type { ServiceContainer } from '../services/container.js';
+import { handleScoutSimpleAction } from './handlers/scout-simple.js';
+import { handleZfsAction } from './handlers/scout-zfs.js';
+import { handleLogsAction } from './handlers/scout-logs.js';
 
 interface HelpInput {
   action: 'help';
@@ -40,24 +43,19 @@ export async function handleScoutTool(
 
   // Route to appropriate handler based on action
   switch (validated.action) {
+    // Simple actions (9) - handled by scout-simple handler
     case 'nodes':
-      return handleNodesAction(validated, container);
     case 'peek':
-      return handlePeekAction(validated, container);
     case 'exec':
-      return handleExecAction(validated, container);
     case 'find':
-      return handleFindAction(validated, container);
     case 'delta':
-      return handleDeltaAction(validated, container);
     case 'emit':
-      return handleEmitAction(validated, container);
     case 'beam':
-      return handleBeamAction(validated, container);
     case 'ps':
-      return handlePsAction(validated, container);
     case 'df':
-      return handleDfAction(validated, container);
+      return handleScoutSimpleAction(validated, container);
+
+    // Nested actions with subactions
     case 'zfs':
       return handleZfsAction(validated, container);
     case 'logs':
@@ -68,54 +66,3 @@ export async function handleScoutTool(
   }
 }
 
-// Placeholder handlers - will be implemented in Tasks 20-22
-
-function handleNodesAction(_input: ScoutInput, _container: ServiceContainer): never {
-  throw new Error('Handler not implemented: nodes');
-}
-
-function handlePeekAction(_input: ScoutInput, _container: ServiceContainer): never {
-  throw new Error('Handler not implemented: peek');
-}
-
-function handleExecAction(_input: ScoutInput, _container: ServiceContainer): never {
-  throw new Error('Handler not implemented: exec');
-}
-
-function handleFindAction(_input: ScoutInput, _container: ServiceContainer): never {
-  throw new Error('Handler not implemented: find');
-}
-
-function handleDeltaAction(_input: ScoutInput, _container: ServiceContainer): never {
-  throw new Error('Handler not implemented: delta');
-}
-
-function handleEmitAction(_input: ScoutInput, _container: ServiceContainer): never {
-  throw new Error('Handler not implemented: emit');
-}
-
-function handleBeamAction(_input: ScoutInput, _container: ServiceContainer): never {
-  throw new Error('Handler not implemented: beam');
-}
-
-function handlePsAction(_input: ScoutInput, _container: ServiceContainer): never {
-  throw new Error('Handler not implemented: ps');
-}
-
-function handleDfAction(_input: ScoutInput, _container: ServiceContainer): never {
-  throw new Error('Handler not implemented: df');
-}
-
-function handleZfsAction(input: ScoutInput, _container: ServiceContainer): never {
-  if (input.action !== 'zfs') {
-    throw new Error(`Invalid action for zfs handler: ${input.action}`);
-  }
-  throw new Error(`Handler not implemented: zfs:${input.subaction}`);
-}
-
-function handleLogsAction(input: ScoutInput, _container: ServiceContainer): never {
-  if (input.action !== 'logs') {
-    throw new Error(`Invalid action for logs handler: ${input.action}`);
-  }
-  throw new Error(`Handler not implemented: logs:${input.subaction}`);
-}

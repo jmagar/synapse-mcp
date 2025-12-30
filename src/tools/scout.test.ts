@@ -73,32 +73,59 @@ describe('Scout Tool Handler', () => {
   });
 
   describe('routing', () => {
-    it('should throw for unimplemented nodes action', async () => {
-      await expect(handleScoutTool(
+    it('should route nodes action to simple handler', async () => {
+      // nodes action just lists configured hosts
+      const result = await handleScoutTool(
         { action: 'nodes' },
         mockContainer
-      )).rejects.toThrow('Handler not implemented');
+      );
+      // Should return the host list (from loadHostConfigs mock)
+      expect(result).toBeDefined();
     });
 
-    it('should throw for unimplemented peek action', async () => {
-      await expect(handleScoutTool(
+    it('should route peek action to simple handler', async () => {
+      const mockFileService = {
+        readFile: vi.fn().mockResolvedValue({ content: 'test', size: 4, truncated: false })
+      };
+      (mockContainer.getFileService as ReturnType<typeof vi.fn>).mockReturnValue(mockFileService);
+
+      const result = await handleScoutTool(
         { action: 'peek', target: 'tootie:/etc/hosts' },
         mockContainer
-      )).rejects.toThrow('Handler not implemented');
+      );
+
+      expect(mockFileService.readFile).toHaveBeenCalled();
+      expect(result).toBeDefined();
     });
 
-    it('should throw for unimplemented zfs action', async () => {
-      await expect(handleScoutTool(
+    it('should route zfs action to zfs handler', async () => {
+      const mockSSHService = {
+        executeSSHCommand: vi.fn().mockResolvedValue('NAME   SIZE  ALLOC   FREE\ntank   10T   5T   5T')
+      };
+      (mockContainer.getSSHService as ReturnType<typeof vi.fn>).mockReturnValue(mockSSHService);
+
+      const result = await handleScoutTool(
         { action: 'zfs', subaction: 'pools', host: 'tootie' },
         mockContainer
-      )).rejects.toThrow('Handler not implemented');
+      );
+
+      expect(mockSSHService.executeSSHCommand).toHaveBeenCalled();
+      expect(result).toBeDefined();
     });
 
-    it('should throw for unimplemented logs action', async () => {
-      await expect(handleScoutTool(
-        { action: 'logs', subaction: 'syslog', host: 'tootie' },
+    it('should route logs action to logs handler', async () => {
+      const mockSSHService = {
+        executeSSHCommand: vi.fn().mockResolvedValue('Dec 15 10:00:00 tootie systemd[1]: Started service')
+      };
+      (mockContainer.getSSHService as ReturnType<typeof vi.fn>).mockReturnValue(mockSSHService);
+
+      const result = await handleScoutTool(
+        { action: 'logs', subaction: 'syslog', host: 'tootie', lines: 100 },
         mockContainer
-      )).rejects.toThrow('Handler not implemented');
+      );
+
+      expect(mockSSHService.executeSSHCommand).toHaveBeenCalled();
+      expect(result).toBeDefined();
     });
   });
 

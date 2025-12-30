@@ -60,32 +60,91 @@ describe('Flux Tool Handler', () => {
   });
 
   describe('routing', () => {
-    it('should throw for unimplemented container action', async () => {
-      await expect(handleFluxTool(
+    it('should route container action to container handler', async () => {
+      const mockDockerService = {
+        listContainers: vi.fn().mockResolvedValue([])
+      };
+      (mockContainer.getDockerService as ReturnType<typeof vi.fn>).mockReturnValue(mockDockerService);
+
+      const result = await handleFluxTool(
         { action: 'container', subaction: 'list' },
         mockContainer
-      )).rejects.toThrow('Handler not implemented');
+      );
+
+      expect(mockDockerService.listContainers).toHaveBeenCalled();
+      expect(result).toBeDefined();
     });
 
-    it('should throw for unimplemented compose action', async () => {
-      await expect(handleFluxTool(
+    it('should route compose action to compose handler', async () => {
+      const mockComposeService = {
+        listComposeProjects: vi.fn().mockResolvedValue([])
+      };
+      (mockContainer.getComposeService as ReturnType<typeof vi.fn>).mockReturnValue(mockComposeService);
+
+      const result = await handleFluxTool(
         { action: 'compose', subaction: 'list', host: 'tootie' },
         mockContainer
-      )).rejects.toThrow('Handler not implemented');
+      );
+
+      expect(mockComposeService.listComposeProjects).toHaveBeenCalled();
+      expect(result).toBeDefined();
     });
 
-    it('should throw for unimplemented docker action', async () => {
-      await expect(handleFluxTool(
+    it('should route docker action to docker handler', async () => {
+      const mockDockerService = {
+        getDockerInfo: vi.fn().mockResolvedValue({
+          dockerVersion: '24.0.0',
+          apiVersion: '1.43',
+          os: 'linux',
+          arch: 'x86_64',
+          kernelVersion: '6.1.0',
+          cpus: 8,
+          memoryBytes: 16000000000,
+          storageDriver: 'overlay2',
+          rootDir: '/var/lib/docker',
+          containersRunning: 5,
+          containersTotal: 10,
+          images: 25
+        })
+      };
+      (mockContainer.getDockerService as ReturnType<typeof vi.fn>).mockReturnValue(mockDockerService);
+
+      const result = await handleFluxTool(
         { action: 'docker', subaction: 'info', host: 'tootie' },
         mockContainer
-      )).rejects.toThrow('Handler not implemented');
+      );
+
+      expect(mockDockerService.getDockerInfo).toHaveBeenCalled();
+      expect(result).toBeDefined();
     });
 
-    it('should throw for unimplemented host action', async () => {
-      await expect(handleFluxTool(
-        { action: 'host', subaction: 'status' },
+    it('should route host action to host handler', async () => {
+      const mockDockerService = {
+        getDockerInfo: vi.fn().mockResolvedValue({
+          dockerVersion: '24.0.0',
+          apiVersion: '1.43',
+          os: 'linux',
+          arch: 'x86_64',
+          kernelVersion: '6.1.0',
+          cpus: 8,
+          memoryBytes: 16000000000,
+          storageDriver: 'overlay2',
+          rootDir: '/var/lib/docker',
+          containersRunning: 5,
+          containersTotal: 10,
+          images: 25
+        }),
+        listContainers: vi.fn().mockResolvedValue([])
+      };
+      (mockContainer.getDockerService as ReturnType<typeof vi.fn>).mockReturnValue(mockDockerService);
+
+      const result = await handleFluxTool(
+        { action: 'host', subaction: 'status', host: 'tootie' },
         mockContainer
-      )).rejects.toThrow('Handler not implemented');
+      );
+
+      expect(mockDockerService.getDockerInfo).toHaveBeenCalled();
+      expect(result).toBeDefined();
     });
   });
 
