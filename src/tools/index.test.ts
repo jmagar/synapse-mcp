@@ -6,6 +6,9 @@ import type { ServiceContainer } from '../services/container.js';
 import { handleFluxTool } from './flux.js';
 import { handleScoutTool } from './scout.js';
 import { logError } from '../utils/errors.js';
+import { getSchemaDescription } from '@modelcontextprotocol/sdk/server/zod-compat.js';
+import { FluxSchema } from '../schemas/flux/index.js';
+import { ScoutSchema } from '../schemas/scout/index.js';
 
 vi.mock('./flux.js', () => ({
   handleFluxTool: vi.fn()
@@ -123,5 +126,29 @@ describe('Tool Registration', () => {
         container: { type: 'ServiceContainer' }
       }
     });
+  });
+
+  it('should extract descriptions from schemas', () => {
+    // Test that descriptions match schema
+    const server = { registerTool: vi.fn() } as unknown as McpServer;
+    const container = {} as ServiceContainer;
+    registerTools(server, container);
+    const mockFn = server.registerTool as ReturnType<typeof vi.fn>;
+    const fluxCall = mockFn.mock.calls[0] as unknown[];
+    const fluxConfig = fluxCall[1] as { description: string };
+    expect(fluxConfig.description).toBe(getSchemaDescription(FluxSchema));
+    const scoutCall = mockFn.mock.calls[1] as unknown[];
+    const scoutConfig = scoutCall[1] as { description: string };
+    expect(scoutConfig.description).toBe(getSchemaDescription(ScoutSchema));
+  });
+
+  it('should not use fallback descriptions', () => {
+    // Ensure .describe() was actually added
+    const fluxDesc = getSchemaDescription(FluxSchema);
+    const scoutDesc = getSchemaDescription(ScoutSchema);
+    expect(fluxDesc).not.toBeNull();
+    expect(fluxDesc).not.toBeUndefined();
+    expect(scoutDesc).not.toBeNull();
+    expect(scoutDesc).not.toBeUndefined();
   });
 });

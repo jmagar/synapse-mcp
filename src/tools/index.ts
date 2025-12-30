@@ -6,6 +6,7 @@ import { handleScoutTool } from './scout.js';
 import { FluxSchema } from '../schemas/flux/index.js';
 import { ScoutSchema } from '../schemas/scout/index.js';
 import { logError, sanitizeParams } from '../utils/errors.js';
+import { getSchemaDescription } from '@modelcontextprotocol/sdk/server/zod-compat.js';
 
 /**
  * Register Flux and Scout tools with the MCP server
@@ -20,7 +21,7 @@ export function registerTools(server: McpServer, container?: ServiceContainer): 
     'flux',
     {
       title: 'Flux Tool',
-      description: 'Docker infrastructure management - container, compose, docker, and host operations',
+      description: getSchemaDescription(FluxSchema) ?? 'Docker infrastructure management',
       inputSchema: FluxSchema,
       annotations: {
         readOnlyHint: false,
@@ -52,7 +53,7 @@ export function registerTools(server: McpServer, container?: ServiceContainer): 
     'scout',
     {
       title: 'Scout Tool',
-      description: 'SSH remote operations - file, process, and system inspection',
+      description: getSchemaDescription(ScoutSchema) ?? 'SSH remote operations',
       inputSchema: ScoutSchema,
       annotations: {
         readOnlyHint: false,
