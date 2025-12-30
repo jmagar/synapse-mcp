@@ -262,43 +262,44 @@ describe("DockerService", () => {
 
     it("times out after specified duration", async () => {
       vi.useFakeTimers();
+      try {
+        const mockStream = new PassThrough();
+        const mockExec = {
+          start: vi.fn().mockResolvedValue(mockStream),
+          inspect: vi.fn().mockResolvedValue({ ExitCode: 0 })
+        };
+        const mockContainer = {
+          exec: vi.fn().mockResolvedValue(mockExec)
+        };
+        const mockModem = {
+          demuxStream: vi.fn(() => {
+            // Never emit 'end' - simulates a hanging command
+          })
+        };
+        const mockClient = {
+          getContainer: vi.fn().mockReturnValue(mockContainer),
+          modem: mockModem
+        } as unknown as Docker;
 
-      const mockStream = new PassThrough();
-      const mockExec = {
-        start: vi.fn().mockResolvedValue(mockStream),
-        inspect: vi.fn().mockResolvedValue({ ExitCode: 0 })
-      };
-      const mockContainer = {
-        exec: vi.fn().mockResolvedValue(mockExec)
-      };
-      const mockModem = {
-        demuxStream: vi.fn(() => {
-          // Never emit 'end' - simulates a hanging command
-        })
-      };
-      const mockClient = {
-        getContainer: vi.fn().mockReturnValue(mockContainer),
-        modem: mockModem
-      } as unknown as Docker;
+        mockFactory = vi.fn(() => mockClient);
+        service = new DockerService(mockFactory);
 
-      mockFactory = vi.fn(() => mockClient);
-      service = new DockerService(mockFactory);
+        const execPromise = service.execContainer("container-123", testHost, {
+          command: "tail /var/log/syslog",
+          timeout: 5000
+        });
 
-      const execPromise = service.execContainer("container-123", testHost, {
-        command: "tail /var/log/syslog",
-        timeout: 5000
-      });
+        // Set up the expectation first, then advance timers
+        // This ensures the rejection is handled before vitest sees it as unhandled
+        const expectation = expect(execPromise).rejects.toThrow(/timeout/i);
 
-      // Set up the expectation first, then advance timers
-      // This ensures the rejection is handled before vitest sees it as unhandled
-      const expectation = expect(execPromise).rejects.toThrow(/timeout/i);
+        // Flush all timers to ensure the timeout fires even if scheduled late
+        await vi.runAllTimersAsync();
 
-      // Flush all timers to ensure the timeout fires even if scheduled late
-      await vi.runAllTimersAsync();
-
-      await expectation;
-
-      vi.useRealTimers();
+        await expectation;
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("uses default timeout when not specified", async () => {

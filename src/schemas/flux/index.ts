@@ -133,10 +133,11 @@ const unwrappedSchemas = [
 
 // Runtime validation: ensure all unwrapped schemas are ZodObjects
 // This catches errors if Zod internals change or schemas are defined incorrectly
-for (const schema of unwrappedSchemas) {
+for (let i = 0; i < unwrappedSchemas.length; i++) {
+  const schema = unwrappedSchemas[i];
   if (!(schema instanceof z.ZodObject)) {
     throw new Error(
-      `Schema unwrap failed: expected ZodObject, got ${schema.constructor.name}. ` +
+      `Schema unwrap failed at index ${i}: expected ZodObject, got ${schema.constructor.name}. ` +
       'This likely means Zod preprocess structure changed or a schema is incorrectly defined.'
     );
   }

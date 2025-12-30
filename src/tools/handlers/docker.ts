@@ -121,11 +121,19 @@ export async function handleDockerAction(
         return JSON.stringify(networks, null, 2);
       }
 
+      // Sort by hostName BEFORE pagination to ensure correct ordering
+      const sortedNetworks = [...networks].sort((a, b) => {
+        const hostA = a.hostName ?? '';
+        const hostB = b.hostName ?? '';
+        return hostA.localeCompare(hostB);
+      });
+
       const offset = (inp.offset as number) ?? 0;
       const limit = (inp.limit as number) ?? 50;
-      const total = networks.length;
+      const total = sortedNetworks.length;
+      const paginatedNetworks = sortedNetworks.slice(offset, offset + limit);
 
-      return formatNetworksMarkdown(networks, total, offset, limit);
+      return formatNetworksMarkdown(paginatedNetworks, total, offset);
     }
 
     case 'volumes': {
@@ -137,11 +145,19 @@ export async function handleDockerAction(
         return JSON.stringify(volumes, null, 2);
       }
 
+      // Sort by hostName BEFORE pagination to ensure correct ordering
+      const sortedVolumes = [...volumes].sort((a, b) => {
+        const hostA = a.hostName ?? '';
+        const hostB = b.hostName ?? '';
+        return hostA.localeCompare(hostB);
+      });
+
       const offset = (inp.offset as number) ?? 0;
       const limit = (inp.limit as number) ?? 50;
-      const total = volumes.length;
+      const total = sortedVolumes.length;
+      const paginatedVolumes = sortedVolumes.slice(offset, offset + limit);
 
-      return formatVolumesMarkdown(volumes, total, offset, limit);
+      return formatVolumesMarkdown(paginatedVolumes, total, offset);
     }
 
     case 'pull': {

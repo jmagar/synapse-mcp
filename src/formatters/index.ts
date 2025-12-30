@@ -807,22 +807,31 @@ export interface DockerNetworkInfo {
 
 /**
  * Format Docker networks list as markdown
+ * @param networks - Pre-paginated and pre-sorted array of networks to display
+ * @param total - Total number of networks (before pagination)
+ * @param offset - Starting index for pagination display
  */
 export function formatNetworksMarkdown(
   networks: DockerNetworkInfo[],
   total: number,
-  offset: number,
-  limit: number
+  offset: number
 ): string {
-  if (total === 0) {
+  if (networks.length === 0) {
     return "## Docker Networks\n\nNo networks found.";
   }
 
-  const paginatedNetworks = networks.slice(offset, offset + limit);
-  const lines = ["## Docker Networks", ""];
+  // DO NOT sort here - data must be sorted BEFORE pagination at call site
+  // Sorting pre-paginated data causes incorrect ordering across pagination boundaries
+
+  const lines = [
+    "## Docker Networks",
+    "",
+    `Showing ${networks.length} of ${total} networks (offset: ${offset})`,
+    ""
+  ];
 
   let currentHost = "";
-  for (const network of paginatedNetworks) {
+  for (const network of networks) {
     if (network.hostName !== currentHost) {
       currentHost = network.hostName;
       lines.push(`### ${currentHost}`);
@@ -848,22 +857,31 @@ export interface DockerVolumeInfo {
 
 /**
  * Format Docker volumes list as markdown
+ * @param volumes - Pre-paginated and pre-sorted array of volumes to display
+ * @param total - Total number of volumes (before pagination)
+ * @param offset - Starting index for pagination display
  */
 export function formatVolumesMarkdown(
   volumes: DockerVolumeInfo[],
   total: number,
-  offset: number,
-  limit: number
+  offset: number
 ): string {
-  if (total === 0) {
+  if (volumes.length === 0) {
     return "## Docker Volumes\n\nNo volumes found.";
   }
 
-  const paginatedVolumes = volumes.slice(offset, offset + limit);
-  const lines = ["## Docker Volumes", ""];
+  // DO NOT sort here - data must be sorted BEFORE pagination at call site
+  // Sorting pre-paginated data causes incorrect ordering across pagination boundaries
+
+  const lines = [
+    "## Docker Volumes",
+    "",
+    `Showing ${volumes.length} of ${total} volumes (offset: ${offset})`,
+    ""
+  ];
 
   let currentHost = "";
-  for (const volume of paginatedVolumes) {
+  for (const volume of volumes) {
     if (volume.hostName !== currentHost) {
       currentHost = volume.hostName;
       lines.push(`### ${currentHost}`);

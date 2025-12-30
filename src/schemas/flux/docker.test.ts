@@ -118,19 +118,19 @@ describe("Docker Schemas", () => {
   });
 
   describe("dockerBuildSchema", () => {
-    it("should validate build with all options", () => {
+    it("should validate build with all options (absolute context, relative dockerfile)", () => {
       const result = dockerBuildSchema.parse({
         action: "docker",
         subaction: "build",
         host: "tootie",
         context: "/path/to/app",
         tag: "myapp:latest",
-        dockerfile: "/path/to/app/Dockerfile.prod",
+        dockerfile: "Dockerfile.prod",
         no_cache: true
       });
       expect(result.context).toBe("/path/to/app");
       expect(result.tag).toBe("myapp:latest");
-      expect(result.dockerfile).toBe("/path/to/app/Dockerfile.prod");
+      expect(result.dockerfile).toBe("Dockerfile.prod");
       expect(result.no_cache).toBe(true);
     });
 
@@ -156,40 +156,83 @@ describe("Docker Schemas", () => {
       })).toThrow();
     });
 
-    it("should reject traversal in dockerfile path", () => {
+    it("should accept relative dockerfile paths (Docker standard)", () => {
+      const result = dockerBuildSchema.parse({
+        action: "docker",
+        subaction: "build",
+        host: "tootie",
+        context: "/app",
+        tag: "test:v1",
+        dockerfile: "Dockerfile"
+      });
+      expect(result.dockerfile).toBe("Dockerfile");
+    });
+
+    it("should accept relative dockerfile in subdirectory", () => {
+      const result = dockerBuildSchema.parse({
+        action: "docker",
+        subaction: "build",
+        host: "tootie",
+        context: "/app",
+        tag: "test:v1",
+        dockerfile: "docker/Dockerfile.prod"
+      });
+      expect(result.dockerfile).toBe("docker/Dockerfile.prod");
+    });
+
+    it("should reject dockerfile path traversal with ..", () => {
       expect(() => dockerBuildSchema.parse({
         action: "docker",
         subaction: "build",
         host: "tootie",
         context: "/app",
         tag: "test:v1",
-        dockerfile: "/app/../Dockerfile"
-      })).toThrow();
+        dockerfile: "../Dockerfile"
+      })).toThrow("Path traversal not allowed");
     });
 
-    it("should accept paths with current directory references", () => {
+    it("should reject dockerfile with absolute path", () => {
+      expect(() => dockerBuildSchema.parse({
+        action: "docker",
+        subaction: "build",
+        host: "tootie",
+        context: "/app",
+        tag: "test:v1",
+        dockerfile: "/etc/passwd"
+      })).toThrow("Dockerfile path must be relative to context");
+    });
+
+    it("should accept paths with current directory references in context", () => {
       const result = dockerBuildSchema.parse({
         action: "docker",
         subaction: "build",
         host: "tootie",
         context: "/path/./app",
-        tag: "test:v1",
-        dockerfile: "/path/./app/Dockerfile"
+        tag: "test:v1"
       });
       expect(result.context).toBe("/path/./app");
-      expect(result.dockerfile).toBe("/path/./app/Dockerfile");
     });
 
-    it("should accept paths with dots in filenames", () => {
+    it("should accept dockerfile with dots in filename", () => {
       const result = dockerBuildSchema.parse({
         action: "docker",
         subaction: "build",
         host: "tootie",
         context: "/app",
         tag: "test:v1",
-        dockerfile: "/app/Dockerfile.prod"
+        dockerfile: "Dockerfile.prod"
       });
-      expect(result.dockerfile).toBe("/app/Dockerfile.prod");
+      expect(result.dockerfile).toBe("Dockerfile.prod");
+    });
+
+    it("should reject context path traversal with ..", () => {
+      expect(() => dockerBuildSchema.parse({
+        action: "docker",
+        subaction: "build",
+        host: "tootie",
+        context: "/app/../etc",
+        tag: "test:v1"
+      })).toThrow("Path traversal not allowed");
     });
   });
 

@@ -218,10 +218,12 @@ describe("scout formatters", () => {
       expect(result).toContain("---");
     });
   });
+});
 
+describe("docker formatters", () => {
   describe("formatNetworksMarkdown", () => {
     it("should return 'No networks found' for empty array", () => {
-      const result = formatNetworksMarkdown([], 0, 0, 50);
+      const result = formatNetworksMarkdown([], 0, 0);
       expect(result).toContain("No networks found");
     });
 
@@ -250,8 +252,9 @@ describe("scout formatters", () => {
         }
       ];
 
-      const result = formatNetworksMarkdown(networks, 3, 0, 50);
+      const result = formatNetworksMarkdown(networks, 3, 0);
       expect(result).toContain("## Docker Networks");
+      expect(result).toContain("Showing 3 of 3 networks");
       expect(result).toContain("### tootie");
       expect(result).toContain("### shart");
       expect(result).toContain("bridge (bridge, local)");
@@ -259,7 +262,7 @@ describe("scout formatters", () => {
     });
 
     it("should respect pagination", () => {
-      const networks = [
+      const allNetworks = [
         {
           id: "net1",
           name: "net1",
@@ -283,16 +286,47 @@ describe("scout formatters", () => {
         }
       ];
 
-      const result = formatNetworksMarkdown(networks, 3, 1, 1);
+      // Simulate pagination at call site (offset=1, limit=1)
+      const paginatedNetworks = allNetworks.slice(1, 2);
+      const result = formatNetworksMarkdown(paginatedNetworks, 3, 1);
+      expect(result).toContain("Showing 1 of 3 networks");
       expect(result).toContain("net2");
       expect(result).not.toContain("net1");
       expect(result).not.toContain("net3");
+    });
+
+    it("should handle out-of-bounds offset gracefully", () => {
+      // When pagination happens at call site with offset >= total count,
+      // an empty array is passed to the formatter (e.g., allNetworks.slice(5, 15) with only 2 items)
+      const paginatedNetworks: any[] = [];
+      const result = formatNetworksMarkdown(paginatedNetworks, 2, 5);
+      expect(result).toContain("No networks found");
+    });
+
+    it("should preserve input order and NOT reorder pre-paginated data", () => {
+      // Handler now sorts BEFORE pagination, so formatter receives sorted data
+      // Formatter must preserve this order, even if it spans multiple hosts
+      const preSortedPaginatedNetworks = [
+        // Handler sorted by hostName, then paginated - this slice has zulu before alpha
+        { id: "net6", name: "net6", driver: "bridge", scope: "local", hostName: "zulu" },
+        { id: "net1", name: "net1", driver: "bridge", scope: "local", hostName: "alpha" }
+      ];
+
+      const result = formatNetworksMarkdown(preSortedPaginatedNetworks, 10, 5);
+
+      // Formatter must preserve input order (zulu before alpha)
+      const zuluIndex = result.indexOf("### zulu");
+      const alphaIndex = result.indexOf("### alpha");
+
+      expect(zuluIndex).toBeGreaterThan(-1);
+      expect(alphaIndex).toBeGreaterThan(-1);
+      expect(zuluIndex).toBeLessThan(alphaIndex); // zulu should appear BEFORE alpha in output
     });
   });
 
   describe("formatVolumesMarkdown", () => {
     it("should return 'No volumes found' for empty array", () => {
-      const result = formatVolumesMarkdown([], 0, 0, 50);
+      const result = formatVolumesMarkdown([], 0, 0);
       expect(result).toContain("No volumes found");
     });
 
@@ -318,8 +352,9 @@ describe("scout formatters", () => {
         }
       ];
 
-      const result = formatVolumesMarkdown(volumes, 3, 0, 50);
+      const result = formatVolumesMarkdown(volumes, 3, 0);
       expect(result).toContain("## Docker Volumes");
+      expect(result).toContain("Showing 3 of 3 volumes");
       expect(result).toContain("### tootie");
       expect(result).toContain("### shart");
       expect(result).toContain("vol1 (local, local)");
@@ -327,7 +362,7 @@ describe("scout formatters", () => {
     });
 
     it("should respect pagination", () => {
-      const volumes = [
+      const allVolumes = [
         {
           name: "vol1",
           driver: "local",
@@ -348,7 +383,10 @@ describe("scout formatters", () => {
         }
       ];
 
-      const result = formatVolumesMarkdown(volumes, 3, 1, 1);
+      // Simulate pagination at call site (offset=1, limit=1)
+      const paginatedVolumes = allVolumes.slice(1, 2);
+      const result = formatVolumesMarkdown(paginatedVolumes, 3, 1);
+      expect(result).toContain("Showing 1 of 3 volumes");
       expect(result).toContain("vol2");
       expect(result).not.toContain("vol1");
       expect(result).not.toContain("vol3");

@@ -78,20 +78,20 @@ export async function handleLogsAction(
       const args = ['-n', String(lines), '--no-pager'];
 
       // Add unit filter
-      if (validatedInput.subaction === 'journal' && validatedInput.unit) {
+      if (validatedInput.unit) {
         args.push('-u', validatedInput.unit);
       }
 
       // Add time range filters
-      if (validatedInput.subaction === 'journal' && validatedInput.since) {
+      if (validatedInput.since) {
         args.push('--since', validatedInput.since);
       }
-      if (validatedInput.subaction === 'journal' && validatedInput.until) {
+      if (validatedInput.until) {
         args.push('--until', validatedInput.until);
       }
 
       // Add priority filter
-      if (validatedInput.subaction === 'journal' && validatedInput.priority) {
+      if (validatedInput.priority) {
         args.push('-p', validatedInput.priority);
       }
 
@@ -102,10 +102,10 @@ export async function handleLogsAction(
           host: hostConfig.name,
           subaction: 'journal',
           lines,
-          unit: validatedInput.subaction === 'journal' ? validatedInput.unit : undefined,
-          since: validatedInput.subaction === 'journal' ? validatedInput.since : undefined,
-          until: validatedInput.subaction === 'journal' ? validatedInput.until : undefined,
-          priority: validatedInput.subaction === 'journal' ? validatedInput.priority : undefined,
+          unit: validatedInput.unit,
+          since: validatedInput.since,
+          until: validatedInput.until,
+          priority: validatedInput.priority,
           output: output.trim()
         }, null, 2);
       }

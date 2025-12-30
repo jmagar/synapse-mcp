@@ -8,11 +8,25 @@ import {
   preprocessWithDiscriminator
 } from "../common.js";
 
+/**
+ * Schema for Docker build context path (must be absolute)
+ */
 const safeBuildPathSchema = z
   .string()
   .min(1)
   .regex(/^[a-zA-Z0-9._\-/]+$/, "Path contains invalid characters")
   .refine((path) => path.startsWith("/"), "Path must be absolute")
+  .refine((path) => !path.split("/").includes(".."), "Path traversal not allowed");
+
+/**
+ * Schema for Dockerfile path (must be relative to context, following Docker conventions)
+ * Examples: "Dockerfile", "docker/Dockerfile.prod", "Dockerfile.dev"
+ */
+const safeDockerfilePathSchema = z
+  .string()
+  .min(1)
+  .regex(/^[a-zA-Z0-9._\-/]+$/, "Path contains invalid characters")
+  .refine((path) => !path.startsWith("/"), "Dockerfile path must be relative to context")
   .refine((path) => !path.split("/").includes(".."), "Path traversal not allowed");
 
 /**
@@ -97,9 +111,9 @@ export const dockerBuildSchema = z.preprocess(
       action: z.literal("docker"),
       subaction: z.literal("build"),
       host: hostSchema,
-      context: safeBuildPathSchema.describe("Path to build context directory"),
+      context: safeBuildPathSchema.describe("Path to build context directory (absolute)"),
       tag: z.string().min(1).describe("Image name:tag for the built image"),
-      dockerfile: safeBuildPathSchema.optional().describe("Path to Dockerfile"),
+      dockerfile: safeDockerfilePathSchema.optional().describe("Path to Dockerfile (relative to context)"),
       no_cache: z.boolean().default(false),
       response_format: responseFormatSchema
     })
