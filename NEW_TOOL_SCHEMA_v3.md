@@ -155,7 +155,6 @@ Stop a running container.
 #### Parameters
 
 - **container_id**: Container name or ID
-- **image**: Explicit image to pull if container metadata is missing (optional)
 - **host**: Target Docker host (optional)
 
 #### Examples

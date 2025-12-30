@@ -53,8 +53,9 @@ export async function handleComposeAction(
 
       // Apply name filter if specified
       if (listInput.name_filter) {
+        const nameFilter = listInput.name_filter;
         projects = projects.filter(p =>
-          p.name.toLowerCase().includes((listInput.name_filter as string).toLowerCase())
+          p.name.toLowerCase().includes(nameFilter.toLowerCase())
         );
       }
 
@@ -79,8 +80,9 @@ export async function handleComposeAction(
       // Apply service filter if specified
       let services = project.services;
       if (statusInput.service_filter) {
+        const serviceFilter = statusInput.service_filter;
         services = services.filter(s =>
-          s.name.toLowerCase().includes((statusInput.service_filter as string).toLowerCase())
+          s.name.toLowerCase().includes(serviceFilter.toLowerCase())
         );
         project.services = services;
       }
@@ -146,8 +148,9 @@ export async function handleComposeAction(
 
       // Apply grep filter if specified
       if (logsInput.grep) {
+        const grepPattern = logsInput.grep;
         const lines = logs.split('\n');
-        const filtered = lines.filter(line => line.includes(logsInput.grep as string));
+        const filtered = lines.filter(line => line.includes(grepPattern));
         logs = filtered.join('\n');
       }
 

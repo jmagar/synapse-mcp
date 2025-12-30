@@ -185,23 +185,23 @@ describe("Common Schemas", () => {
       });
 
       it("should reject shell metacharacters (semicolon)", () => {
-        expect(() => execUserSchema.parse("root; rm -rf /")).toThrow();
+        expect(() => execUserSchema.parse("root; rm -rf /")).toThrow(/invalid|username|uid|gid/i);
       });
 
       it("should reject shell metacharacters (backticks)", () => {
-        expect(() => execUserSchema.parse("`whoami`")).toThrow();
+        expect(() => execUserSchema.parse("`whoami`")).toThrow(/invalid|username|uid|gid/i);
       });
 
       it("should reject newlines", () => {
-        expect(() => execUserSchema.parse("root\nmalicious")).toThrow();
+        expect(() => execUserSchema.parse("root\nmalicious")).toThrow(/invalid|username|uid|gid/i);
       });
 
       it("should reject spaces", () => {
-        expect(() => execUserSchema.parse("bad user")).toThrow();
+        expect(() => execUserSchema.parse("bad user")).toThrow(/invalid|username|uid|gid/i);
       });
 
       it("should reject dollar signs", () => {
-        expect(() => execUserSchema.parse("$USER")).toThrow();
+        expect(() => execUserSchema.parse("$USER")).toThrow(/invalid|username|uid|gid/i);
       });
 
       it("should reject multiple colons", () => {
@@ -247,31 +247,31 @@ describe("Common Schemas", () => {
       });
 
       it("should reject directory traversal (..)", () => {
-        expect(() => execWorkdirSchema.parse("/app/../etc")).toThrow();
+        expect(() => execWorkdirSchema.parse("/app/../etc")).toThrow(/directory traversal|\.\./i);
       });
 
       it("should reject shell metacharacters (semicolon)", () => {
-        expect(() => execWorkdirSchema.parse("/app; rm -rf /")).toThrow();
+        expect(() => execWorkdirSchema.parse("/app; rm -rf /")).toThrow(/invalid|path|workdir/i);
       });
 
       it("should reject shell metacharacters (backticks)", () => {
-        expect(() => execWorkdirSchema.parse("/app/`whoami`")).toThrow();
+        expect(() => execWorkdirSchema.parse("/app/`whoami`")).toThrow(/invalid|path|workdir/i);
       });
 
       it("should reject dollar signs (variable expansion)", () => {
-        expect(() => execWorkdirSchema.parse("/app/$HOME")).toThrow();
+        expect(() => execWorkdirSchema.parse("/app/$HOME")).toThrow(/invalid|path|workdir/i);
       });
 
       it("should reject newlines", () => {
-        expect(() => execWorkdirSchema.parse("/app\n/etc")).toThrow();
+        expect(() => execWorkdirSchema.parse("/app\n/etc")).toThrow(/invalid|path|workdir/i);
       });
 
       it("should reject spaces", () => {
-        expect(() => execWorkdirSchema.parse("/app data")).toThrow();
+        expect(() => execWorkdirSchema.parse("/app data")).toThrow(/invalid|path|workdir/i);
       });
 
       it("should reject pipes", () => {
-        expect(() => execWorkdirSchema.parse("/app|cat")).toThrow();
+        expect(() => execWorkdirSchema.parse("/app|cat")).toThrow(/invalid|path|workdir/i);
       });
     });
   });
@@ -329,11 +329,11 @@ describe("Common Schemas", () => {
       });
 
       it("should reject empty string", () => {
-        expect(() => shellGrepSchema.parse("")).toThrow();
+        expect(() => shellGrepSchema.parse("")).toThrow(/required|empty|too small/i);
       });
 
       it("should reject patterns exceeding 200 chars", () => {
-        expect(() => shellGrepSchema.parse("a".repeat(201))).toThrow();
+        expect(() => shellGrepSchema.parse("a".repeat(201))).toThrow(/too big|maximum.*200/i);
       });
     });
   });

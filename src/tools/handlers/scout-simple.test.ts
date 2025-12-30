@@ -361,10 +361,6 @@ describe('Scout Simple Handlers', () => {
       const lines = parsed.processes.split('\n');
 
       expect(lines).toHaveLength(2);
-      if (lines.length !== 2) {
-        return;
-      }
-
       expect(lines[0]).toBe(header);
       expect(lines[1]).toContain('alice');
       expect(lines[1]).toContain('python');

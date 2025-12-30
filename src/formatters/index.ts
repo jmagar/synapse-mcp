@@ -787,3 +787,89 @@ export function formatScoutDiffMarkdown(
     ].join("\n")
   );
 }
+
+// ===== Docker Formatters =====
+
+/**
+ * Docker network info type for formatting
+ */
+export interface DockerNetworkInfo {
+  id: string;
+  name: string;
+  driver: string;
+  scope: string;
+  created?: string;
+  internal?: boolean;
+  attachable?: boolean;
+  ingress?: boolean;
+  hostName: string;
+}
+
+/**
+ * Format Docker networks list as markdown
+ */
+export function formatNetworksMarkdown(
+  networks: DockerNetworkInfo[],
+  total: number,
+  offset: number,
+  limit: number
+): string {
+  if (total === 0) {
+    return "## Docker Networks\n\nNo networks found.";
+  }
+
+  const paginatedNetworks = networks.slice(offset, offset + limit);
+  const lines = ["## Docker Networks", ""];
+
+  let currentHost = "";
+  for (const network of paginatedNetworks) {
+    if (network.hostName !== currentHost) {
+      currentHost = network.hostName;
+      lines.push(`### ${currentHost}`);
+    }
+    lines.push(`- ${network.name} (${network.driver}, ${network.scope})`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Docker volume info type for formatting
+ */
+export interface DockerVolumeInfo {
+  name: string;
+  driver: string;
+  scope: string;
+  mountpoint?: string;
+  createdAt?: string;
+  labels?: Record<string, string>;
+  hostName: string;
+}
+
+/**
+ * Format Docker volumes list as markdown
+ */
+export function formatVolumesMarkdown(
+  volumes: DockerVolumeInfo[],
+  total: number,
+  offset: number,
+  limit: number
+): string {
+  if (total === 0) {
+    return "## Docker Volumes\n\nNo volumes found.";
+  }
+
+  const paginatedVolumes = volumes.slice(offset, offset + limit);
+  const lines = ["## Docker Volumes", ""];
+
+  let currentHost = "";
+  for (const volume of paginatedVolumes) {
+    if (volume.hostName !== currentHost) {
+      currentHost = volume.hostName;
+      lines.push(`### ${currentHost}`);
+    }
+    lines.push(`- ${volume.name} (${volume.driver}, ${volume.scope})`);
+  }
+
+  return lines.join("\n");
+}

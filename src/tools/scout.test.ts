@@ -106,13 +106,27 @@ describe('Scout Tool Handler', () => {
       };
       (mockContainer.getFileService as ReturnType<typeof vi.fn>).mockReturnValue(mockFileService);
 
-      const result = await handleScoutTool(
-        { action: 'peek', target: 'tootie:/etc/hosts' },
-        mockContainer
-      );
+      const loadHostConfigsSpy = vi.spyOn(dockerService, 'loadHostConfigs').mockReturnValue([
+        {
+          name: 'tootie',
+          host: 'tootie',
+          protocol: 'http',
+          port: 2375,
+          dockerSocketPath: DEFAULT_DOCKER_SOCKET
+        }
+      ]);
 
-      expect(mockFileService.readFile).toHaveBeenCalled();
-      expect(result).toBeDefined();
+      try {
+        const result = await handleScoutTool(
+          { action: 'peek', target: 'tootie:/etc/hosts' },
+          mockContainer
+        );
+
+        expect(mockFileService.readFile).toHaveBeenCalled();
+        expect(result).toBeDefined();
+      } finally {
+        loadHostConfigsSpy.mockRestore();
+      }
     });
 
     it('should route zfs action to zfs handler', async () => {
@@ -121,13 +135,27 @@ describe('Scout Tool Handler', () => {
       };
       (mockContainer.getSSHService as ReturnType<typeof vi.fn>).mockReturnValue(mockSSHService);
 
-      const result = await handleScoutTool(
-        { action: 'zfs', subaction: 'pools', host: 'tootie' },
-        mockContainer
-      );
+      const loadHostConfigsSpy = vi.spyOn(dockerService, 'loadHostConfigs').mockReturnValue([
+        {
+          name: 'tootie',
+          host: 'tootie',
+          protocol: 'http',
+          port: 2375,
+          dockerSocketPath: DEFAULT_DOCKER_SOCKET
+        }
+      ]);
 
-      expect(mockSSHService.executeSSHCommand).toHaveBeenCalled();
-      expect(result).toBeDefined();
+      try {
+        const result = await handleScoutTool(
+          { action: 'zfs', subaction: 'pools', host: 'tootie' },
+          mockContainer
+        );
+
+        expect(mockSSHService.executeSSHCommand).toHaveBeenCalled();
+        expect(result).toBeDefined();
+      } finally {
+        loadHostConfigsSpy.mockRestore();
+      }
     });
 
     it('should route logs action to logs handler', async () => {
@@ -136,13 +164,27 @@ describe('Scout Tool Handler', () => {
       };
       (mockContainer.getSSHService as ReturnType<typeof vi.fn>).mockReturnValue(mockSSHService);
 
-      const result = await handleScoutTool(
-        { action: 'logs', subaction: 'syslog', host: 'tootie', lines: 100 },
-        mockContainer
-      );
+      const loadHostConfigsSpy = vi.spyOn(dockerService, 'loadHostConfigs').mockReturnValue([
+        {
+          name: 'tootie',
+          host: 'tootie',
+          protocol: 'http',
+          port: 2375,
+          dockerSocketPath: DEFAULT_DOCKER_SOCKET
+        }
+      ]);
 
-      expect(mockSSHService.executeSSHCommand).toHaveBeenCalled();
-      expect(result).toBeDefined();
+      try {
+        const result = await handleScoutTool(
+          { action: 'logs', subaction: 'syslog', host: 'tootie', lines: 100 },
+          mockContainer
+        );
+
+        expect(mockSSHService.executeSSHCommand).toHaveBeenCalled();
+        expect(result).toBeDefined();
+      } finally {
+        loadHostConfigsSpy.mockRestore();
+      }
     });
   });
 

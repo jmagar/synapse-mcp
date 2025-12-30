@@ -292,7 +292,7 @@ describe('Scout Logs Handler', () => {
             lines: 100,
             grep: pattern
           } as unknown as ScoutInput, mockContainer as ServiceContainer)
-        ).rejects.toThrow('Invalid character in grep pattern');
+        ).rejects.toThrow('shell metacharacters');
       }
     });
 
@@ -307,7 +307,7 @@ describe('Scout Logs Handler', () => {
           lines: 100,
           grep: longPattern
         } as unknown as ScoutInput, mockContainer as ServiceContainer)
-      ).rejects.toThrow('Grep pattern too long');
+      ).rejects.toThrow('Too big');
     });
 
     it('should allow safe grep patterns', async () => {
@@ -339,7 +339,7 @@ describe('Scout Logs Handler', () => {
           lines: 100,
           grep: "'; rm -rf /"
         } as unknown as ScoutInput, mockContainer as ServiceContainer)
-      ).rejects.toThrow('Invalid character in grep pattern');
+      ).rejects.toThrow('shell metacharacters');
     });
 
     it('should validate grep patterns for auth subaction', async () => {
@@ -351,11 +351,18 @@ describe('Scout Logs Handler', () => {
           lines: 100,
           grep: '$(whoami)'
         } as unknown as ScoutInput, mockContainer as ServiceContainer)
-      ).rejects.toThrow('Invalid character in grep pattern');
+      ).rejects.toThrow('shell metacharacters');
     });
   });
 
   describe('error handling', () => {
+    afterEach(() => {
+      // Restore default host config after each test to prevent mock state leakage
+      vi.mocked(loadHostConfigs).mockReturnValue([
+        { name: 'tootie', host: 'tootie', protocol: 'http', port: 2375 }
+      ]);
+    });
+
     it('should throw on invalid action', async () => {
       await expect(
         handleLogsAction({
@@ -380,11 +387,6 @@ describe('Scout Logs Handler', () => {
     });
 
     it('should handle SSH command failure', async () => {
-      // Reset mock
-      vi.mocked(loadHostConfigs).mockReturnValue([
-        { name: 'tootie', host: 'tootie', protocol: 'http', port: 2375 }
-      ]);
-
       (mockSSHService.executeSSHCommand as ReturnType<typeof vi.fn>)
         .mockRejectedValue(new Error('Permission denied'));
 

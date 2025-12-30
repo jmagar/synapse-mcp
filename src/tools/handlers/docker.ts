@@ -7,7 +7,9 @@ import {
   formatDockerInfoMarkdown,
   formatDockerDfMarkdown,
   formatPruneMarkdown,
-  formatImagesMarkdown
+  formatImagesMarkdown,
+  formatNetworksMarkdown,
+  formatVolumesMarkdown
 } from '../../formatters/index.js';
 
 /**
@@ -122,24 +124,8 @@ export async function handleDockerAction(
       const offset = (inp.offset as number) ?? 0;
       const limit = (inp.limit as number) ?? 50;
       const total = networks.length;
-      const paginatedNetworks = networks.slice(offset, offset + limit);
 
-      const lines = ['## Docker Networks', ''];
-      if (total === 0) {
-        lines.push('No networks found.');
-        return lines.join('\n');
-      }
-
-      let currentHost = '';
-      for (const network of paginatedNetworks) {
-        if (network.hostName !== currentHost) {
-          currentHost = network.hostName;
-          lines.push(`### ${currentHost}`);
-        }
-        lines.push(`- ${network.name} (${network.driver}, ${network.scope})`);
-      }
-
-      return lines.join('\n');
+      return formatNetworksMarkdown(networks, total, offset, limit);
     }
 
     case 'volumes': {
@@ -154,24 +140,8 @@ export async function handleDockerAction(
       const offset = (inp.offset as number) ?? 0;
       const limit = (inp.limit as number) ?? 50;
       const total = volumes.length;
-      const paginatedVolumes = volumes.slice(offset, offset + limit);
 
-      const lines = ['## Docker Volumes', ''];
-      if (total === 0) {
-        lines.push('No volumes found.');
-        return lines.join('\n');
-      }
-
-      let currentHost = '';
-      for (const volume of paginatedVolumes) {
-        if (volume.hostName !== currentHost) {
-          currentHost = volume.hostName;
-          lines.push(`### ${currentHost}`);
-        }
-        lines.push(`- ${volume.name} (${volume.driver}, ${volume.scope})`);
-      }
-
-      return lines.join('\n');
+      return formatVolumesMarkdown(volumes, total, offset, limit);
     }
 
     case 'pull': {

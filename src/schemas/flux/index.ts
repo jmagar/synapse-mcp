@@ -58,24 +58,23 @@ import {
  * Internal Zod definition structure for accessing preprocessed schema internals.
  * This is necessary because z.preprocess wraps schemas in a way that hides
  * the inner schema from the public API.
+ *
+ * Zod 4.x structure: z.preprocess creates a pipe with type='pipe' and out field
  */
 interface ZodPreprocessDef {
   type?: string;
   out?: z.ZodTypeAny;
-  innerType?: z.ZodTypeAny;
 }
 
 /**
  * Extract inner schema from z.preprocess wrapper
- * Handles both Zod 3.x (innerType) and Zod 4.x (pipe structure)
+ * Only supports Zod 4.x (pipe structure)
  */
 function unwrapPreprocess(schema: z.ZodTypeAny): z.ZodTypeAny {
   // Access internal _def property - type assertion needed for internal Zod structure
-  const def = (schema as unknown as { _def: ZodPreprocessDef })._def;
+  const def = (schema as unknown as { _def: ZodPreprocessDef | undefined })._def;
   // Zod 4.x: z.preprocess creates a pipe with type='pipe' and out field
   if (def?.type === 'pipe' && def?.out) return def.out;
-  // Zod 3.x uses 'innerType'
-  if (def?.innerType) return def.innerType;
   // Return as-is if not wrapped
   return schema;
 }
@@ -84,7 +83,9 @@ function unwrapPreprocess(schema: z.ZodTypeAny): z.ZodTypeAny {
 // Type assertion is necessary because z.discriminatedUnion requires a tuple type
 // with at least 2 elements, but TypeScript infers a regular array from .map()
 type DiscriminatedUnionMember = z.ZodObject<z.ZodRawShape>;
-const allSchemas = [
+
+// Unwrap all preprocessed schemas
+const unwrappedSchemas = [
   // Container (14)
   containerListSchema,
   containerStartSchema,
@@ -128,7 +129,21 @@ const allSchemas = [
   hostServicesSchema,
   hostNetworkSchema,
   hostMountsSchema
-].map(unwrapPreprocess) as [DiscriminatedUnionMember, DiscriminatedUnionMember, ...DiscriminatedUnionMember[]];
+].map(unwrapPreprocess);
+
+// Runtime validation: ensure all unwrapped schemas are ZodObjects
+// This catches errors if Zod internals change or schemas are defined incorrectly
+for (const schema of unwrappedSchemas) {
+  if (!(schema instanceof z.ZodObject)) {
+    throw new Error(
+      `Schema unwrap failed: expected ZodObject, got ${schema.constructor.name}. ` +
+      'This likely means Zod preprocess structure changed or a schema is incorrectly defined.'
+    );
+  }
+}
+
+// Type assertion to tuple required by discriminatedUnion
+const allSchemas = unwrappedSchemas as [DiscriminatedUnionMember, DiscriminatedUnionMember, ...DiscriminatedUnionMember[]];
 
 /** Total number of subactions in the Flux schema */
 export const FLUX_SUBACTION_COUNT = allSchemas.length;

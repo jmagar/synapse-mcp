@@ -13,8 +13,7 @@ const safeBuildPathSchema = z
   .min(1)
   .regex(/^[a-zA-Z0-9._\-/]+$/, "Path contains invalid characters")
   .refine((path) => path.startsWith("/"), "Path must be absolute")
-  .refine((path) => !path.split("/").includes(".."), "Path traversal not allowed")
-  .refine((path) => !path.split("/").includes("."), "Path traversal not allowed");
+  .refine((path) => !path.split("/").includes(".."), "Path traversal not allowed");
 
 /**
  * Docker subaction schemas for Flux tool (9 subactions)

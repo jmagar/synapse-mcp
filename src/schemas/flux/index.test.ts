@@ -77,4 +77,20 @@ describe('FluxSchema', () => {
     // Use exported constant instead of accessing Zod internals
     expect(FLUX_SUBACTION_COUNT).toBe(39);
   });
+
+  it('should successfully unwrap preprocessed schemas', () => {
+    // This test ensures the unwrapPreprocess function works correctly
+    // If it fails, the discriminated union won't be able to parse schemas
+    const validInputs = [
+      { action: 'container', subaction: 'list' },
+      { action: 'compose', subaction: 'list', host: 'tootie' },
+      { action: 'docker', subaction: 'info', host: 'tootie' },
+      { action: 'host', subaction: 'status' }
+    ];
+
+    for (const input of validInputs) {
+      const result = FluxSchema.safeParse(input);
+      expect(result.success).toBe(true);
+    }
+  });
 });

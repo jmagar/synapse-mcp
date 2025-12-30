@@ -5,7 +5,7 @@ import { handleFluxTool } from './flux.js';
 import { handleScoutTool } from './scout.js';
 import { FluxSchema } from '../schemas/flux/index.js';
 import { ScoutSchema } from '../schemas/scout/index.js';
-import { logError } from '../utils/errors.js';
+import { logError, sanitizeParams } from '../utils/errors.js';
 
 /**
  * Register Flux and Scout tools with the MCP server
@@ -38,7 +38,7 @@ export function registerTools(server: McpServer, container?: ServiceContainer): 
           operation: 'flux:handler',
           metadata: {
             message: 'Flux tool execution failed',
-            params,
+            params: sanitizeParams(params),
             container: { type: container.constructor.name }
           }
         });
@@ -70,7 +70,7 @@ export function registerTools(server: McpServer, container?: ServiceContainer): 
           operation: 'scout:handler',
           metadata: {
             message: 'Scout tool execution failed',
-            params,
+            params: sanitizeParams(params),
             container: { type: container.constructor.name }
           }
         });

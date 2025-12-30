@@ -92,6 +92,66 @@ export interface ErrorContext {
 }
 
 /**
+ * Fields that may contain sensitive operational details and should be redacted in logs
+ */
+const SENSITIVE_PARAM_FIELDS = new Set([
+  'command',      // Shell commands may contain credentials or secrets
+  'path',         // File paths may reveal system structure
+  'target',       // File/directory targets
+  'grep',         // Search patterns may contain sensitive data
+  'label_filter', // Docker labels may contain internal info
+  'name_filter',  // Container/image names may be sensitive
+  'args',         // Command arguments
+  'env',          // Environment variables (if we add this feature)
+  'source',       // Source paths
+  'destination',  // Destination paths
+]);
+
+/**
+ * Sanitize params for safe logging by redacting potentially sensitive fields
+ *
+ * Preserves safe operational fields (action, subaction, host, response_format, etc.)
+ * while redacting fields that may contain sensitive data (paths, commands, filters).
+ *
+ * @param params - Parameters to sanitize
+ * @returns Sanitized copy of params with sensitive fields redacted
+ *
+ * @example
+ * sanitizeParams({
+ *   action: 'scout',
+ *   command: 'cat /etc/passwd',
+ *   host: 'web-01'
+ * })
+ * // Returns: { action: 'scout', command: '[REDACTED]', host: 'web-01' }
+ */
+export function sanitizeParams(params: unknown): unknown {
+  // Handle non-object types
+  if (typeof params !== 'object' || params === null) {
+    return params;
+  }
+
+  // Handle arrays (unlikely but defensive)
+  if (Array.isArray(params)) {
+    return '[REDACTED]';
+  }
+
+  // Sanitize object fields
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (SENSITIVE_PARAM_FIELDS.has(key)) {
+      sanitized[key] = '[REDACTED]';
+    } else if (typeof value === 'object' && value !== null) {
+      // Nested objects are redacted entirely (avoiding deep traversal)
+      sanitized[key] = '[REDACTED]';
+    } else {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized;
+}
+
+/**
  * Log error with structured context
  *
  * NEVER use this to silently swallow errors - always re-throw after logging

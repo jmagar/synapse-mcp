@@ -4,7 +4,7 @@ import { generateHelp, formatHelpMarkdown, formatHelpJson } from "./help.js";
 import { FluxSchema } from "../schemas/flux/index.js";
 import { ScoutSchema } from "../schemas/scout/index.js";
 
-const EXPECTED_FLUX_ACTION_COUNT = 39; // 14 container + 9 compose + 9 docker + 7 host
+const EXPECTED_FLUX_ACTION_COUNT = 39; // 14 container + 9 compose + 9 docker + 7 host = 39
 const EXPECTED_SCOUT_ACTION_COUNT = 16; // 9 simple + 3 zfs subactions + 4 logs subactions
 
 describe("Help Handler", () => {
@@ -97,9 +97,9 @@ describe("Help Handler", () => {
   });
 
   describe("Integration with FluxSchema", () => {
-  it("should generate help for all 39 flux actions", () => {
+    it("should generate help for all 39 flux actions", () => {
       const help = generateHelp(FluxSchema);
-      // 14 container + 9 compose + 7 docker + 7 host = 37
+      // 14 container + 9 compose + 9 docker + 7 host = 39
       // (networks, volumes implemented)
       expect(help.length).toBe(EXPECTED_FLUX_ACTION_COUNT);
     });

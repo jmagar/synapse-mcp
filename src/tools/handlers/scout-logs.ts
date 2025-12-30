@@ -1,41 +1,18 @@
 // src/tools/handlers/scout-logs.ts
 import type { ServiceContainer } from '../../services/container.js';
 import type { ScoutInput } from '../../schemas/scout/index.js';
+import { scoutLogsSchema } from '../../schemas/scout/logs.js';
 import { loadHostConfigs } from '../../services/docker.js';
 import { ResponseFormat } from '../../types.js';
-
-/**
- * Shell metacharacters that could be used for command injection.
- * Matches the pattern used in compose.ts for consistency.
- */
-const SHELL_METACHARACTERS = /[;&|`$()<>{}[\]\\"\n\r\t']/;
-
-/**
- * Validate grep pattern for safe shell usage.
- *
- * SECURITY: Prevents command injection by rejecting shell metacharacters.
- * The grep value is interpolated into shell commands inside single quotes,
- * so single quotes and other shell metacharacters must be rejected.
- *
- * @throws {Error} If pattern contains shell metacharacters or exceeds 200 chars
- */
-function validateGrepPattern(pattern: string): void {
-  if (SHELL_METACHARACTERS.test(pattern)) {
-    throw new Error(
-      `Invalid character in grep pattern: pattern contains shell metacharacters`
-    );
-  }
-
-  // Reject extremely long patterns (DoS prevention)
-  if (pattern.length > 200) {
-    throw new Error(`Grep pattern too long: maximum 200 characters allowed`);
-  }
-}
 
 /**
  * Handle all logs subactions
  *
  * Subactions: syslog, journal, dmesg, auth
+ *
+ * SECURITY: Grep patterns are validated by shellGrepSchema in the Zod schema
+ * to prevent command injection. Shell metacharacters and patterns > 200 chars
+ * are rejected at the schema level before reaching this handler.
  */
 export async function handleLogsAction(
   input: ScoutInput,
@@ -45,33 +22,35 @@ export async function handleLogsAction(
     throw new Error(`Invalid action for logs handler: ${input.action}`);
   }
 
-  const sshService = container.getSSHService();
-  const hosts = loadHostConfigs();
-  const format = (input as Record<string, unknown>).response_format ?? ResponseFormat.MARKDOWN;
-
-  // Use type assertion to access subaction-specific fields
-  const inp = input as Record<string, unknown>;
-
-  // Find the target host
-  const hostName = inp.host as string;
-  const hostConfig = hosts.find(h => h.name === hostName);
-
-  if (!hostConfig) {
-    throw new Error(`Host not found: ${hostName}`);
+  // Validate and parse with the specific logs schema
+  const parseResult = scoutLogsSchema.safeParse(input);
+  if (!parseResult.success) {
+    throw new Error(`Invalid logs input: ${JSON.stringify(parseResult.error.issues)}`);
   }
 
-  const lines = (inp.lines as number) ?? 100;
-  const grep = inp.grep as string | undefined;
+  const validatedInput = parseResult.data;
+  const sshService = container.getSSHService();
+  const hosts = loadHostConfigs();
+  const format = validatedInput.response_format ?? ResponseFormat.MARKDOWN;
 
-  switch (inp.subaction) {
+  // Find the target host
+  const hostConfig = hosts.find(h => h.name === validatedInput.host);
+
+  if (!hostConfig) {
+    throw new Error(`Host not found: ${validatedInput.host}`);
+  }
+
+  const lines = validatedInput.lines;
+  const grep = validatedInput.grep;
+
+  switch (validatedInput.subaction) {
     case 'syslog': {
       const args = ['-n', String(lines), '/var/log/syslog'];
       const command = 'tail';
 
       let output: string;
       if (grep) {
-        // SECURITY: Validate grep pattern before use
-        validateGrepPattern(grep);
+        // SECURITY: grep pattern validated by shellGrepSchema
         // Use tail piped to grep
         output = await sshService.executeSSHCommand(
           hostConfig,
@@ -99,25 +78,21 @@ export async function handleLogsAction(
       const args = ['-n', String(lines), '--no-pager'];
 
       // Add unit filter
-      const unit = inp.unit as string | undefined;
-      if (unit) {
-        args.push('-u', unit);
+      if (validatedInput.subaction === 'journal' && validatedInput.unit) {
+        args.push('-u', validatedInput.unit);
       }
 
       // Add time range filters
-      const since = inp.since as string | undefined;
-      const until = inp.until as string | undefined;
-      if (since) {
-        args.push('--since', since);
+      if (validatedInput.subaction === 'journal' && validatedInput.since) {
+        args.push('--since', validatedInput.since);
       }
-      if (until) {
-        args.push('--until', until);
+      if (validatedInput.subaction === 'journal' && validatedInput.until) {
+        args.push('--until', validatedInput.until);
       }
 
       // Add priority filter
-      const priority = inp.priority as string | undefined;
-      if (priority) {
-        args.push('-p', priority);
+      if (validatedInput.subaction === 'journal' && validatedInput.priority) {
+        args.push('-p', validatedInput.priority);
       }
 
       const output = await sshService.executeSSHCommand(hostConfig, 'journalctl', args);
@@ -127,10 +102,10 @@ export async function handleLogsAction(
           host: hostConfig.name,
           subaction: 'journal',
           lines,
-          unit,
-          since,
-          until,
-          priority,
+          unit: validatedInput.subaction === 'journal' ? validatedInput.unit : undefined,
+          since: validatedInput.subaction === 'journal' ? validatedInput.since : undefined,
+          until: validatedInput.subaction === 'journal' ? validatedInput.until : undefined,
+          priority: validatedInput.subaction === 'journal' ? validatedInput.priority : undefined,
           output: output.trim()
         }, null, 2);
       }
@@ -141,8 +116,7 @@ export async function handleLogsAction(
     case 'dmesg': {
       let output: string;
       if (grep) {
-        // SECURITY: Validate grep pattern before use
-        validateGrepPattern(grep);
+        // SECURITY: grep pattern validated by shellGrepSchema
         // Use dmesg piped to grep with tail
         output = await sshService.executeSSHCommand(
           hostConfig,
@@ -180,8 +154,7 @@ export async function handleLogsAction(
 
       let output: string;
       if (grep) {
-        // SECURITY: Validate grep pattern before use
-        validateGrepPattern(grep);
+        // SECURITY: grep pattern validated by shellGrepSchema
         // Use tail piped to grep
         output = await sshService.executeSSHCommand(
           hostConfig,
@@ -205,8 +178,10 @@ export async function handleLogsAction(
       return output.trim();
     }
 
-    default:
+    default: {
       // This should never be reached due to Zod validation
-      throw new Error(`Unknown subaction: ${inp.subaction}`);
+      const exhaustiveCheck: never = validatedInput;
+      throw new Error(`Unknown subaction: ${(exhaustiveCheck as { subaction: string }).subaction}`);
+    }
   }
 }

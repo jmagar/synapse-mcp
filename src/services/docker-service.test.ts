@@ -159,8 +159,63 @@ describe("DockerService", () => {
       name: "plex_data",
       driver: "local",
       scope: "local",
-      hostName: "host1"
+      hostName: "host1",
+      createdAt: "2024-01-01T00:00:00Z",
+      labels: { app: "plex" }
     });
+  });
+
+  it("handles volumes with missing or invalid CreatedAt", async () => {
+    const host: HostConfig = {
+      name: "host1",
+      host: "server1",
+      protocol: "http",
+      dockerSocketPath: "/var/run/docker.sock"
+    };
+
+    const mockClient = {
+      listVolumes: vi.fn().mockResolvedValue({
+        Volumes: [
+          {
+            Name: "volume_no_created",
+            Driver: "local",
+            Scope: "local",
+            Mountpoint: "/var/lib/docker/volumes/volume_no_created/_data"
+            // CreatedAt missing
+          },
+          {
+            Name: "volume_number_created",
+            Driver: "local",
+            Scope: "local",
+            Mountpoint: "/var/lib/docker/volumes/volume_number_created/_data",
+            CreatedAt: 12345 // Invalid type (number instead of string)
+          },
+          {
+            Name: "volume_valid_created",
+            Driver: "local",
+            Scope: "local",
+            Mountpoint: "/var/lib/docker/volumes/volume_valid_created/_data",
+            CreatedAt: "2024-01-15T12:00:00Z"
+          }
+        ]
+      })
+    } as unknown as Docker;
+
+    mockFactory = vi.fn(() => mockClient);
+    service = new DockerService(mockFactory);
+
+    const result = await service.listVolumes([host]);
+
+    expect(result).toHaveLength(3);
+
+    // Volume without CreatedAt should have undefined
+    expect(result[0].createdAt).toBeUndefined();
+
+    // Volume with non-string CreatedAt should have undefined
+    expect(result[1].createdAt).toBeUndefined();
+
+    // Volume with valid CreatedAt should preserve it
+    expect(result[2].createdAt).toBe("2024-01-15T12:00:00Z");
   });
 
   describe("execContainer", () => {

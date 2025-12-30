@@ -43,7 +43,39 @@ describe('Scout Logs Schema', () => {
       subaction: 'syslog',
       host: 'tootie',
       grep: "oops'; rm -rf /"
-    })).toThrow();
+    })).toThrow(/shell metacharacters/i);
+  });
+
+  it('should reject grep patterns that are too long', () => {
+    const longPattern = 'a'.repeat(201);
+    expect(() => scoutLogsSchema.parse({
+      action: 'logs',
+      subaction: 'syslog',
+      host: 'tootie',
+      grep: longPattern
+    })).toThrow(/too big|maximum.*200/i);
+  });
+
+  it('should reject various shell injection attempts', () => {
+    const maliciousPatterns = [
+      '`whoami`',
+      '$(cat /etc/passwd)',
+      'foo; rm -rf /',
+      'foo && malicious',
+      'foo | grep secret',
+      'foo > /tmp/output',
+      'test"injection',
+      'test[injection]'
+    ];
+
+    for (const pattern of maliciousPatterns) {
+      expect(() => scoutLogsSchema.parse({
+        action: 'logs',
+        subaction: 'dmesg',
+        host: 'tootie',
+        grep: pattern
+      })).toThrow(/shell metacharacters/i);
+    }
   });
 
   it('should validate auth logs', () => {

@@ -16,7 +16,8 @@ vi.mock('./scout.js', () => ({
 }));
 
 vi.mock('../utils/errors.js', () => ({
-  logError: vi.fn()
+  logError: vi.fn(),
+  sanitizeParams: vi.fn((params) => params) // Pass-through mock for testing
 }));
 
 describe('Tool Registration', () => {

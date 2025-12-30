@@ -27,6 +27,46 @@ import {
 import { logError } from '../../utils/errors.js';
 
 /**
+ * Type guards for discriminated union narrowing
+ * These replace unsafe `as` casts with proper type narrowing
+ */
+function isContainerListInput(input: ContainerActionInput): input is ContainerListInput {
+  return input.subaction === 'list';
+}
+
+function isContainerLogsInput(input: ContainerActionInput): input is ContainerLogsInput {
+  return input.subaction === 'logs';
+}
+
+function isContainerStatsInput(input: ContainerActionInput): input is ContainerStatsInput {
+  return input.subaction === 'stats';
+}
+
+function isContainerInspectInput(input: ContainerActionInput): input is ContainerInspectInput {
+  return input.subaction === 'inspect';
+}
+
+function isContainerSearchInput(input: ContainerActionInput): input is ContainerSearchInput {
+  return input.subaction === 'search';
+}
+
+function isContainerPullInput(input: ContainerActionInput): input is ContainerPullInput {
+  return input.subaction === 'pull';
+}
+
+function isContainerRecreateInput(input: ContainerActionInput): input is ContainerRecreateInput {
+  return input.subaction === 'recreate';
+}
+
+function isContainerExecInput(input: ContainerActionInput): input is ContainerExecInput {
+  return input.subaction === 'exec';
+}
+
+function isContainerTopInput(input: ContainerActionInput): input is ContainerTopInput {
+  return input.subaction === 'top';
+}
+
+/**
  * Type guard to check if input has container_id field
  */
 function hasContainerId(input: ContainerActionInput): input is ContainerActionInput & { container_id: string } {
@@ -57,12 +97,14 @@ export async function handleContainerAction(
   const hosts = loadHostConfigs();
   const format = input.response_format ?? ResponseFormat.MARKDOWN;
 
-  // Cast to the container action union type - validated by Zod
+  // Type assertion validated by Zod - input is guaranteed to be ContainerActionInput
   const inp = input as ContainerActionInput;
 
   switch (inp.subaction) {
     case 'list': {
-      const listInput = inp as ContainerListInput;
+      if (!isContainerListInput(inp)) {
+        throw new Error('Type guard failed for list subaction');
+      }
       // Map schema state values to service state values
       // Schema uses 'exited'/'restarting' but service uses 'stopped'
       const stateMap: Record<string, 'running' | 'stopped' | 'paused' | undefined> = {
@@ -73,10 +115,10 @@ export async function handleContainerAction(
         restarting: 'running' // restarting containers are treated as running
       };
       const containers = await dockerService.listContainers(hosts, {
-        state: stateMap[listInput.state] ?? undefined,
-        nameFilter: listInput.name_filter,
-        imageFilter: listInput.image_filter,
-        labelFilter: listInput.label_filter
+        state: stateMap[inp.state] ?? undefined,
+        nameFilter: inp.name_filter,
+        imageFilter: inp.image_filter,
+        labelFilter: inp.label_filter
       });
 
       if (format === ResponseFormat.JSON) {
@@ -84,8 +126,8 @@ export async function handleContainerAction(
       }
 
       // Apply pagination
-      const offset = listInput.offset ?? 0;
-      const limit = listInput.limit ?? 50;
+      const offset = inp.offset ?? 0;
+      const limit = inp.limit ?? 50;
       const total = containers.length;
       const paginatedContainers = containers.slice(offset, offset + limit);
       const hasMore = offset + limit < total;
@@ -122,39 +164,43 @@ export async function handleContainerAction(
     }
 
     case 'logs': {
-      const logsInput = inp as ContainerLogsInput;
-      const found = await dockerService.findContainerHost(logsInput.container_id, hosts);
+      if (!isContainerLogsInput(inp)) {
+        throw new Error('Type guard failed for logs subaction');
+      }
+      const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
-        throw new Error(`Container not found: ${logsInput.container_id}`);
+        throw new Error(`Container not found: ${inp.container_id}`);
       }
 
-      const logs = await dockerService.getContainerLogs(logsInput.container_id, found.host, {
-        lines: logsInput.lines,
-        since: logsInput.since,
-        until: logsInput.until,
-        stream: logsInput.stream === 'both' ? 'all' : logsInput.stream
+      const logs = await dockerService.getContainerLogs(inp.container_id, found.host, {
+        lines: inp.lines,
+        since: inp.since,
+        until: inp.until,
+        stream: inp.stream === 'both' ? 'all' : inp.stream
       });
 
       // Apply grep filter if specified
-      const filteredLogs = logsInput.grep
-        ? logs.filter((log) => log.message.includes(logsInput.grep as string))
+      const filteredLogs = inp.grep
+        ? logs.filter((log) => log.message.includes(inp.grep as string))
         : logs;
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify(filteredLogs, null, 2);
       }
-      return formatLogsMarkdown(filteredLogs, logsInput.container_id, found.host.name);
+      return formatLogsMarkdown(filteredLogs, inp.container_id, found.host.name);
     }
 
     case 'stats': {
-      const statsInput = inp as ContainerStatsInput;
+      if (!isContainerStatsInput(inp)) {
+        throw new Error('Type guard failed for stats subaction');
+      }
       // If container_id is provided, get stats for specific container
-      if (statsInput.container_id) {
-        const found = await dockerService.findContainerHost(statsInput.container_id, hosts);
+      if (inp.container_id) {
+        const found = await dockerService.findContainerHost(inp.container_id, hosts);
         if (!found) {
-          throw new Error(`Container not found: ${statsInput.container_id}`);
+          throw new Error(`Container not found: ${inp.container_id}`);
         }
-        const stats = await dockerService.getContainerStats(statsInput.container_id, found.host);
+        const stats = await dockerService.getContainerStats(inp.container_id, found.host);
 
         if (format === ResponseFormat.JSON) {
           return JSON.stringify(stats, null, 2);
@@ -189,19 +235,21 @@ export async function handleContainerAction(
     }
 
     case 'inspect': {
-      const inspectInput = inp as ContainerInspectInput;
-      const found = await dockerService.findContainerHost(inspectInput.container_id, hosts);
-      if (!found) {
-        throw new Error(`Container not found: ${inspectInput.container_id}`);
+      if (!isContainerInspectInput(inp)) {
+        throw new Error('Type guard failed for inspect subaction');
       }
-      const inspection = await dockerService.inspectContainer(inspectInput.container_id, found.host);
+      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      if (!found) {
+        throw new Error(`Container not found: ${inp.container_id}`);
+      }
+      const inspection = await dockerService.inspectContainer(inp.container_id, found.host);
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify(inspection, null, 2);
       }
 
       // If summary mode, use summary formatter
-      if (inspectInput.summary) {
+      if (inp.summary) {
         // Type for port bindings from Docker API
         type PortBinding = { HostIp: string; HostPort: string } | undefined;
         type PortBindings = PortBinding[] | null;
@@ -215,9 +263,12 @@ export async function handleContainerAction(
           started: inspection.State.StartedAt,
           restartCount: inspection.RestartCount,
           ports: Object.entries(inspection.NetworkSettings.Ports || {})
-            .filter(([, bindings]) => bindings && bindings.length > 0)
-            .map(([containerPort, bindings]: [string, PortBindings]) => {
-              const binding = bindings?.[0];
+            .filter((entry): entry is [string, PortBinding[]] => {
+              const bindings = entry[1];
+              return Array.isArray(bindings) && bindings.length > 0;
+            })
+            .map(([containerPort, bindings]) => {
+              const binding = bindings[0];
               return binding
                 ? `${binding.HostIp || '0.0.0.0'}:${binding.HostPort} → ${containerPort}`
                 : containerPort;
@@ -240,9 +291,11 @@ export async function handleContainerAction(
     }
 
     case 'search': {
-      const searchInput = inp as ContainerSearchInput;
+      if (!isContainerSearchInput(inp)) {
+        throw new Error('Type guard failed for search subaction');
+      }
       const containers = await dockerService.listContainers(hosts, {
-        nameFilter: searchInput.query
+        nameFilter: inp.query
       });
 
       if (format === ResponseFormat.JSON) {
@@ -250,26 +303,28 @@ export async function handleContainerAction(
       }
 
       // Apply pagination
-      const offset = searchInput.offset ?? 0;
-      const limit = searchInput.limit ?? 50;
+      const offset = inp.offset ?? 0;
+      const limit = inp.limit ?? 50;
       const total = containers.length;
       const paginatedContainers = containers.slice(offset, offset + limit);
 
-      return formatSearchResultsMarkdown(paginatedContainers, searchInput.query, total);
+      return formatSearchResultsMarkdown(paginatedContainers, inp.query, total);
     }
 
     case 'pull': {
-      const pullInput = inp as ContainerPullInput;
-      const found = await dockerService.findContainerHost(pullInput.container_id, hosts);
-      if (!found) {
-        throw new Error(`Container not found: ${pullInput.container_id}`);
+      if (!isContainerPullInput(inp)) {
+        throw new Error('Type guard failed for pull subaction');
       }
-      const inputImage = resolveNonEmptyString(pullInput.image);
+      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      if (!found) {
+        throw new Error(`Container not found: ${inp.container_id}`);
+      }
+      const inputImage = resolveNonEmptyString(inp.image);
       let image = resolveNonEmptyString(found.container?.Image);
 
       if (!image) {
         try {
-          const inspection = await dockerService.inspectContainer(pullInput.container_id, found.host);
+          const inspection = await dockerService.inspectContainer(inp.container_id, found.host);
           image = resolveNonEmptyString(inspection?.Config?.Image);
         } catch (error) {
           if (!inputImage) {
@@ -281,41 +336,45 @@ export async function handleContainerAction(
       image = image ?? inputImage;
 
       if (!image) {
-        throw new Error(`Cannot determine image for container: ${pullInput.container_id}`);
+        throw new Error(`Cannot determine image for container: ${inp.container_id}`);
       }
       const result = await dockerService.pullImage(image, found.host);
       return `Pulled image ${image}: ${result.status}`;
     }
 
     case 'recreate': {
-      const recreateInput = inp as ContainerRecreateInput;
-      const found = await dockerService.findContainerHost(recreateInput.container_id, hosts);
-      if (!found) {
-        throw new Error(`Container not found: ${recreateInput.container_id}`);
+      if (!isContainerRecreateInput(inp)) {
+        throw new Error('Type guard failed for recreate subaction');
       }
-      const result = await dockerService.recreateContainer(recreateInput.container_id, found.host, {
-        pull: recreateInput.pull
+      const found = await dockerService.findContainerHost(inp.container_id, hosts);
+      if (!found) {
+        throw new Error(`Container not found: ${inp.container_id}`);
+      }
+      const result = await dockerService.recreateContainer(inp.container_id, found.host, {
+        pull: inp.pull
       });
       return `Container recreated: ${result.containerId} (${result.status})`;
     }
 
     case 'exec': {
-      const execInput = inp as ContainerExecInput;
-      const found = await dockerService.findContainerHost(execInput.container_id, hosts);
+      if (!isContainerExecInput(inp)) {
+        throw new Error('Type guard failed for exec subaction');
+      }
+      const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
-        throw new Error(`Container not found: ${execInput.container_id}`);
+        throw new Error(`Container not found: ${inp.container_id}`);
       }
 
-      const result = await dockerService.execContainer(execInput.container_id, found.host, {
-        command: execInput.command,
-        user: execInput.user,
-        workdir: execInput.workdir
+      const result = await dockerService.execContainer(inp.container_id, found.host, {
+        command: inp.command,
+        user: inp.user,
+        workdir: inp.workdir
       });
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify({
           host: found.host.name,
-          container: execInput.container_id,
+          container: inp.container_id,
           ...result
         }, null, 2);
       }
@@ -324,25 +383,27 @@ export async function handleContainerAction(
         ? `\n\n**stderr**\n\n\`\`\`\n${result.stderr}\n\`\`\``
         : '';
 
-      return `## Exec - ${execInput.container_id} (${found.host.name})\n\n` +
+      return `## Exec - ${inp.container_id} (${found.host.name})\n\n` +
         `**exitCode:** ${result.exitCode}\n\n` +
         `**stdout**\n\n\`\`\`\n${result.stdout}\n\`\`\`` +
         stderrBlock;
     }
 
     case 'top': {
-      const topInput = inp as ContainerTopInput;
-      const found = await dockerService.findContainerHost(topInput.container_id, hosts);
+      if (!isContainerTopInput(inp)) {
+        throw new Error('Type guard failed for top subaction');
+      }
+      const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
-        throw new Error(`Container not found: ${topInput.container_id}`);
+        throw new Error(`Container not found: ${inp.container_id}`);
       }
 
-      const result = await dockerService.getContainerProcesses(topInput.container_id, found.host);
+      const result = await dockerService.getContainerProcesses(inp.container_id, found.host);
 
       if (format === ResponseFormat.JSON) {
         return JSON.stringify({
           host: found.host.name,
-          container: topInput.container_id,
+          container: inp.container_id,
           ...result
         }, null, 2);
       }
@@ -351,7 +412,7 @@ export async function handleContainerAction(
       const rows = result.processes.map((row) => row.join(' '));
       const output = [header, ...rows].join('\n').trim();
 
-      return `## Processes - ${topInput.container_id} (${found.host.name})\n\n\`\`\`\n${output}\n\`\`\``;
+      return `## Processes - ${inp.container_id} (${found.host.name})\n\n\`\`\`\n${output}\n\`\`\``;
     }
 
     default: {

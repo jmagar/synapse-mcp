@@ -166,6 +166,31 @@ describe("Docker Schemas", () => {
         dockerfile: "/app/../Dockerfile"
       })).toThrow();
     });
+
+    it("should accept paths with current directory references", () => {
+      const result = dockerBuildSchema.parse({
+        action: "docker",
+        subaction: "build",
+        host: "tootie",
+        context: "/path/./app",
+        tag: "test:v1",
+        dockerfile: "/path/./app/Dockerfile"
+      });
+      expect(result.context).toBe("/path/./app");
+      expect(result.dockerfile).toBe("/path/./app/Dockerfile");
+    });
+
+    it("should accept paths with dots in filenames", () => {
+      const result = dockerBuildSchema.parse({
+        action: "docker",
+        subaction: "build",
+        host: "tootie",
+        context: "/app",
+        tag: "test:v1",
+        dockerfile: "/app/Dockerfile.prod"
+      });
+      expect(result.dockerfile).toBe("/app/Dockerfile.prod");
+    });
   });
 
   describe("dockerRmiSchema", () => {

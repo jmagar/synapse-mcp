@@ -10,7 +10,9 @@ import {
   formatScoutExecMarkdown,
   formatScoutFindMarkdown,
   formatScoutTransferMarkdown,
-  formatScoutDiffMarkdown
+  formatScoutDiffMarkdown,
+  formatNetworksMarkdown,
+  formatVolumesMarkdown
 } from "./index.js";
 
 describe("truncateIfNeeded", () => {
@@ -214,6 +216,142 @@ describe("scout formatters", () => {
       expect(result).toContain("tootie:/etc/hosts");
       expect(result).toContain("shart:/etc/hosts");
       expect(result).toContain("---");
+    });
+  });
+
+  describe("formatNetworksMarkdown", () => {
+    it("should return 'No networks found' for empty array", () => {
+      const result = formatNetworksMarkdown([], 0, 0, 50);
+      expect(result).toContain("No networks found");
+    });
+
+    it("should format networks list grouped by host", () => {
+      const networks = [
+        {
+          id: "net1",
+          name: "bridge",
+          driver: "bridge",
+          scope: "local",
+          hostName: "tootie"
+        },
+        {
+          id: "net2",
+          name: "host",
+          driver: "host",
+          scope: "local",
+          hostName: "tootie"
+        },
+        {
+          id: "net3",
+          name: "overlay",
+          driver: "overlay",
+          scope: "swarm",
+          hostName: "shart"
+        }
+      ];
+
+      const result = formatNetworksMarkdown(networks, 3, 0, 50);
+      expect(result).toContain("## Docker Networks");
+      expect(result).toContain("### tootie");
+      expect(result).toContain("### shart");
+      expect(result).toContain("bridge (bridge, local)");
+      expect(result).toContain("overlay (overlay, swarm)");
+    });
+
+    it("should respect pagination", () => {
+      const networks = [
+        {
+          id: "net1",
+          name: "net1",
+          driver: "bridge",
+          scope: "local",
+          hostName: "host1"
+        },
+        {
+          id: "net2",
+          name: "net2",
+          driver: "bridge",
+          scope: "local",
+          hostName: "host1"
+        },
+        {
+          id: "net3",
+          name: "net3",
+          driver: "bridge",
+          scope: "local",
+          hostName: "host1"
+        }
+      ];
+
+      const result = formatNetworksMarkdown(networks, 3, 1, 1);
+      expect(result).toContain("net2");
+      expect(result).not.toContain("net1");
+      expect(result).not.toContain("net3");
+    });
+  });
+
+  describe("formatVolumesMarkdown", () => {
+    it("should return 'No volumes found' for empty array", () => {
+      const result = formatVolumesMarkdown([], 0, 0, 50);
+      expect(result).toContain("No volumes found");
+    });
+
+    it("should format volumes list grouped by host", () => {
+      const volumes = [
+        {
+          name: "vol1",
+          driver: "local",
+          scope: "local",
+          hostName: "tootie"
+        },
+        {
+          name: "vol2",
+          driver: "local",
+          scope: "local",
+          hostName: "tootie"
+        },
+        {
+          name: "vol3",
+          driver: "nfs",
+          scope: "global",
+          hostName: "shart"
+        }
+      ];
+
+      const result = formatVolumesMarkdown(volumes, 3, 0, 50);
+      expect(result).toContain("## Docker Volumes");
+      expect(result).toContain("### tootie");
+      expect(result).toContain("### shart");
+      expect(result).toContain("vol1 (local, local)");
+      expect(result).toContain("vol3 (nfs, global)");
+    });
+
+    it("should respect pagination", () => {
+      const volumes = [
+        {
+          name: "vol1",
+          driver: "local",
+          scope: "local",
+          hostName: "host1"
+        },
+        {
+          name: "vol2",
+          driver: "local",
+          scope: "local",
+          hostName: "host1"
+        },
+        {
+          name: "vol3",
+          driver: "local",
+          scope: "local",
+          hostName: "host1"
+        }
+      ];
+
+      const result = formatVolumesMarkdown(volumes, 3, 1, 1);
+      expect(result).toContain("vol2");
+      expect(result).not.toContain("vol1");
+      expect(result).not.toContain("vol3");
     });
   });
 });

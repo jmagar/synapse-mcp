@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { HostOperationError, SSHCommandError, ComposeOperationError, logError } from "./errors.js";
+import { HostOperationError, SSHCommandError, ComposeOperationError, logError, sanitizeParams } from "./errors.js";
 
 describe("HostOperationError", () => {
   it("should chain error causes and preserve stack", () => {
@@ -121,5 +121,89 @@ describe("logError", () => {
     logError(error);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(error.stack || ""));
+  });
+});
+
+describe("sanitizeParams", () => {
+  it("should preserve safe fields (action, subaction)", () => {
+    const params = {
+      action: "container",
+      subaction: "list",
+      host: "docker-01"
+    };
+
+    const result = sanitizeParams(params);
+
+    expect(result).toEqual({
+      action: "container",
+      subaction: "list",
+      host: "docker-01"
+    });
+  });
+
+  it("should redact sensitive fields (path, command, grep, filter)", () => {
+    const params = {
+      action: "scout",
+      subaction: "exec",
+      host: "web-01",
+      command: "cat /etc/passwd",
+      path: "/sensitive/config.yaml",
+      grep: "password",
+      label_filter: "env=production"
+    };
+
+    const result = sanitizeParams(params);
+
+    expect(result).toEqual({
+      action: "scout",
+      subaction: "exec",
+      host: "web-01",
+      command: "[REDACTED]",
+      path: "[REDACTED]",
+      grep: "[REDACTED]",
+      label_filter: "[REDACTED]"
+    });
+  });
+
+  it("should handle params without sensitive fields", () => {
+    const params = {
+      action: "docker",
+      subaction: "info",
+      host: "docker-01",
+      response_format: "json"
+    };
+
+    const result = sanitizeParams(params);
+
+    expect(result).toEqual({
+      action: "docker",
+      subaction: "info",
+      host: "docker-01",
+      response_format: "json"
+    });
+  });
+
+  it("should handle non-object params", () => {
+    expect(sanitizeParams("string")).toBe("string");
+    expect(sanitizeParams(123)).toBe(123);
+    expect(sanitizeParams(null)).toBe(null);
+    expect(sanitizeParams(undefined)).toBe(undefined);
+  });
+
+  it("should handle nested objects by redacting entire value", () => {
+    const params = {
+      action: "test",
+      nested: {
+        sensitive: "data",
+        path: "/secret"
+      }
+    };
+
+    const result = sanitizeParams(params);
+
+    expect(result).toEqual({
+      action: "test",
+      nested: "[REDACTED]"
+    });
   });
 });
