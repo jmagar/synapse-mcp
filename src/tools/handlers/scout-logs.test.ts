@@ -198,6 +198,27 @@ describe('Scout Logs Handler', () => {
       expect(result).toContain('dockerd[123]: Docker daemon started');
       expect(result).not.toContain('systemd[1]: Starting Docker');
     });
+
+    it('should include grep in JSON response', async () => {
+      (mockSSHService.executeSSHCommand as ReturnType<typeof vi.fn>).mockResolvedValue(
+        'Dec 15 10:00:00 tootie dockerd[123]: Started containerd\n' +
+        'Dec 15 10:00:05 tootie systemd[1]: Starting Docker...\n'
+      );
+
+      const result = await handleLogsAction({
+        action: 'logs',
+        subaction: 'journal',
+        host: 'tootie',
+        lines: 100,
+        grep: 'dockerd',
+        response_format: ResponseFormat.JSON
+      } as unknown as ScoutInput, mockContainer as ServiceContainer);
+
+      const parsed = JSON.parse(result);
+      expect(parsed.grep).toBe('dockerd');
+      expect(parsed.output).toContain('dockerd[123]');
+      expect(parsed.output).not.toContain('systemd[1]');
+    });
   });
 
   describe('dmesg subaction', () => {
