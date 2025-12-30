@@ -167,6 +167,17 @@ it('should extract descriptions from schemas', () => {
   const scoutConfig = scoutCall[1] as { description: string };
   expect(scoutConfig.description).toBe(getSchemaDescription(ScoutSchema));
 });
+
+it('should not use fallback descriptions', () => {
+  // Ensure .describe() was actually added to schemas
+  const fluxDesc = getSchemaDescription(FluxSchema);
+  const scoutDesc = getSchemaDescription(ScoutSchema);
+
+  expect(fluxDesc).not.toBeNull();
+  expect(fluxDesc).not.toBeUndefined();
+  expect(scoutDesc).not.toBeNull();
+  expect(scoutDesc).not.toBeUndefined();
+});
 ```
 
 **Step 2: Run test to verify it fails**
@@ -213,7 +224,45 @@ git commit -m "feat: extract tool descriptions from schemas
 
 ---
 
-## Task 3: Create README Update Script
+## Task 3: Add tsx Dependency
+
+**Files:**
+- Modify: `package.json:71-84`
+
+**Step 1: Write test for tsx availability**
+
+Manual test plan:
+1. Run `pnpm tsx --version`
+2. Verify tsx is available
+
+**Step 2: Install tsx as dev dependency**
+
+Run: `pnpm add -D tsx`
+
+**Step 3: Verify tsx installation**
+
+Run: `pnpm tsx --version`
+Expected: Version number displayed (e.g., "4.x.x")
+
+**Step 4: Test TypeScript script execution**
+
+Run: `pnpm tsx --help`
+Expected: tsx help output displayed
+
+**Step 5: Commit package.json and lockfile**
+
+```bash
+git add package.json pnpm-lock.yaml
+git commit -m "chore: add tsx for TypeScript script execution
+
+- Add tsx as dev dependency
+- Enables running update-readme.ts directly
+- No compilation step needed for scripts"
+```
+
+---
+
+## Task 4: Create README Update Script
 
 **Files:**
 - Create: `scripts/update-readme.ts`
@@ -271,6 +320,13 @@ async function updateReadme(): Promise<void> {
     `#### scout\n\n${scoutDesc}\n`
   );
 
+  // Verify that replacements occurred
+  if (updated === readme) {
+    console.error('⚠️  WARNING: No changes detected in README');
+    console.error('Regex patterns may not match current README structure');
+    process.exit(1);
+  }
+
   // Write updated README
   await writeFile(readmePath, updated, 'utf-8');
   console.log('✅ README.md updated successfully');
@@ -310,7 +366,7 @@ git commit -m "feat: add automated README update script
 
 ---
 
-## Task 4: Integrate Script into Build Process
+## Task 5: Integrate Script into Build Process
 
 **Files:**
 - Modify: `package.json:20-36`
@@ -373,44 +429,6 @@ git commit -m "feat: integrate docs:update into build process
 
 ---
 
-## Task 5: Add tsx Dependency
-
-**Files:**
-- Modify: `package.json:71-84`
-
-**Step 1: Write test for tsx availability**
-
-Manual test plan:
-1. Run `pnpm tsx --version`
-2. Verify tsx is available
-
-**Step 2: Install tsx as dev dependency**
-
-Run: `pnpm add -D tsx`
-
-**Step 3: Verify tsx installation**
-
-Run: `pnpm tsx --version`
-Expected: Version number displayed (e.g., "4.x.x")
-
-**Step 4: Test script execution with tsx**
-
-Run: `pnpm docs:update`
-Expected: Script runs successfully via tsx
-
-**Step 5: Commit package.json and lockfile**
-
-```bash
-git add package.json pnpm-lock.yaml
-git commit -m "chore: add tsx for TypeScript script execution
-
-- Add tsx as dev dependency
-- Enables running update-readme.ts directly
-- No compilation step needed for scripts"
-```
-
----
-
 ## Task 6: Final Verification
 
 **Files:**
@@ -455,9 +473,9 @@ git commit -m "docs: complete schema description automation plan
 Implementation summary:
 - Task 1: ✅ Added .describe() to FluxSchema and ScoutSchema with tests
 - Task 2: ✅ Updated tool registration to extract descriptions from schemas
-- Task 3: ✅ Created automated README update script
-- Task 4: ✅ Integrated script into build process
-- Task 5: ✅ Added tsx dependency for script execution
+- Task 3: ✅ Added tsx dependency for script execution
+- Task 4: ✅ Created automated README update script
+- Task 5: ✅ Integrated script into build process
 - Task 6: ✅ Final verification complete
 
 Results:
