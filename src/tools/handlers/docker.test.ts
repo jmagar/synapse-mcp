@@ -303,6 +303,25 @@ describe('Docker Handler', () => {
         { force: true }
       );
     });
+
+    it('should default force to false when not provided', async () => {
+      (mockDockerService.removeImage as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'Removed' });
+
+      await handleDockerAction({
+        action: 'docker',
+        subaction: 'rmi',
+        action_subaction: 'docker:rmi',
+        host: 'tootie',
+        image: 'nginx:latest'
+        // force intentionally omitted
+      } as unknown as FluxInput, mockContainer as ServiceContainer);
+
+      expect(mockDockerService.removeImage).toHaveBeenCalledWith(
+        'nginx:latest',
+        expect.anything(),
+        { force: false }
+      );
+    });
   });
 
   // NOTE: 'networks' and 'volumes' subactions are NOT in the schema
