@@ -41,6 +41,12 @@ const VALID_HOST_PATTERN = /^[a-zA-Z0-9._-]+$/;
 const DANGEROUS_HOST_CHARS = /[;|$`&<>(){}[\]'"\\!#*?]/;
 
 /**
+ * Shell metacharacters that could enable command injection in SSH arguments
+ * More permissive than DANGEROUS_HOST_CHARS to allow valid argument values
+ */
+const SHELL_METACHARACTERS = /[;&|`$()<>{}[\]\\"\n\r\t]/;
+
+/**
  * Validates hostname format to prevent command injection
  *
  * @param host - Hostname to validate
@@ -57,6 +63,54 @@ export function validateHostFormat(host: string): void {
 
   if (!VALID_HOST_PATTERN.test(host)) {
     throw new HostSecurityError(`Invalid hostname format: ${host.substring(0, 50)}`, host);
+  }
+}
+
+/**
+ * Security error for SSH argument validation
+ */
+export class SSHArgSecurityError extends Error {
+  constructor(
+    message: string,
+    public readonly arg: string,
+    public readonly paramName: string
+  ) {
+    super(message);
+    this.name = "SSHArgSecurityError";
+  }
+}
+
+/**
+ * Validates SSH command argument to prevent command injection
+ *
+ * SECURITY: Prevents command injection by rejecting shell metacharacters.
+ * The SSH service joins args with spaces and executes as shell command,
+ * so an attacker could inject arbitrary commands (e.g., "running; rm -rf /").
+ *
+ * @param arg - Argument value to validate
+ * @param paramName - Name of the parameter (for error messages)
+ * @throws SSHArgSecurityError if arg contains shell metacharacters
+ */
+export function validateSSHArg(arg: string, paramName: string): void {
+  if (!arg || arg.length === 0) {
+    throw new SSHArgSecurityError(`${paramName} cannot be empty`, arg, paramName);
+  }
+
+  if (SHELL_METACHARACTERS.test(arg)) {
+    throw new SSHArgSecurityError(
+      `Invalid character in ${paramName}: shell metacharacters not allowed`,
+      arg.substring(0, 50),
+      paramName
+    );
+  }
+
+  // Additional safety: reject extremely long arguments (DoS prevention)
+  if (arg.length > 500) {
+    throw new SSHArgSecurityError(
+      `${paramName} too long: maximum 500 characters allowed`,
+      arg.substring(0, 50),
+      paramName
+    );
   }
 }
 

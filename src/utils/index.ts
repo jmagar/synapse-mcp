@@ -4,7 +4,9 @@ export {
   HostSecurityError,
   validateHostFormat,
   escapeShellArg,
-  isSystemPath
+  isSystemPath,
+  SSHArgSecurityError,
+  validateSSHArg
 } from "./path-security.js";
 
 export { generateHelp, formatHelpMarkdown, formatHelpJson } from "./help.js";

@@ -4,7 +4,9 @@ import {
   validateHostFormat,
   HostSecurityError,
   escapeShellArg,
-  isSystemPath
+  isSystemPath,
+  validateSSHArg,
+  SSHArgSecurityError
 } from "./path-security.js";
 
 describe("validateSecurePath", () => {
@@ -289,5 +291,121 @@ describe("isSystemPath", () => {
 
   it("returns false for /var/log/*", () => {
     expect(isSystemPath("/var/log/syslog")).toBe(false);
+  });
+});
+
+describe("validateSSHArg", () => {
+  describe("valid SSH arguments", () => {
+    it("allows simple alphanumeric value: running", () => {
+      expect(() => validateSSHArg("running", "state")).not.toThrow();
+    });
+
+    it("allows value with hyphen: list-units", () => {
+      expect(() => validateSSHArg("list-units", "command")).not.toThrow();
+    });
+
+    it("allows value with underscore: my_service", () => {
+      expect(() => validateSSHArg("my_service", "service")).not.toThrow();
+    });
+
+    it("allows value with dot: nginx.service", () => {
+      expect(() => validateSSHArg("nginx.service", "service")).not.toThrow();
+    });
+
+    it("allows value with equals: --state=running", () => {
+      expect(() => validateSSHArg("--state=running", "arg")).not.toThrow();
+    });
+
+    it("allows spaces in arguments", () => {
+      expect(() => validateSSHArg("some value", "arg")).not.toThrow();
+    });
+  });
+
+  describe("command injection attacks", () => {
+    it("throws on semicolon: running; rm -rf /", () => {
+      expect(() => validateSSHArg("running; rm -rf /", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on pipe: running | cat /etc/passwd", () => {
+      expect(() => validateSSHArg("running | cat /etc/passwd", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on ampersand: running & rm -rf /", () => {
+      expect(() => validateSSHArg("running & rm -rf /", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on backtick: running`id`", () => {
+      expect(() => validateSSHArg("running`id`", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on dollar subshell: running$(whoami)", () => {
+      expect(() => validateSSHArg("running$(whoami)", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on parentheses: (rm -rf /)", () => {
+      expect(() => validateSSHArg("(rm -rf /)", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on angle brackets: <script>", () => {
+      expect(() => validateSSHArg("<script>", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on curly braces: {cmd}", () => {
+      expect(() => validateSSHArg("{cmd}", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on backslash: running\\ncmd", () => {
+      expect(() => validateSSHArg("running\\ncmd", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on double quotes: running\"cmd", () => {
+      expect(() => validateSSHArg('running"cmd', "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on newline character", () => {
+      expect(() => validateSSHArg("running\nrm -rf /", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on tab character", () => {
+      expect(() => validateSSHArg("running\trm", "state")).toThrow(SSHArgSecurityError);
+    });
+  });
+
+  describe("edge cases", () => {
+    it("throws on empty string", () => {
+      expect(() => validateSSHArg("", "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("throws on extremely long argument (DoS prevention)", () => {
+      const longArg = "a".repeat(501);
+      expect(() => validateSSHArg(longArg, "state")).toThrow(SSHArgSecurityError);
+    });
+
+    it("allows maximum length argument (500 chars)", () => {
+      const maxArg = "a".repeat(500);
+      expect(() => validateSSHArg(maxArg, "state")).not.toThrow();
+    });
+  });
+
+  describe("error messages", () => {
+    it("includes parameter name in error message", () => {
+      try {
+        validateSSHArg("running; rm", "state");
+        expect.fail("Should have thrown");
+      } catch (error) {
+        expect(error).toBeInstanceOf(SSHArgSecurityError);
+        expect((error as SSHArgSecurityError).message).toContain("state");
+      }
+    });
+
+    it("sets paramName property on error", () => {
+      try {
+        validateSSHArg("running; rm", "myParam");
+        expect.fail("Should have thrown");
+      } catch (error) {
+        expect(error).toBeInstanceOf(SSHArgSecurityError);
+        expect((error as SSHArgSecurityError).paramName).toBe("myParam");
+      }
+    });
   });
 });

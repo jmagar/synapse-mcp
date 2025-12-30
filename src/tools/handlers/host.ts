@@ -4,6 +4,7 @@ import type { FluxInput } from '../../schemas/flux/index.js';
 import { loadHostConfigs } from '../../services/docker.js';
 import { ResponseFormat } from '../../types.js';
 import { formatHostStatusMarkdown, formatHostResourcesMarkdown } from '../../formatters/index.js';
+import { validateSSHArg } from '../../utils/index.js';
 
 /**
  * Handle all host subactions
@@ -148,6 +149,16 @@ export async function handleHostAction(
 
       const state = inp.state as string | undefined;
       const service = inp.service as string | undefined;
+
+      // SECURITY: Validate user-provided parameters to prevent command injection
+      // The SSH service joins args with spaces and executes as shell command,
+      // so we must reject shell metacharacters like ; | & ` $ etc.
+      if (state && state !== 'all') {
+        validateSSHArg(state, 'state');
+      }
+      if (service) {
+        validateSSHArg(service, 'service');
+      }
 
       // Build systemctl command based on options
       const args = ['list-units', '--type=service', '--no-pager'];
