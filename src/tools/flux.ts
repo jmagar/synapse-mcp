@@ -2,6 +2,7 @@
 import { FluxSchema, type FluxInput } from '../schemas/flux/index.js';
 import { generateHelp, formatHelpMarkdown, formatHelpJson } from '../utils/help.js';
 import type { ServiceContainer } from '../services/container.js';
+import { handleContainerAction } from './handlers/container.js';
 
 interface HelpInput {
   action: 'help';
@@ -52,18 +53,6 @@ export async function handleFluxTool(
       // Zod validation should prevent reaching here
       throw new Error(`Unknown action: ${(validated as { action: string }).action}`);
   }
-}
-
-/**
- * Placeholder handler for container actions
- * Will be implemented in Task 16
- */
-function handleContainerAction(input: FluxInput, _container: ServiceContainer): never {
-  // Type guard to ensure we have container action
-  if (input.action !== 'container') {
-    throw new Error(`Invalid action for container handler: ${input.action}`);
-  }
-  throw new Error(`Handler not implemented: container:${input.subaction}`);
 }
 
 /**
