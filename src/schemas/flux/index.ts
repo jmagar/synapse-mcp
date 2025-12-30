@@ -164,7 +164,7 @@ export const FLUX_SUBACTION_COUNT = allSchemas.length;
 export const FluxSchema = z.preprocess(
   preprocessWithDiscriminator,
   z.discriminatedUnion("action_subaction", allSchemas)
-);
+).describe('Docker infrastructure management - container, compose, docker, and host operations');
 
 export type FluxInput = z.infer<typeof FluxSchema>;
 

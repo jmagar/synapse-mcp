@@ -45,7 +45,7 @@ export const ScoutSchema = z.union([
   // Nested discriminators (2) - these are already discriminated unions
   scoutZfsSchema,
   scoutLogsSchema
-]);
+]).describe('SSH remote operations - file, process, and system inspection');
 
 export type ScoutInput = z.infer<typeof ScoutSchema>;
 

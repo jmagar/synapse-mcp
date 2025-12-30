@@ -3,6 +3,13 @@ import { describe, it, expect } from 'vitest';
 import { FluxSchema, FLUX_SUBACTION_COUNT } from './index.js';
 
 describe('FluxSchema', () => {
+  it('should have description for Docker infrastructure management', () => {
+    const description = FluxSchema.description;
+    expect(description).toBe(
+      'Docker infrastructure management - container, compose, docker, and host operations'
+    );
+  });
+
   it('should validate container:list', () => {
     const result = FluxSchema.parse({
       action: 'container',

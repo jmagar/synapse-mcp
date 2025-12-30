@@ -3,6 +3,13 @@ import { describe, it, expect } from 'vitest';
 import { ScoutSchema } from './index.js';
 
 describe('ScoutSchema', () => {
+  it('should have description for SSH remote operations', () => {
+    const description = ScoutSchema.description;
+    expect(description).toBe(
+      'SSH remote operations - file, process, and system inspection'
+    );
+  });
+
   it('should validate nodes action', () => {
     const result = ScoutSchema.parse({ action: 'nodes' });
     expect(result.action).toBe('nodes');
