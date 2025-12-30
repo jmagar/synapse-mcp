@@ -23,7 +23,7 @@ export function registerTools(server: McpServer, container?: ServiceContainer): 
       inputSchema: FluxSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: false,
         openWorldHint: true
       }
