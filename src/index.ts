@@ -92,8 +92,8 @@ async function runHTTP(): Promise<void> {
     await transport.handleRequest(req, res, req.body);
   });
 
-  const port = parseInt(process.env.HOMELAB_PORT || "3000", 10);
-  const host = process.env.HOMELAB_HOST || "127.0.0.1";
+  const port = parseInt(process.env.SYNAPSE_PORT || "3000", 10);
+  const host = process.env.SYNAPSE_HOST || "127.0.0.1";
 
   app.listen(port, host, () => {
     console.error(`${SERVER_NAME} v${SERVER_VERSION} running on http://${host}:${port}/mcp`);
@@ -119,7 +119,7 @@ OPTIONS:
 
 CONFIGURATION:
   Create a config file at one of these locations (checked in order):
-    1. Path specified by HOMELAB_CONFIG_FILE env var
+    1. Path specified by SYNAPSE_CONFIG_FILE env var
     2. ./homelab.config.json (current directory)
     3. ~/.config/homelab-mcp/config.json
     4. ~/.homelab-mcp.json
@@ -134,10 +134,10 @@ CONFIGURATION:
   }
 
 ENVIRONMENT VARIABLES:
-  HOMELAB_CONFIG_FILE     Path to config file (optional, overrides default paths)
-  HOMELAB_HOSTS_CONFIG    JSON config as env var (fallback if no config file)
-  HOMELAB_PORT            HTTP server port (default: 3000)
-  HOMELAB_HOST            HTTP server bind address (default: 127.0.0.1)
+  SYNAPSE_CONFIG_FILE     Path to config file (optional, overrides default paths)
+  SYNAPSE_HOSTS_CONFIG    JSON config as env var (fallback if no config file)
+  SYNAPSE_PORT            HTTP server port (default: 3000)
+  SYNAPSE_HOST            HTTP server bind address (default: 127.0.0.1)
 
 CLAUDE CODE CONFIG (~/.claude/claude_code_config.json):
   {
@@ -146,7 +146,7 @@ CLAUDE CODE CONFIG (~/.claude/claude_code_config.json):
         "command": "node",
         "args": ["/path/to/homelab-mcp-server/dist/index.js"],
         "env": {
-          "HOMELAB_CONFIG_FILE": "/path/to/your/homelab.config.json"
+          "SYNAPSE_CONFIG_FILE": "/path/to/your/homelab.config.json"
         }
       }
     }

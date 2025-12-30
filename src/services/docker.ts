@@ -1127,10 +1127,10 @@ export class DockerService implements IDockerService {
  * Config file search paths (in order of priority)
  */
 const CONFIG_PATHS = [
-  process.env.HOMELAB_CONFIG_FILE, // Explicit path
-  join(process.cwd(), "homelab.config.json"), // Current directory
-  join(homedir(), ".config", "homelab-mcp", "config.json"), // XDG style
-  join(homedir(), ".homelab-mcp.json") // Dotfile style
+  process.env.SYNAPSE_CONFIG_FILE, // Explicit path
+  join(process.cwd(), "synapse.config.json"), // Current directory
+  join(homedir(), ".config", "synapse-mcp", "config.json"), // XDG style
+  join(homedir(), ".synapse-mcp.json") // Dotfile style
 ].filter(Boolean) as string[];
 
 /**
@@ -1205,11 +1205,11 @@ export function loadHostConfigs(): HostConfig[] {
     if (configJson) {
       try {
         hosts = JSON.parse(configJson) as HostConfig[];
-        console.error(`Loaded ${hosts.length} hosts from HOMELAB_HOSTS_CONFIG env`);
+        console.error(`Loaded ${hosts.length} hosts from SYNAPSE_HOSTS_CONFIG env`);
       } catch (error) {
         logError(error, {
           operation: "loadHostConfigs",
-          metadata: { source: "HOMELAB_HOSTS_CONFIG" }
+          metadata: { source: "SYNAPSE_HOSTS_CONFIG" }
         });
       }
     }
