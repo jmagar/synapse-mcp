@@ -209,6 +209,29 @@ describe("FileService", () => {
         expect.any(Object)
       );
     });
+
+    it("rejects invalid type values at runtime", async () => {
+      // TypeScript types are compile-time only; runtime validation is required
+      // to prevent shell injection via malicious type values like "f; rm -rf /"
+      const maliciousType = "f; rm -rf /" as "f" | "d" | "l";
+
+      await expect(
+        fileService.findFiles(testHost, "/var", "*", { type: maliciousType })
+      ).rejects.toThrow(/Invalid type/);
+
+      // Ensure SSH command was never called with the malicious input
+      expect(mockSSHService.executeSSHCommand).not.toHaveBeenCalled();
+    });
+
+    it("accepts valid type values (f, d, l)", async () => {
+      vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue("");
+
+      for (const validType of ["f", "d", "l"] as const) {
+        await expect(
+          fileService.findFiles(testHost, "/var", "*", { type: validType })
+        ).resolves.not.toThrow();
+      }
+    });
   });
 
   describe("transferFile", () => {
