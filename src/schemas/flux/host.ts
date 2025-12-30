@@ -106,3 +106,63 @@ export const hostMountsSchema = z.preprocess(
     })
     .describe("Get mounted filesystems")
 );
+
+// New infrastructure building block schemas
+
+export const hostPortsSchema = z.preprocess(
+  preprocessWithDiscriminator,
+  z
+    .object({
+      action_subaction: z.literal("host:ports"),
+      action: z.literal("host"),
+      subaction: z.literal("ports"),
+      host: hostSchema,
+      limit: z.number().min(1).max(1000).default(100),
+      offset: z.number().min(0).default(0),
+      filter: z
+        .object({
+          protocol: z.enum(["tcp", "udp"]).optional(),
+          state: z.enum(["listening", "bound", "reserved"]).optional(),
+          source: z.enum(["host", "docker", "compose"]).optional()
+        })
+        .optional(),
+      response_format: responseFormatSchema
+    })
+    .describe("List all ports in use across all sources (host + docker + compose)")
+);
+
+export const hostDoctorSchema = z.preprocess(
+  preprocessWithDiscriminator,
+  z
+    .object({
+      action_subaction: z.literal("host:doctor"),
+      action: z.literal("host"),
+      subaction: z.literal("doctor"),
+      host: hostSchema,
+      checks: z
+        .array(
+          z.enum([
+            "resources",
+            "containers",
+            "logs",
+            "processes",
+            "docker",
+            "network"
+          ])
+        )
+        .optional(),
+      response_format: responseFormatSchema
+    })
+    .describe("Comprehensive health diagnostics")
+);
+
+// Type exports
+export type HostStatusInput = z.infer<typeof hostStatusSchema>;
+export type HostResourcesInput = z.infer<typeof hostResourcesSchema>;
+export type HostInfoInput = z.infer<typeof hostInfoSchema>;
+export type HostUptimeInput = z.infer<typeof hostUptimeSchema>;
+export type HostServicesInput = z.infer<typeof hostServicesSchema>;
+export type HostNetworkInput = z.infer<typeof hostMountsSchema>;
+export type HostMountsInput = z.infer<typeof hostMountsSchema>;
+export type HostPortsInput = z.infer<typeof hostPortsSchema>;
+export type HostDoctorInput = z.infer<typeof hostDoctorSchema>;

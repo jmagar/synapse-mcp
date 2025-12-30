@@ -15,9 +15,19 @@ import { scoutZfsSchema } from './zfs.js';
 import { scoutLogsSchema } from './logs.js';
 
 /**
+ * Help schema - provides auto-generated documentation
+ */
+const helpSchema = z.object({
+  action: z.literal("help").describe("Show auto-generated documentation"),
+  topic: z.string().optional().describe("Optional: filter to specific topic (e.g., 'zfs:pools')"),
+  format: z.enum(["markdown", "json"]).optional().describe("Output format (default: markdown)")
+}).describe("Get auto-generated help documentation for scout tool");
+
+/**
  * Scout Tool Schema - SSH remote operations
  *
- * Actions: 11 total
+ * Actions: 12 total
+ *   Help: 1 (auto-generated documentation)
  *   Simple: 9 (nodes, peek, exec, find, delta, emit, beam, ps, df)
  *   Nested: 2 with subactions
  *     - zfs: 3 subactions (pools, datasets, snapshots)
@@ -31,6 +41,8 @@ import { scoutLogsSchema } from './logs.js';
  * Nested actions use 'subaction' as secondary discriminator
  */
 export const ScoutSchema = z.union([
+  // Help action (1)
+  helpSchema,
   // Simple actions (9)
   scoutNodesSchema,
   scoutPeekSchema,

@@ -7,7 +7,9 @@ import {
   hostUptimeSchema,
   hostServicesSchema,
   hostNetworkSchema,
-  hostMountsSchema
+  hostMountsSchema,
+  hostPortsSchema,
+  hostDoctorSchema
 } from "./host.js";
 
 describe("Host Schemas", () => {
@@ -150,6 +152,138 @@ describe("Host Schemas", () => {
         subaction: "mounts"
       });
       expect(result.action_subaction).toBe("host:mounts");
+    });
+  });
+
+  describe("hostPortsSchema", () => {
+    it("should validate valid host:ports input", () => {
+      const result = hostPortsSchema.parse({
+        action: "host",
+        subaction: "ports",
+        host: "squirts"
+      });
+      expect(result.action_subaction).toBe("host:ports");
+    });
+
+    it("should use default pagination values", () => {
+      const result = hostPortsSchema.parse({
+        action: "host",
+        subaction: "ports",
+        host: "squirts"
+      });
+      expect(result.limit).toBe(100);
+      expect(result.offset).toBe(0);
+    });
+
+    it("should validate with custom pagination", () => {
+      const result = hostPortsSchema.parse({
+        action: "host",
+        subaction: "ports",
+        host: "squirts",
+        limit: 50,
+        offset: 100
+      });
+      expect(result.limit).toBe(50);
+      expect(result.offset).toBe(100);
+    });
+
+    it("should validate with filters", () => {
+      const result = hostPortsSchema.parse({
+        action: "host",
+        subaction: "ports",
+        host: "squirts",
+        filter: {
+          protocol: "tcp",
+          state: "listening",
+          source: "docker"
+        }
+      });
+      expect(result.filter?.protocol).toBe("tcp");
+      expect(result.filter?.state).toBe("listening");
+      expect(result.filter?.source).toBe("docker");
+    });
+
+    it("should reject invalid protocol", () => {
+      expect(() =>
+        hostPortsSchema.parse({
+          action: "host",
+          subaction: "ports",
+          host: "squirts",
+          filter: {
+            protocol: "invalid"
+          }
+        })
+      ).toThrow();
+    });
+
+    it("should reject invalid limit range", () => {
+      expect(() =>
+        hostPortsSchema.parse({
+          action: "host",
+          subaction: "ports",
+          host: "squirts",
+          limit: 2000
+        })
+      ).toThrow();
+    });
+
+    it("should have description", () => {
+      expect(hostPortsSchema.description).toContain("ports");
+    });
+  });
+
+  describe("hostDoctorSchema", () => {
+    it("should validate valid host:doctor input", () => {
+      const result = hostDoctorSchema.parse({
+        action: "host",
+        subaction: "doctor",
+        host: "squirts"
+      });
+      expect(result.action_subaction).toBe("host:doctor");
+    });
+
+    it("should validate with specific checks", () => {
+      const result = hostDoctorSchema.parse({
+        action: "host",
+        subaction: "doctor",
+        host: "squirts",
+        checks: ["resources", "containers", "logs"]
+      });
+      expect(result.checks).toEqual(["resources", "containers", "logs"]);
+    });
+
+    it("should validate all check types", () => {
+      const result = hostDoctorSchema.parse({
+        action: "host",
+        subaction: "doctor",
+        host: "squirts",
+        checks: ["resources", "containers", "logs", "processes", "docker", "network"]
+      });
+      expect(result.checks).toHaveLength(6);
+    });
+
+    it("should reject invalid check type", () => {
+      expect(() =>
+        hostDoctorSchema.parse({
+          action: "host",
+          subaction: "doctor",
+          host: "squirts",
+          checks: ["invalid"]
+        })
+      ).toThrow();
+    });
+
+    it("should allow no checks specified", () => {
+      const result = hostDoctorSchema.parse({
+        action: "host",
+        subaction: "doctor",
+        host: "squirts"
+      });
+      expect(result.checks).toBeUndefined();
+    });
+
+    it("should have description", () => {
+      expect(hostDoctorSchema.description).toContain("health");
     });
   });
 });

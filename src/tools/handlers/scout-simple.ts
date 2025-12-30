@@ -44,6 +44,11 @@ export async function handleScoutSimpleAction(
   input: ScoutInput,
   container: ServiceContainer
 ): Promise<string> {
+  // Type guard: help action should not reach this handler
+  if (input.action === 'help') {
+    throw new Error('Help action should be handled by the main scout handler');
+  }
+
   if (!SIMPLE_ACTIONS.includes(input.action)) {
     throw new Error(`Not a simple action: ${input.action}`);
   }

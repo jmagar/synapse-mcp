@@ -55,6 +55,17 @@ import {
 } from "./host.js";
 
 /**
+ * Help schema - provides auto-generated documentation
+ * This is part of the discriminated union to pass MCP validation
+ */
+const helpSchema = z.object({
+  action_subaction: z.literal("help").describe("Action discriminator for help"),
+  action: z.literal("help").describe("Show auto-generated documentation"),
+  topic: z.string().optional().describe("Optional: filter to specific topic (e.g., 'container:list')"),
+  format: z.enum(["markdown", "json"]).optional().describe("Output format (default: markdown)")
+}).describe("Get auto-generated help documentation for flux tool");
+
+/**
  * Internal Zod definition structure for accessing preprocessed schema internals.
  * This is necessary because z.preprocess wraps schemas in a way that hides
  * the inner schema from the public API.
@@ -86,6 +97,8 @@ type DiscriminatedUnionMember = z.ZodObject<z.ZodRawShape>;
 
 // Unwrap all preprocessed schemas
 const unwrappedSchemas = [
+  // Help (1)
+  helpSchema,
   // Container (14)
   containerListSchema,
   containerStartSchema,
@@ -152,14 +165,15 @@ export const FLUX_SUBACTION_COUNT = allSchemas.length;
 /**
  * Flux Tool Schema - Docker infrastructure management
  *
- * Actions: 4 (container, compose, docker, host)
- * Subactions: 39 total
+ * Actions: 5 (help, container, compose, docker, host)
+ * Subactions: 40 total
+ *   - help: 1 (auto-generated documentation)
  *   - container: 14 (list, start, stop, restart, pause, resume, logs, stats, inspect, search, pull, recreate, exec, top)
  *   - compose: 9 (list, status, up, down, restart, logs, build, pull, recreate)
  *   - docker: 9 (info, df, prune, images, pull, build, rmi, networks, volumes)
  *   - host: 7 (status, resources, info, uptime, services, network, mounts)
  *
- * Uses composite discriminator: action_subaction (e.g., "container:list")
+ * Uses composite discriminator: action_subaction (e.g., "container:list", "help")
  */
 export const FluxSchema = z.preprocess(
   preprocessWithDiscriminator,

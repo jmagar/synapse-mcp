@@ -276,11 +276,23 @@ export const execWorkdirSchema = z
  *
  * Transforms: { action: "container", subaction: "list" }
  * To: { action: "container", subaction: "list", action_subaction: "container:list" }
+ *
+ * Special case for help: { action: "help" }
+ * To: { action: "help", action_subaction: "help" }
  */
 export function preprocessWithDiscriminator(data: unknown): unknown {
-  if (data && typeof data === "object" && "action" in data && "subaction" in data) {
+  if (data && typeof data === "object" && "action" in data) {
     const obj = data as Record<string, unknown>;
-    return { ...obj, action_subaction: `${obj.action}:${obj.subaction}` };
+
+    // Special case: help action (no subaction)
+    if (obj.action === "help") {
+      return { ...obj, action_subaction: "help" };
+    }
+
+    // Normal case: action + subaction
+    if ("subaction" in data) {
+      return { ...obj, action_subaction: `${obj.action}:${obj.subaction}` };
+    }
   }
   return data;
 }

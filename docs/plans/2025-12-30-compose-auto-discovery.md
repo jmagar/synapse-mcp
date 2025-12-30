@@ -12,39 +12,64 @@
 
 ---
 
-## Task 0: Create Base Zod Schemas and Interfaces
+## Task 0: Create IComposeProjectLister Interface
 
 **Files:**
-- Modify: `src/types.ts` (add base Zod schemas)
 - Modify: `src/services/interfaces.ts` (add IComposeProjectLister interface)
+- Test: `src/services/interfaces.test.ts` (new file)
 
-**Purpose:** Create foundational schemas and interfaces needed by later tasks to avoid dependency ordering issues.
+**Purpose:** Create foundational interface needed by ComposeDiscovery to avoid circular dependency with ComposeService.
 
-**Step 1: Add base Zod schemas to types.ts**
+**Note:** We're NOT creating Zod schemas for HostConfig because:
+1. HostConfig interface already exists in `src/types.ts`
+2. ComposeProject type already exists in `src/services/compose.ts` (we'll import it)
+3. Runtime validation via Zod is not needed for this feature (TypeScript interfaces sufficient)
+
+**Step 1: Write the failing test**
 
 ```typescript
-// src/types.ts - add at the end of the file
-import { z } from 'zod';
+// src/services/interfaces.test.ts - NEW FILE
+import { describe, it, expect } from 'vitest';
+import type { IComposeProjectLister } from './interfaces.js';
+import type { HostConfig } from '../types.js';
+import type { ComposeProject } from './compose.js';
 
-export const HostConfigSchema = z.object({
-  name: z.string().min(1),
-  host: z.string().min(1),
-  port: z.number().int().min(1).max(65535).optional(),
-  protocol: z.enum(['http', 'https', 'ssh']),
-  sshUser: z.string().optional(),
-  sshKeyPath: z.string().optional(),
-  dockerSocketPath: z.string().optional(),
-  tags: z.array(z.string()).optional()
+describe('IComposeProjectLister', () => {
+  it('should be implemented with listComposeProjects method', async () => {
+    const mockLister: IComposeProjectLister = {
+      listComposeProjects: async (host: HostConfig): Promise<ComposeProject[]> => {
+        return [
+          {
+            name: 'test-project',
+            status: 'running',
+            configFiles: ['/compose/test/docker-compose.yaml'],
+            services: []
+          }
+        ];
+      }
+    };
+
+    const host: HostConfig = {
+      name: 'test',
+      host: 'localhost',
+      protocol: 'ssh'
+    };
+
+    const result = await mockLister.listComposeProjects(host);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('test-project');
+    expect(result[0].configFiles).toContain('/compose/test/docker-compose.yaml');
+  });
 });
-
-export const SynapseConfigSchema = z.object({
-  hosts: z.array(HostConfigSchema)
-});
-
-export type SynapseConfig = z.infer<typeof SynapseConfigSchema>;
 ```
 
-**Step 2: Add IComposeProjectLister interface to existing interfaces.ts**
+**Step 2: Run test to verify it fails**
+
+Run: `pnpm test src/services/interfaces.test.ts`
+Expected: FAIL with "Cannot find type 'IComposeProjectLister'"
+
+**Step 3: Add IComposeProjectLister interface to existing interfaces.ts**
 
 ```typescript
 // src/services/interfaces.ts - ADD this interface to the end of the file
@@ -57,16 +82,21 @@ export interface IComposeProjectLister {
 }
 ```
 
-**Step 3: Verify no syntax errors**
+**Step 4: Run test to verify it passes**
+
+Run: `pnpm test src/services/interfaces.test.ts`
+Expected: PASS
+
+**Step 5: Verify no syntax errors**
 
 Run: `pnpm run typecheck`
 Expected: No errors
 
-**Step 4: Commit**
+**Step 6: Commit**
 
 ```bash
-git add src/types.ts src/services/interfaces.ts
-git commit -m "feat: add base Zod schemas and IComposeProjectLister interface"
+git add src/services/interfaces.ts src/services/interfaces.test.ts
+git commit -m "feat: add IComposeProjectLister interface with TDD"
 ```
 
 ---
@@ -74,39 +104,36 @@ git commit -m "feat: add base Zod schemas and IComposeProjectLister interface"
 ## Task 1: Add Configuration Schema for Custom Search Paths
 
 **Files:**
-- Modify: `src/types.ts` (add ComposeSearchPaths to HostConfig)
+- Modify: `src/types.ts` (add composeSearchPaths to HostConfig)
 - Test: `src/types.test.ts` (new file)
 
 **Step 1: Write the failing test**
 
 ```typescript
-// src/types.test.ts
+// src/types.test.ts - NEW FILE
 import { describe, it, expect } from 'vitest';
-import { SynapseConfigSchema } from './types.js';
+import type { HostConfig } from './types.js';
 
-describe('SynapseConfigSchema', () => {
-  it('should accept optional composeSearchPaths', () => {
-    const config = {
-      hosts: [
-        {
-          name: 'test',
-          host: 'localhost',
-          composeSearchPaths: ['/opt/stacks', '/srv/docker']
-        }
-      ]
+describe('HostConfig', () => {
+  it('should support optional composeSearchPaths field', () => {
+    const config: HostConfig = {
+      name: 'test',
+      host: 'localhost',
+      protocol: 'ssh',
+      composeSearchPaths: ['/opt/stacks', '/srv/docker']
     };
 
-    const result = SynapseConfigSchema.parse(config);
-    expect(result.hosts[0].composeSearchPaths).toEqual(['/opt/stacks', '/srv/docker']);
+    expect(config.composeSearchPaths).toEqual(['/opt/stacks', '/srv/docker']);
   });
 
   it('should work without composeSearchPaths', () => {
-    const config = {
-      hosts: [{ name: 'test', host: 'localhost' }]
+    const config: HostConfig = {
+      name: 'test',
+      host: 'localhost',
+      protocol: 'ssh'
     };
 
-    const result = SynapseConfigSchema.parse(config);
-    expect(result.hosts[0].composeSearchPaths).toBeUndefined();
+    expect(config.composeSearchPaths).toBeUndefined();
   });
 });
 ```
@@ -114,12 +141,12 @@ describe('SynapseConfigSchema', () => {
 **Step 2: Run test to verify it fails**
 
 Run: `pnpm test src/types.test.ts`
-Expected: FAIL with "composeSearchPaths does not exist in type"
+Expected: FAIL with "composeSearchPaths does not exist in type HostConfig"
 
 **Step 3: Add composeSearchPaths to HostConfig interface**
 
 ```typescript
-// src/types.ts - modify HostConfig interface
+// src/types.ts - modify existing HostConfig interface (around line 46)
 export interface HostConfig {
   name: string;
   host: string;
@@ -133,29 +160,12 @@ export interface HostConfig {
 }
 ```
 
-**Step 4: Add composeSearchPaths to HostConfigSchema**
-
-```typescript
-// src/types.ts - modify existing HostConfigSchema (created in Task 0)
-export const HostConfigSchema = z.object({
-  name: z.string().min(1),
-  host: z.string().min(1),
-  port: z.number().int().min(1).max(65535).optional(),
-  protocol: z.enum(['http', 'https', 'ssh']),
-  sshUser: z.string().optional(),
-  sshKeyPath: z.string().optional(),
-  dockerSocketPath: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  composeSearchPaths: z.array(z.string()).optional()  // Add this line
-});
-```
-
-**Step 5: Run test to verify it passes**
+**Step 4: Run test to verify it passes**
 
 Run: `pnpm test src/types.test.ts`
 Expected: PASS
 
-**Step 6: Commit**
+**Step 5: Commit**
 
 ```bash
 git add src/types.ts src/types.test.ts
@@ -724,8 +734,10 @@ export class ComposeDiscovery {
 }
 ```
 
+**Step 3a-verify: Run test to verify constructor works**
+
 Run: `pnpm test src/services/compose-discovery.test.ts`
-Expected: PASS (basic constructor test should pass)
+Expected: Tests should compile (constructor created) but fail at runtime (missing methods)
 
 **Step 3b: Implement discoverFromDockerLs method**
 
@@ -764,8 +776,10 @@ export class ComposeDiscovery {
 }
 ```
 
-Run: `pnpm test src/services/compose-discovery.test.ts -t "discoverFromDockerLs"`
-Expected: PASS
+**Step 3b-verify: Run test to verify discoverFromDockerLs passes**
+
+Run: `pnpm test src/services/compose-discovery.test.ts -t "docker compose ls"`
+Expected: PASS (tests that call discoverFromDockerLs indirectly should now pass)
 
 **Step 3c: Implement discoverFromFilesystem method**
 
@@ -817,8 +831,10 @@ export class ComposeDiscovery {
 }
 ```
 
-Run: `pnpm test src/services/compose-discovery.test.ts -t "discoverFromFilesystem"`
-Expected: PASS
+**Step 3c-verify: Run test to verify discoverFromFilesystem passes**
+
+Run: `pnpm test src/services/compose-discovery.test.ts -t "scan filesystem"`
+Expected: PASS (tests that scan filesystem should now pass)
 
 **Step 3d: Implement resolveProjectPath orchestration method**
 
@@ -1200,16 +1216,11 @@ git commit -m "feat: implement auto-host resolution for compose operations"
 
 ---
 
-## Task 8: Integrate Discovery into Compose Service
+## Task 8a: Integrate Discovery into ComposeService
 
 **Files:**
-- Modify: `src/services/compose.ts`
-- Modify: `src/services/container.ts` (ServiceContainer wiring)
-- Modify: `src/tools/handlers/compose.ts` (handler file)
-- Create: `src/tools/handlers/compose-utils.ts` (cache invalidation utility)
-- Modify: `src/services/interfaces.ts` (add ComposeDiscovery to Services interface)
+- Modify: `src/services/compose.ts` (add discovery integration)
 - Test: `src/services/compose.test.ts` (update existing tests)
-- Test: `src/tools/handlers/compose.test.ts` (handler tests)
 
 **Step 1: Write failing test for ComposeService with discovery integration**
 

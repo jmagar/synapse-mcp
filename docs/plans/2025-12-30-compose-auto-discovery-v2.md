@@ -145,7 +145,8 @@ Expected: FAIL with "composeSearchPaths does not exist in type HostConfig"
 **Step 3: Add composeSearchPaths to HostConfig interface**
 
 ```typescript
-// src/types.ts - modify existing HostConfig interface (around line 2-14)
+// src/types.ts - modify existing HostConfig interface (lines 2-14)
+// Add composeSearchPaths at line 13, after tags?: string[];
 export interface HostConfig {
   name: string;
   host: string;
@@ -159,7 +160,7 @@ export interface HostConfig {
   // Tags for filtering
   tags?: string[];
   // Custom compose file search paths
-  composeSearchPaths?: string[];  // Add this line
+  composeSearchPaths?: string[];  // Add this line at line 13
 }
 ```
 
