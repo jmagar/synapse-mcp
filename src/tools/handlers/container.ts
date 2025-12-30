@@ -12,6 +12,7 @@ import {
   formatSearchResultsMarkdown,
   formatInspectSummaryMarkdown
 } from '../../formatters/index.js';
+import { logError } from '../../utils/errors.js';
 
 /**
  * Handle all container subactions
@@ -124,7 +125,8 @@ export async function handleContainerAction(
           if (!found) return null;
           const stats = await dockerService.getContainerStats(c.id, found.host);
           return { stats, host: found.host.name };
-        } catch {
+        } catch (error) {
+          logError(error, { operation: `getContainerStats:${c.id}` });
           return null;
         }
       });
