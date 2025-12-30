@@ -42,9 +42,9 @@ export function registerTools(server: McpServer, container?: ServiceContainer): 
       description: 'SSH remote operations - file, process, and system inspection',
       inputSchema: ScoutSchema,
       annotations: {
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: true
       }
     },
