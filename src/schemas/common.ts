@@ -63,19 +63,21 @@ export const imageSchema = z.string().min(1).describe("Image name with optional 
  * ZFS pool name schema with security validation
  * SECURITY: Prevents command injection (CWE-78) by rejecting shell metacharacters
  * Valid characters: alphanumeric, underscore, hyphen, period
+ * Must start with a letter (per ZFS naming requirements)
  * Does NOT allow forward slash (pools are top-level only)
  */
 export const zfsPoolSchema = z
   .string()
   .min(1)
   .max(255)
-  .regex(/^[a-zA-Z0-9_\-.]+$/, "Pool name must be alphanumeric with dashes/underscores/periods")
+  .regex(/^[a-zA-Z][a-zA-Z0-9_\-.]*$/, "Pool name must start with a letter and contain only alphanumeric, dashes, underscores, or periods")
   .describe("ZFS pool name");
 
 /**
  * ZFS dataset name schema with security validation
  * SECURITY: Prevents command injection (CWE-78) by rejecting shell metacharacters
  * Valid characters: alphanumeric, underscore, hyphen, period, forward slash, @, #
+ * Must start with a letter (per ZFS naming requirements)
  * Allows hierarchical paths like tank/data/backup
  * Allows snapshot notation like tank/data@snap
  * Allows bookmark notation like tank/data#bookmark
@@ -88,7 +90,7 @@ export const zfsDatasetSchema = z
   .string()
   .min(1)
   .max(255)
-  .regex(/^[a-zA-Z0-9_\-./@#]+$/, "Dataset name must be alphanumeric with valid ZFS characters (/, @, # allowed)")
+  .regex(/^[a-zA-Z][a-zA-Z0-9_\-./@#]*$/, "Dataset name must start with a letter and contain only alphanumeric, dashes, underscores, periods, slashes, @, or #")
   .describe("ZFS dataset name (can include path like pool/dataset, snapshot @, or bookmark #)");
 
 /**

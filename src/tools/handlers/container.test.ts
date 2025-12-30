@@ -283,6 +283,20 @@ describe('Container Handler', () => {
 
       expect(mockDockerService.pullImage).toHaveBeenCalled();
     });
+
+    it('should throw error when container has no Image property', async () => {
+      mockDockerService.findContainerHost.mockResolvedValue({
+        host: { name: 'tootie' },
+        container: { Id: 'abc123' }
+      });
+
+      await expect(handleContainerAction({
+        action: 'container',
+        subaction: 'pull',
+        action_subaction: 'container:pull',
+        container_id: 'abc123'
+      } as FluxInput, mockContainer)).rejects.toThrow('Cannot determine image for container: abc123');
+    });
   });
 
   describe('recreate subaction', () => {
