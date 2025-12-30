@@ -39,6 +39,14 @@ async function updateReadme(): Promise<void> {
     console.error('⚠️ Could not find "#### scout" section in README.md');
   }
 
+  // Exit if critical sections are missing
+  if (!fluxMatch || !scoutMatch) {
+    console.error('❌ Cannot update README - required sections not found');
+    process.exit(1);
+  }
+
+  // Update flux description
+
   // Update flux description
   // Update flux description
   updated = updated.replace(
