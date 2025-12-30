@@ -40,10 +40,6 @@ async function updateReadme(): Promise<void> {
   }
 
   // Update flux description
-  updated = updated.replace(
-
-  let updated = readme;
-
   // Update flux description
   updated = updated.replace(
     toolsTableRegex,
