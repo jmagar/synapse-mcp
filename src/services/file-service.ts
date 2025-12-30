@@ -44,7 +44,7 @@ export class FileService implements IFileService {
   /**
    * Parses and validates a command, returning the safe escaped version.
    * Validates base command against allowlist and escapes all arguments.
-   * Can be bypassed with HOMELAB_ALLOW_ANY_COMMAND=true env var.
+   * Can be bypassed with SYNAPSE_ALLOW_ANY_COMMAND=true env var.
    *
    * SECURITY: This prevents command injection via arguments like:
    *   "ls -la; rm -rf /" -> base="ls" passes, but "; rm -rf /" would execute
