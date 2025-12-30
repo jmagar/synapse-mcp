@@ -50,7 +50,7 @@ start() {
 
         if is_running; then
             echo "Server started (PID: $(cat "$PID_FILE"))"
-            echo "Listening on http://${HOMELAB_HOST:-127.0.0.1}:${HOMELAB_PORT:-3000}/mcp"
+            echo "Listening on http://${SYNAPSE_HOST:-127.0.0.1}:${SYNAPSE_PORT:-3000}/mcp"
             echo "Logs: $LOG_FILE"
         else
             echo "Failed to start server. Check $LOG_FILE"
@@ -102,7 +102,7 @@ status() {
         echo "Server running (PID: $pid)"
 
         load_env
-        local url="http://${HOMELAB_HOST:-127.0.0.1}:${HOMELAB_PORT:-3000}/health"
+        local url="http://${SYNAPSE_HOST:-127.0.0.1}:${SYNAPSE_PORT:-3000}/health"
 
         if command -v curl &>/dev/null; then
             echo -n "Health: "
