@@ -12,6 +12,65 @@
 
 ---
 
+## Task 0: Create Base Zod Schemas and Interfaces
+
+**Files:**
+- Modify: `src/types.ts` (add base Zod schemas)
+- Create: `src/services/interfaces.ts` (add IComposeProjectLister interface)
+
+**Purpose:** Create foundational schemas and interfaces needed by later tasks to avoid dependency ordering issues.
+
+**Step 1: Add base Zod schemas to types.ts**
+
+```typescript
+// src/types.ts - add at the end of the file
+import { z } from 'zod';
+
+export const HostConfigSchema = z.object({
+  name: z.string().min(1),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535).optional(),
+  protocol: z.enum(['http', 'https', 'ssh']),
+  sshUser: z.string().optional(),
+  sshKeyPath: z.string().optional(),
+  dockerSocketPath: z.string().optional(),
+  tags: z.array(z.string()).optional()
+});
+
+export const SynapseConfigSchema = z.object({
+  hosts: z.array(HostConfigSchema)
+});
+
+export type SynapseConfig = z.infer<typeof SynapseConfigSchema>;
+```
+
+**Step 2: Create IComposeProjectLister interface**
+
+```typescript
+// src/services/interfaces.ts - add new interface
+/**
+ * Minimal interface for listing compose projects
+ * Used by ComposeDiscovery to avoid circular dependency with ComposeService
+ */
+export interface IComposeProjectLister {
+  listComposeProjects(host: HostConfig): Promise<ComposeProject[]>;
+}
+```
+
+**Step 3: Verify no syntax errors**
+
+Run: `pnpm run typecheck`
+Expected: No errors
+
+**Step 4: Commit**
+
+```bash
+git add src/types.ts src/services/interfaces.ts
+git commit -m "feat: add base Zod schemas and IComposeProjectLister interface"
+```
+
+---
+
 ## Task 1: Add Configuration Schema for Custom Search Paths
 
 **Files:**
@@ -57,26 +116,27 @@ describe('SynapseConfigSchema', () => {
 Run: `pnpm test src/types.test.ts`
 Expected: FAIL with "composeSearchPaths does not exist in type"
 
-**Step 3: Add composeSearchPaths to HostConfig type**
+**Step 3: Add composeSearchPaths to HostConfig interface**
 
 ```typescript
-// src/types.ts
+// src/types.ts - modify HostConfig interface
 export interface HostConfig {
   name: string;
   host: string;
+  port?: number;
+  protocol: "http" | "https" | "ssh";
   sshUser?: string;
   sshKeyPath?: string;
-  sshPort?: number;
+  dockerSocketPath?: string;
+  tags?: string[];
   composeSearchPaths?: string[];  // Add this line
 }
 ```
 
-**Step 4: Create Zod schemas for validation**
+**Step 4: Add composeSearchPaths to HostConfigSchema**
 
 ```typescript
-// src/types.ts - add at the end of the file
-import { z } from 'zod';
-
+// src/types.ts - modify existing HostConfigSchema (created in Task 0)
 export const HostConfigSchema = z.object({
   name: z.string().min(1),
   host: z.string().min(1),
@@ -86,14 +146,8 @@ export const HostConfigSchema = z.object({
   sshKeyPath: z.string().optional(),
   dockerSocketPath: z.string().optional(),
   tags: z.array(z.string()).optional(),
-  composeSearchPaths: z.array(z.string()).optional()
+  composeSearchPaths: z.array(z.string()).optional()  // Add this line
 });
-
-export const SynapseConfigSchema = z.object({
-  hosts: z.array(HostConfigSchema)
-});
-
-export type SynapseConfig = z.infer<typeof SynapseConfigSchema>;
 ```
 
 **Step 5: Run test to verify it passes**
@@ -1306,20 +1360,7 @@ private async composeExec(
 Run: `pnpm test src/services/compose.test.ts -t "discovery"`
 Expected: ALL PASS - discovery integration working
 
-**Step 5: Create IComposeProjectLister interface to break circular dependency**
-
-```typescript
-// src/services/interfaces.ts - add new interface
-/**
- * Minimal interface for listing compose projects
- * Used by ComposeDiscovery to avoid circular dependency with ComposeService
- */
-export interface IComposeProjectLister {
-  listComposeProjects(host: HostConfig): Promise<ComposeProject[]>;
-}
-```
-
-**Step 6: Update ComposeDiscovery to use interface instead of concrete class**
+**Step 5: Update ComposeDiscovery to use interface instead of concrete class**
 
 ```typescript
 // src/services/compose-discovery.ts - update constructor
@@ -1347,49 +1388,112 @@ export class ComposeDiscovery {
 }
 ```
 
-**Step 7: ComposeService implements IComposeProjectLister (no changes needed)**
+**Step 6: ComposeService implements IComposeProjectLister (no changes needed)**
+
+ComposeService already has `listComposeProjects()` method, so it implicitly implements the interface via TypeScript's structural typing.
+
+**Step 7: Create cache invalidation utility (DRY extraction)**
 
 ```typescript
-// src/services/compose.ts - ComposeService already implements this interface
-// No code changes required - ComposeService.listComposeProjects() already exists
-export class ComposeService implements IComposeService {
-  // ComposeService already has listComposeProjects method
-  async listComposeProjects(host: HostConfig): Promise<ComposeProject[]> {
-    // ... existing implementation
+// src/tools/handlers/compose-utils.ts (new file)
+import type { ComposeDiscovery } from '../../services/compose-discovery.js';
+import { logError } from '../../utils/errors.js';
+
+/**
+ * Check if error is a file-not-found error
+ */
+function isFileNotFoundError(error: unknown): boolean {
+  return error instanceof Error &&
+    (error.message.includes('No such file') ||
+     error.message.includes('not found') ||
+     error.message.includes('Cannot find'));
+}
+
+/**
+ * Wrapper for compose operations with automatic cache invalidation
+ * on file-not-found errors (lazy invalidation pattern)
+ */
+export async function withCacheInvalidation<T>(
+  operation: () => Promise<T>,
+  projectName: string,
+  hostName: string,
+  discovery: ComposeDiscovery,
+  operationName: string
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      // Invalidate cached path
+      await discovery.cache.removeProject(hostName, projectName);
+
+      logError(error as Error, {
+        operation: operationName,
+        metadata: { host: hostName, project: projectName, cacheInvalidated: true }
+      });
+
+      throw new Error(
+        `Compose file not found for project '${projectName}' on host '${hostName}'.\n` +
+        `Cache has been invalidated. Please retry the operation or use the compose_file parameter to specify the path explicitly.`
+      );
+    }
+
+    // Re-throw other errors without invalidation
+    throw error;
   }
 }
 ```
 
-**Step 8: Initialize discovery in service factory with interface injection**
+**Step 8: Initialize discovery in ServiceContainer**
 
 ```typescript
-// src/index.ts or wherever services are initialized - add:
-import { ComposeProjectCache } from './services/compose-cache.js';
-import { ComposeScanner } from './services/compose-scanner.js';
-import { ComposeDiscovery } from './services/compose-discovery.js';
+// src/services/container.ts - modify getComposeService method
+import { ComposeProjectCache } from './compose-cache.js';
+import { ComposeScanner } from './compose-scanner.js';
+import { ComposeDiscovery } from './compose-discovery.js';
 
-// In service initialization:
-const composeCache = new ComposeProjectCache();
-const composeScanner = new ComposeScanner(sshService, localExecutor);
-const composeService = new ComposeService(sshService, localExecutor);
+class ServiceContainer {
+  private composeDiscovery?: ComposeDiscovery;
 
-// Create ComposeDiscovery - inject ComposeService as IComposeProjectLister interface
-// This breaks the circular dependency - ComposeDiscovery doesn't know about ComposeService,
-// it only knows about the IComposeProjectLister interface
-const composeDiscovery = new ComposeDiscovery(
-  composeService,  // Injected as IComposeProjectLister interface
-  composeCache,
-  composeScanner,
-  sshService
-);
+  getComposeService(): IComposeService {
+    if (!this.composeService) {
+      this.composeService = new ComposeService(
+        this.getSSHService(),
+        this.getLocalExecutor()
+      );
+
+      // Initialize discovery after compose service is created
+      const cache = new ComposeProjectCache();
+      const scanner = new ComposeScanner(this.getSSHService(), this.getLocalExecutor());
+      this.composeDiscovery = new ComposeDiscovery(
+        this.composeService,  // Injected as IComposeProjectLister interface
+        cache,
+        scanner,
+        this.getSSHService()
+      );
+
+      // Inject discovery back into compose service (bidirectional dependency)
+      this.composeService.setDiscovery(this.composeDiscovery);
+    }
+    return this.composeService;
+  }
+
+  getComposeDiscovery(): ComposeDiscovery {
+    if (!this.composeDiscovery) {
+      // Ensure compose service is initialized (which creates discovery)
+      this.getComposeService();
+    }
+    return this.composeDiscovery!;
+  }
+}
 ```
 
-**Step 9: Update compose handlers with host resolver AND cache invalidation**
+**Step 9: Update compose handlers using DRY utility**
 
 ```typescript
 // src/tools/handlers/compose.ts - example for composeUp
 import { HostResolver } from '../../services/host-resolver.js';
-import { logError } from '../../utils/errors.js';
+import { withCacheInvalidation } from './compose-utils.js';
 
 export async function handleComposeUp(
   input: ComposeUpInput,
@@ -1400,44 +1504,21 @@ export async function handleComposeUp(
   const resolver = new HostResolver(services.composeDiscovery);
   const host = await resolver.resolveHost(hosts, input.host, input.project);
 
-  try {
-    // Execute operation
-    const result = await services.composeService.composeUp(host, input.project, input.detach);
-    return formatComposeResult('up', host.name, input.project, result);
-  } catch (error) {
-    // Lazy cache invalidation: if compose file not found, invalidate and suggest retry
-    if (error instanceof Error &&
-        (error.message.includes('No such file') ||
-         error.message.includes('not found') ||
-         error.message.includes('Cannot find'))) {
-
-      // Invalidate cached path
-      await services.composeDiscovery.cache.removeProject(host.name, input.project);
-
-      logError(error, {
-        operation: 'handleComposeUp',
-        metadata: { host: host.name, project: input.project, cacheInvalidated: true }
-      });
-
-      throw new Error(
-        `Compose file not found for project '${input.project}' on host '${host.name}'.\n` +
-        `Cache has been invalidated. Please retry the operation or use the compose_file parameter to specify the path explicitly.`
-      );
-    }
-
-    // Re-throw other errors without invalidation
-    throw error;
-  }
+  // Execute operation with automatic cache invalidation
+  return withCacheInvalidation(
+    async () => {
+      const result = await services.composeService.composeUp(host, input.project, input.detach);
+      return formatComposeResult('up', host.name, input.project, result);
+    },
+    input.project,
+    host.name,
+    services.composeDiscovery,
+    'handleComposeUp'
+  );
 }
 
-// Apply same pattern to ALL compose handlers:
-// - handleComposeDown
-// - handleComposeRestart
-// - handleComposeLogs
-// - handleComposeBuild
-// - handleComposePull
-// - handleComposeRecreate
-// Each handler should wrap the compose operation in try-catch with lazy cache invalidation
+// Apply same pattern to ALL compose handlers (handleComposeDown, handleComposeRestart, etc.)
+// Each handler should wrap the compose operation with withCacheInvalidation()
 ```
 
 **Step 10: Update service interfaces**
@@ -2061,14 +2142,14 @@ describe('Compose Discovery Integration', () => {
     expect(cached?.path).toBe(join(testDir, 'plex/docker-compose.yaml'));
   });
 
-  it('should handle cache invalidation', async () => {
+  it('should return cached path without validation (lazy invalidation)', async () => {
     const sshPool = new SSHPoolService();
     const localExecutor = new LocalExecutorService();
     const sshService = new SSHService(sshPool);
     const composeService = new ComposeService(sshService, localExecutor);
     const cache = new ComposeProjectCache(cacheDir);
     const scanner = new ComposeScanner(sshService, localExecutor);
-    const discovery = new ComposeDiscovery(composeService, cache, scanner);
+    const discovery = new ComposeDiscovery(composeService, cache, scanner, sshService);
 
     const host = { name: 'localhost', host: 'localhost' };
 
@@ -2080,14 +2161,15 @@ describe('Compose Discovery Integration', () => {
       lastSeen: new Date().toISOString()
     });
 
-    // Should detect missing file and rescan
-    await expect(discovery.resolveProjectPath(host, 'test')).rejects.toThrow(
-      "Project 'test' not found"
-    );
+    // Discovery layer trusts cache and returns path without validation
+    // (Lazy invalidation happens at handler level when operation fails)
+    const path = await discovery.resolveProjectPath(host, 'test');
+    expect(path).toBe('/nonexistent/docker-compose.yaml');
 
-    // Cache should be invalidated
+    // Cache should NOT be invalidated by discovery layer
     const cached = await cache.getProject('localhost', 'test');
-    expect(cached).toBeUndefined();
+    expect(cached).toBeDefined();
+    expect(cached?.path).toBe('/nonexistent/docker-compose.yaml');
   });
 });
 ```
@@ -2158,7 +2240,7 @@ git commit -m "feat: complete compose auto-discovery implementation
 
 ## Implementation Complete
 
-Total tasks: 13
+Total tasks: 14 (Task 0-13)
 Estimated time: 4-6 hours
 
 **Next steps:**
