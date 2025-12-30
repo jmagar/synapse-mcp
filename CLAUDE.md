@@ -1,4 +1,4 @@
-# CLAUDE.md - homelab-mcp-server
+# CLAUDE.md - synapse-mcp
 
 ## Project Overview
 MCP server for managing Docker infrastructure across multiple homelab hosts.
