@@ -381,8 +381,8 @@ describe('Compose Handler', () => {
     });
 
     it('should throw on unknown host', async () => {
-      // Re-mock to return empty hosts array
-      vi.mocked(await import('../../services/docker.js')).loadHostConfigs.mockReturnValue([]);
+      // Use mockReturnValueOnce to avoid polluting other tests
+      vi.mocked(await import('../../services/docker.js')).loadHostConfigs.mockReturnValueOnce([]);
 
       await expect(
         handleComposeAction({
