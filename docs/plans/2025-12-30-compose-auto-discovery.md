@@ -16,7 +16,7 @@
 
 **Files:**
 - Modify: `src/types.ts` (add base Zod schemas)
-- Create: `src/services/interfaces.ts` (add IComposeProjectLister interface)
+- Modify: `src/services/interfaces.ts` (add IComposeProjectLister interface)
 
 **Purpose:** Create foundational schemas and interfaces needed by later tasks to avoid dependency ordering issues.
 
@@ -44,10 +44,10 @@ export const SynapseConfigSchema = z.object({
 export type SynapseConfig = z.infer<typeof SynapseConfigSchema>;
 ```
 
-**Step 2: Create IComposeProjectLister interface**
+**Step 2: Add IComposeProjectLister interface to existing interfaces.ts**
 
 ```typescript
-// src/services/interfaces.ts - add new interface
+// src/services/interfaces.ts - ADD this interface to the end of the file
 /**
  * Minimal interface for listing compose projects
  * Used by ComposeDiscovery to avoid circular dependency with ComposeService
@@ -344,6 +344,10 @@ git commit -m "feat: implement compose project cache with file persistence"
 - Create: `src/services/compose-scanner.ts`
 - Test: `src/services/compose-scanner.test.ts`
 
+**Step 0: Install yaml dependency**
+
+Run: `pnpm add yaml`
+
 **Step 1: Write the failing test**
 
 ```typescript
@@ -421,20 +425,6 @@ services:
     const name = await scanner.parseComposeName(host, '/compose/app/docker-compose.yaml');
 
     expect(name).toBeNull();
-  });
-
-  it('should escape shell arguments with single quotes', () => {
-    // Test private method via type assertion
-    const escapedSimple = (scanner as any).escapeShellArg('simple');
-    expect(escapedSimple).toBe("'simple'");
-
-    // Test escaping single quotes
-    const escapedQuote = (scanner as any).escapeShellArg("foo'bar");
-    expect(escapedQuote).toBe("'foo'\\''bar'");
-
-    // Test multiple single quotes
-    const escapedMultiple = (scanner as any).escapeShellArg("it's'cool");
-    expect(escapedMultiple).toBe("'it'\\''s'\\''cool'");
   });
 });
 ```
@@ -548,23 +538,15 @@ export class ComposeScanner {
       return null;
     }
   }
-
-  private escapeShellArg(arg: string): string {
-    return `'${arg.replace(/'/g, "'\\''")}'`;
-  }
 }
 ```
 
-**Step 4: Install yaml dependency**
-
-Run: `pnpm add yaml`
-
-**Step 5: Run test to verify it passes**
+**Step 4: Run test to verify it passes**
 
 Run: `pnpm test src/services/compose-scanner.test.ts`
 Expected: PASS
 
-**Step 6: Commit**
+**Step 5: Commit**
 
 ```bash
 git add src/services/compose-scanner.ts src/services/compose-scanner.test.ts package.json pnpm-lock.yaml
@@ -1222,7 +1204,10 @@ git commit -m "feat: implement auto-host resolution for compose operations"
 
 **Files:**
 - Modify: `src/services/compose.ts`
+- Modify: `src/services/container.ts` (ServiceContainer wiring)
 - Modify: `src/tools/handlers/compose.ts` (handler file)
+- Create: `src/tools/handlers/compose-utils.ts` (cache invalidation utility)
+- Modify: `src/services/interfaces.ts` (add ComposeDiscovery to Services interface)
 - Test: `src/services/compose.test.ts` (update existing tests)
 - Test: `src/tools/handlers/compose.test.ts` (handler tests)
 
@@ -1391,6 +1376,8 @@ export class ComposeDiscovery {
 **Step 6: ComposeService implements IComposeProjectLister (no changes needed)**
 
 ComposeService already has `listComposeProjects()` method, so it implicitly implements the interface via TypeScript's structural typing.
+
+> **⚠️ Architectural Note:** This implementation creates a bidirectional dependency (ComposeService ↔ ComposeDiscovery via setter injection). This is a known coupling pattern that works but could be improved in future iterations using an event-based pattern or by making discovery fully standalone. For the current implementation, this pattern is acceptable as it's isolated within the service container.
 
 **Step 7: Create cache invalidation utility (DRY extraction)**
 
