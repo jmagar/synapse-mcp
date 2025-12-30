@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { generateHelp, formatHelpMarkdown, formatHelpJson } from "./help.js";
-import { UnifiedHomelabSchema } from "../schemas/unified.js";
+import { FluxSchema } from "../schemas/flux/index.js";
+import { ScoutSchema } from "../schemas/scout/index.js";
 
 describe("Help Handler", () => {
   const testSchema = z.discriminatedUnion("action_subaction", [
@@ -92,15 +93,15 @@ describe("Help Handler", () => {
     });
   });
 
-  describe("Integration with UnifiedHomelabSchema", () => {
-    it("should generate help for all 37 actions", () => {
-      const help = generateHelp(UnifiedHomelabSchema);
-      // 12 container + 9 compose + 2 host + 3 docker + 4 image + 7 scout = 37
-      expect(help.length).toBe(37);
+  describe("Integration with FluxSchema", () => {
+    it("should generate help for all 39 flux actions", () => {
+      const help = generateHelp(FluxSchema);
+      // 14 container + 9 compose + 9 docker + 7 host = 39
+      expect(help.length).toBe(39);
     });
 
     it("should filter by specific action", () => {
-      const help = generateHelp(UnifiedHomelabSchema, "container:list");
+      const help = generateHelp(FluxSchema, "container:list");
       expect(help).toHaveLength(1);
       expect(help[0].discriminator).toBe("container:list");
       // Should have parameters like host, state, name_filter, etc.
@@ -108,13 +109,26 @@ describe("Help Handler", () => {
       expect(paramNames).toContain("host");
       expect(paramNames).toContain("state");
     });
+  });
+
+  describe("Integration with ScoutSchema", () => {
+    it("should generate help for all 16 scout actions (9 simple + 3 zfs + 4 logs)", () => {
+      const help = generateHelp(ScoutSchema);
+      // 9 simple + 3 zfs subactions + 4 logs subactions = 16
+      expect(help.length).toBe(16);
+    });
+
+    it("should filter by nested action with subaction", () => {
+      const help = generateHelp(ScoutSchema, "zfs:pools");
+      expect(help).toHaveLength(1);
+      expect(help[0].discriminator).toBe("zfs:pools");
+    });
 
     it("should include parameter descriptions from schema", () => {
-      const help = generateHelp(UnifiedHomelabSchema, "scout:read");
+      const help = generateHelp(ScoutSchema, "peek");
       expect(help).toHaveLength(1);
-      const pathParam = help[0].parameters.find((p) => p.name === "path");
-      expect(pathParam).toBeDefined();
-      expect(pathParam?.description).toContain("path");
+      const targetParam = help[0].parameters.find((p) => p.name === "target");
+      expect(targetParam).toBeDefined();
     });
   });
 });

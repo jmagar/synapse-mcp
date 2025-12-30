@@ -4,7 +4,7 @@ import {
   validateHostFormat,
   HostSecurityError,
   escapeShellArg,
-  isSystemPath,
+  isSystemPath
 } from "./path-security.js";
 
 describe("validateSecurePath", () => {

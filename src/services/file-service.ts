@@ -1,15 +1,26 @@
 import type { HostConfig } from "../types.js";
 import type { ISSHService, IFileService } from "./interfaces.js";
-import {
-  validateSecurePath,
-  escapeShellArg,
-  isSystemPath
-} from "../utils/path-security.js";
+import { validateSecurePath, escapeShellArg, isSystemPath } from "../utils/path-security.js";
 import {
   ALLOWED_COMMANDS,
   ENV_ALLOW_ANY_COMMAND,
-  DEFAULT_COMMAND_TIMEOUT
+  DEFAULT_COMMAND_TIMEOUT,
+  MAX_COMMAND_TIMEOUT,
+  MAX_TREE_DEPTH,
+  MAX_FIND_LIMIT,
+  MAX_DIFF_CONTEXT_LINES
 } from "../constants.js";
+
+/**
+ * Validates that a number is a safe positive integer for shell interpolation.
+ * Prevents injection via malformed numbers like "5; rm -rf /".
+ */
+function validatePositiveInt(value: number, name: string, max: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > max) {
+    throw new Error(`${name} must be an integer between 1 and ${max}, got: ${value}`);
+  }
+  return value;
+}
 
 /**
  * File service implementation for remote file operations via SSH.
@@ -30,22 +41,44 @@ export class FileService implements IFileService {
   }
 
   /**
-   * Validates that a command is in the allowed list.
+   * Parses and validates a command, returning the safe escaped version.
+   * Validates base command against allowlist and escapes all arguments.
    * Can be bypassed with HOMELAB_ALLOW_ANY_COMMAND=true env var.
+   *
+   * SECURITY: This prevents command injection via arguments like:
+   *   "ls -la; rm -rf /" -> base="ls" passes, but "; rm -rf /" would execute
+   *   Fix: Split into ["ls", "-la;", "rm", "-rf", "/"], escape each part
    */
-  private validateCommand(command: string): void {
+  private validateAndEscapeCommand(command: string): string {
     const allowAny = process.env[ENV_ALLOW_ANY_COMMAND] === "true";
-    if (allowAny) return;
 
-    const baseCommand = command.trim().split(/\s+/)[0];
+    // Split command into parts (handles multiple spaces)
+    const parts = command.trim().split(/\s+/).filter((p) => p.length > 0);
 
-    if (!ALLOWED_COMMANDS.has(baseCommand)) {
+    if (parts.length === 0) {
+      throw new Error("Command cannot be empty");
+    }
+
+    const baseCommand = parts[0];
+
+    // Validate base command against allowlist (unless bypassed)
+    if (!allowAny && !ALLOWED_COMMANDS.has(baseCommand)) {
       throw new Error(
         `Command '${baseCommand}' not in allowed list. ` +
           `Allowed: ${[...ALLOWED_COMMANDS].join(", ")}. ` +
           `Set ${ENV_ALLOW_ANY_COMMAND}=true to allow any command.`
       );
     }
+
+    // Escape all arguments individually to prevent injection
+    // Base command is NOT escaped (it's validated against allowlist)
+    // Arguments ARE escaped to prevent shell metacharacter injection
+    if (parts.length === 1) {
+      return baseCommand;
+    }
+
+    const escapedArgs = parts.slice(1).map((arg) => escapeShellArg(arg));
+    return `${baseCommand} ${escapedArgs.join(" ")}`;
   }
 
   /**
@@ -79,11 +112,7 @@ export class FileService implements IFileService {
   /**
    * List contents of a directory on a remote host.
    */
-  async listDirectory(
-    host: HostConfig,
-    path: string,
-    showHidden: boolean
-  ): Promise<string> {
+  async listDirectory(host: HostConfig, path: string, showHidden: boolean): Promise<string> {
     this.validatePath(path);
 
     const escapedPath = escapeShellArg(path);
@@ -98,15 +127,14 @@ export class FileService implements IFileService {
   /**
    * Get tree representation of a directory structure.
    */
-  async treeDirectory(
-    host: HostConfig,
-    path: string,
-    depth: number
-  ): Promise<string> {
+  async treeDirectory(host: HostConfig, path: string, depth: number): Promise<string> {
     this.validatePath(path);
 
+    // Validate depth is a safe integer to prevent injection
+    const safeDepth = validatePositiveInt(depth, "depth", MAX_TREE_DEPTH);
+
     const escapedPath = escapeShellArg(path);
-    const command = `tree -L ${depth} ${escapedPath}`;
+    const command = `tree -L ${safeDepth} ${escapedPath}`;
 
     return this.sshService.executeSSHCommand(host, command, [], {
       timeoutMs: DEFAULT_COMMAND_TIMEOUT
@@ -115,6 +143,9 @@ export class FileService implements IFileService {
 
   /**
    * Execute a command in a working directory on a remote host.
+   *
+   * SECURITY: Command is validated against allowlist and all arguments
+   * are individually escaped to prevent injection attacks.
    */
   async executeCommand(
     host: HostConfig,
@@ -123,17 +154,19 @@ export class FileService implements IFileService {
     timeout: number
   ): Promise<{ stdout: string; exitCode: number }> {
     this.validatePath(path);
-    this.validateCommand(command);
+
+    // Validate timeout is a safe integer
+    const safeTimeout = validatePositiveInt(timeout, "timeout", MAX_COMMAND_TIMEOUT);
+
+    // Validate base command and escape all arguments
+    const safeCommand = this.validateAndEscapeCommand(command);
 
     const escapedPath = escapeShellArg(path);
-    const fullCommand = `cd ${escapedPath} && ${command}`;
+    const fullCommand = `cd ${escapedPath} && ${safeCommand}`;
 
-    const stdout = await this.sshService.executeSSHCommand(
-      host,
-      fullCommand,
-      [],
-      { timeoutMs: timeout }
-    );
+    const stdout = await this.sshService.executeSSHCommand(host, fullCommand, [], {
+      timeoutMs: safeTimeout
+    });
 
     return { stdout, exitCode: 0 };
   }
@@ -154,18 +187,23 @@ export class FileService implements IFileService {
 
     let command = `find ${escapedPath}`;
 
+    // Validate and add maxDepth if provided
     if (options.maxDepth !== undefined) {
-      command += ` -maxdepth ${options.maxDepth}`;
+      const safeMaxDepth = validatePositiveInt(options.maxDepth, "maxDepth", MAX_TREE_DEPTH);
+      command += ` -maxdepth ${safeMaxDepth}`;
     }
 
+    // Type is validated by TypeScript (literal union), safe to use directly
     if (options.type) {
       command += ` -type ${options.type}`;
     }
 
     command += ` -name ${escapedPattern}`;
 
+    // Validate and add limit if provided
     if (options.limit !== undefined) {
-      command += ` | head -n ${options.limit}`;
+      const safeLimit = validatePositiveInt(options.limit, "limit", MAX_FIND_LIMIT);
+      command += ` | head -n ${safeLimit}`;
     }
 
     return this.sshService.executeSSHCommand(host, command, [], {
@@ -174,7 +212,12 @@ export class FileService implements IFileService {
   }
 
   /**
-   * Transfer a file between hosts via SCP.
+   * Transfer a file between hosts via SSH cat piping.
+   *
+   * SECURITY: Uses SSH cat piping instead of SCP to avoid path escaping
+   * issues with the user@host:path format. The source path is escaped
+   * for the source shell, and the target path is separately escaped
+   * inside the SSH command for the target shell.
    */
   async transferFile(
     sourceHost: HostConfig,
@@ -200,17 +243,43 @@ export class FileService implements IFileService {
       { timeoutMs: DEFAULT_COMMAND_TIMEOUT }
     );
 
-    const size = parseInt(sizeOutput.trim(), 10) || 0;
+    const sizeStr = sizeOutput.trim();
+    const size = parseInt(sizeStr, 10);
+    if (isNaN(size) || size < 0) {
+      throw new Error(`Failed to get file size: stat returned '${sizeStr}'`);
+    }
 
+    // For same-host transfers, use simple cp
+    if (sourceHost.name === targetHost.name) {
+      const escapedTarget = escapeShellArg(targetPath);
+      await this.sshService.executeSSHCommand(
+        sourceHost,
+        `cp ${escapedSource} ${escapedTarget}`,
+        [],
+        { timeoutMs: 300000 }
+      );
+      return { bytesTransferred: size, warning };
+    }
+
+    // For cross-host transfers, use SSH cat piping
+    // This avoids SCP's path escaping issues with user@host:path format
+    // Command: cat /source/path | ssh user@target 'cat > /target/path'
+    const targetUser = targetHost.sshUser || "root";
     const escapedTarget = escapeShellArg(targetPath);
 
-    // Build scp command
-    const sourceSpec = `${sourceHost.sshUser || "root"}@${sourceHost.host}:${escapedSource}`;
-    const targetSpec = `${targetHost.sshUser || "root"}@${targetHost.host}:${escapedTarget}`;
+    // The target path needs to be escaped twice:
+    // 1. For the source host's shell (outer escapeShellArg)
+    // 2. For the target host's shell (inner escapeShellArg already applied)
+    // We wrap the entire remote command in single quotes, so we need to
+    // escape any single quotes in the target path for the outer shell
+    const remoteCmd = `cat > ${escapedTarget}`;
+    const escapedRemoteCmd = escapeShellArg(remoteCmd);
+
+    const transferCmd = `cat ${escapedSource} | ssh ${targetUser}@${targetHost.host} ${escapedRemoteCmd}`;
 
     await this.sshService.executeSSHCommand(
       sourceHost,
-      `scp ${sourceSpec} ${targetSpec}`,
+      transferCmd,
       [],
       { timeoutMs: 300000 } // 5 minute timeout for transfers
     );
@@ -231,6 +300,9 @@ export class FileService implements IFileService {
     this.validatePath(path1);
     this.validatePath(path2);
 
+    // Validate contextLines is a safe integer
+    const safeContextLines = validatePositiveInt(contextLines, "contextLines", MAX_DIFF_CONTEXT_LINES);
+
     // Same host: direct diff
     if (host1.name === host2.name) {
       const escapedPath1 = escapeShellArg(path1);
@@ -239,7 +311,7 @@ export class FileService implements IFileService {
       // Use || true to prevent non-zero exit code when files differ
       return this.sshService.executeSSHCommand(
         host1,
-        `diff -u -U ${contextLines} ${escapedPath1} ${escapedPath2} || true`,
+        `diff -u -U ${safeContextLines} ${escapedPath1} ${escapedPath2} || true`,
         [],
         { timeoutMs: DEFAULT_COMMAND_TIMEOUT }
       );

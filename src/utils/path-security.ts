@@ -52,17 +52,11 @@ export function validateHostFormat(host: string): void {
   }
 
   if (DANGEROUS_HOST_CHARS.test(host)) {
-    throw new HostSecurityError(
-      `Invalid characters in hostname: ${host.substring(0, 50)}`,
-      host
-    );
+    throw new HostSecurityError(`Invalid characters in hostname: ${host.substring(0, 50)}`, host);
   }
 
   if (!VALID_HOST_PATTERN.test(host)) {
-    throw new HostSecurityError(
-      `Invalid hostname format: ${host.substring(0, 50)}`,
-      host
-    );
+    throw new HostSecurityError(`Invalid hostname format: ${host.substring(0, 50)}`, host);
   }
 }
 
@@ -91,7 +85,7 @@ const SYSTEM_PATH_PREFIXES = [
   "/lib",
   "/lib64",
   "/boot",
-  "/root",
+  "/root"
 ];
 
 /**
@@ -101,9 +95,7 @@ const SYSTEM_PATH_PREFIXES = [
  * @returns true if path is in a system directory
  */
 export function isSystemPath(path: string): boolean {
-  return SYSTEM_PATH_PREFIXES.some(
-    (prefix) => path === prefix || path.startsWith(prefix + "/")
-  );
+  return SYSTEM_PATH_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
 }
 
 /**

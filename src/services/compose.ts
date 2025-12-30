@@ -158,7 +158,9 @@ export class ComposeService implements IComposeService {
     const command = buildComposeCommand(null, "ls", ["--format", "json"]);
 
     try {
-      const stdout = await this.sshService.executeSSHCommand(host, command, [], { timeoutMs: 15000 });
+      const stdout = await this.sshService.executeSSHCommand(host, command, [], {
+        timeoutMs: 15000
+      });
 
       if (!stdout.trim()) {
         return [];
@@ -198,7 +200,9 @@ export class ComposeService implements IComposeService {
     const command = buildComposeCommand(project, "ps", ["--format", "json"]);
 
     try {
-      const stdout = await this.sshService.executeSSHCommand(host, command, [], { timeoutMs: 15000 });
+      const stdout = await this.sshService.executeSSHCommand(host, command, [], {
+        timeoutMs: 15000
+      });
 
       const services: ComposeServiceInfo[] = [];
 
@@ -287,11 +291,7 @@ export class ComposeService implements IComposeService {
   /**
    * Stop a compose project
    */
-  async composeDown(
-    host: HostConfig,
-    project: string,
-    removeVolumes = false
-  ): Promise<string> {
+  async composeDown(host: HostConfig, project: string, removeVolumes = false): Promise<string> {
     const args = removeVolumes ? ["-v"] : [];
     return this.composeExec(host, project, "down", args);
   }

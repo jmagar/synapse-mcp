@@ -37,3 +37,6 @@ homelab.config.json
 # Runner script artifacts
 .server.pid
 .server.log
+
+# Internal docs/session logs
+.docs/

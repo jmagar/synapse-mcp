@@ -174,7 +174,10 @@ export class DockerService implements IDockerService {
       }
 
       // Apply image filter
-      if (options.imageFilter && !c.Image.toLowerCase().includes(options.imageFilter.toLowerCase())) {
+      if (
+        options.imageFilter &&
+        !c.Image.toLowerCase().includes(options.imageFilter.toLowerCase())
+      ) {
         continue;
       }
 
@@ -213,7 +216,8 @@ export class DockerService implements IDockerService {
 
         const found = containers.find(
           (c) =>
-            c.Id.startsWith(containerId) || c.Names.some((n) => n.replace(/^\//, "") === containerId)
+            c.Id.startsWith(containerId) ||
+            c.Names.some((n) => n.replace(/^\//, "") === containerId)
         );
 
         if (found) {
@@ -321,7 +325,8 @@ export class DockerService implements IDockerService {
     const stats = await container.stats({ stream: false });
 
     // Calculate CPU percentage
-    const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
+    const cpuDelta =
+      stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
     const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
     const cpuCount = stats.cpu_stats.online_cpus || 1;
     const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * cpuCount * 100 : 0;
@@ -409,11 +414,10 @@ export class DockerService implements IDockerService {
   /**
    * List images across all hosts (parallel execution)
    */
-  async listImages(
-    hosts: HostConfig[],
-    options: ListImagesOptions = {}
-  ): Promise<ImageInfo[]> {
-    const results = await Promise.allSettled(hosts.map((host) => this.listImagesOnHost(host, options)));
+  async listImages(hosts: HostConfig[], options: ListImagesOptions = {}): Promise<ImageInfo[]> {
+    const results = await Promise.allSettled(
+      hosts.map((host) => this.listImagesOnHost(host, options))
+    );
 
     return results
       .filter((r): r is PromiseFulfilledResult<ImageInfo[]> => r.status === "fulfilled")
@@ -638,9 +642,12 @@ export class DockerService implements IDockerService {
           }
         }
       } catch (error) {
-        logError(new HostOperationError("Docker cleanup failed", host.name, "dockerCleanup", error), {
-          metadata: { type: t }
-        });
+        logError(
+          new HostOperationError("Docker cleanup failed", host.name, "dockerCleanup", error),
+          {
+            metadata: { type: t }
+          }
+        );
         results.push({
           type: t,
           spaceReclaimed: 0,

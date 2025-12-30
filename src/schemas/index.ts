@@ -1,6 +1,10 @@
 /**
- * Schema exports for homelab MCP server
+ * Schema exports for homelab MCP server V3
  *
- * All schemas are defined in unified.ts and re-exported here.
+ * Exports common utilities and both tool schemas:
+ * - Flux: Docker infrastructure management (39 subactions)
+ * - Scout: SSH remote operations (11 actions)
  */
-export * from "./unified.js";
+export * from "./common.js";
+export * from "./flux/index.js";
+export * from "./scout/index.js";

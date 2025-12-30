@@ -80,7 +80,9 @@ describe("SSHService", () => {
 
       (pool.getConnection as ReturnType<typeof vi.fn>).mockResolvedValue(mockConnection);
 
-      await expect(service.executeSSHCommand(testHost, "false")).rejects.toThrow(/SSH command failed/);
+      await expect(service.executeSSHCommand(testHost, "false")).rejects.toThrow(
+        /SSH command failed/
+      );
     });
 
     it("should release connection even on failure", async () => {
@@ -111,9 +113,9 @@ describe("SSHService", () => {
 
       (pool.getConnection as ReturnType<typeof vi.fn>).mockResolvedValue(mockConnection);
 
-      await expect(service.executeSSHCommand(testHost, "sleep", ["10"], { timeoutMs: 100 })).rejects.toThrow(
-        /timeout/
-      );
+      await expect(
+        service.executeSSHCommand(testHost, "sleep", ["10"], { timeoutMs: 100 })
+      ).rejects.toThrow(/timeout/);
     });
   });
 

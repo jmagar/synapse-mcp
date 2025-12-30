@@ -1,47 +1,68 @@
-# homelab-mcp-server
+# Synapse MCP
 
-MCP (Model Context Protocol) server for managing Docker infrastructure across multiple homelab hosts. Designed for use with Claude Code and other MCP-compatible clients.
+MCP (Model Context Protocol) server providing **Flux** (Docker management) and **Scout** (SSH operations) tools for homelab infrastructure. The neural connection point for your distributed systems.
+
+Designed for use with Claude Code and other MCP-compatible clients.
 
 ## Features
 
-- **Multi-host support**: Manage containers across Unraid, Proxmox, bare metal servers, and more
-- **Auto-detect local Docker**: Automatically adds local Docker socket if available
-- **Container lifecycle**: Start, stop, restart, pause/unpause, pull, recreate containers
+### Flux Tool (Docker Infrastructure Management)
+- **Container lifecycle**: Start, stop, restart, pause/resume, pull, recreate, exec
 - **Docker Compose**: Full project management (up, down, restart, logs, build, pull, recreate)
-- **Image operations**: List, pull, build, and remove Docker images
-- **Log retrieval**: Fetch logs with time filters, grep, and stream selection
-- **Resource monitoring**: Real-time CPU, memory, network, and I/O statistics
+- **Image operations**: List, pull, build, remove Docker images
+- **Host operations**: Status checks, resource monitoring, systemd services, network info
+- **Log retrieval**: Advanced filtering with time ranges, grep, stream selection
+- **Resource monitoring**: Real-time CPU, memory, network, I/O statistics
 - **Smart search**: Find containers by name, image, or labels across all hosts
-- **Detailed inspection**: Full container configuration and state information (with summary mode)
 - **Pagination & filtering**: All list operations support limits, offsets, and filtering
+
+### Scout Tool (SSH Remote Operations)
+- **File operations**: Read files, directory trees, file transfer (beam), diff comparison
+- **Remote execution**: Execute commands with allowlist security
+- **Process monitoring**: List and filter processes by user, CPU, memory
+- **ZFS management**: Pools, datasets, snapshots with health monitoring
+- **System logs**: Access syslog, journald, dmesg, auth logs with filtering
+- **Disk monitoring**: Filesystem usage across all mounts
+- **Multi-host operations**: Execute commands or read files across multiple hosts (emit)
+
+### Infrastructure
+- **Multi-host support**: Manage Docker and SSH across Unraid, Proxmox, bare metal
+- **Auto-detect local Docker**: Automatically adds local Docker socket if available
 - **Dual transport**: stdio for Claude Code, HTTP for remote access
-- **SSH support**: Execute commands on remote hosts for resource monitoring
+- **O(1) validation**: Discriminated union pattern for instant schema validation
+- **SSH connection pooling**: 50× faster repeated operations
 
-## Tool
+## Tools
 
-The server provides a single unified tool `homelab` with multiple actions and subactions:
+The server provides two powerful tools with discriminated union schemas for O(1) validation:
 
-### Container Operations (`action: "container"`)
+### Tool 1: `flux` - Docker Infrastructure Management
+
+**4 actions, 39 subactions** - State changes, lifecycle control, destructive operations.
+
+#### Container Operations (`action: "container"`) - 14 subactions
 
 | Subaction | Description |
-|-----------|-------------|
+| ---------|-------------|
 | `list` | List containers with filtering by state, name, image, labels |
 | `start` | Start a stopped container |
 | `stop` | Stop a running container |
 | `restart` | Restart a container |
 | `pause` | Pause a running container |
-| `unpause` | Unpause a paused container |
+| `resume` | Resume a paused container (was `unpause`) |
 | `logs` | Retrieve container logs with time and grep filters |
 | `stats` | Get real-time CPU, memory, network, I/O statistics |
 | `inspect` | Detailed container configuration and state (with summary mode) |
 | `search` | Search containers by name, image, or labels |
 | `pull` | Pull latest image for a container |
 | `recreate` | Recreate container with latest image |
+| `exec` | Execute command inside a container (allowlist validated) |
+| `top` | Show running processes in a container |
 
-### Docker Compose Operations (`action: "compose"`)
+#### Docker Compose Operations (`action: "compose"`) - 9 subactions
 
 | Subaction | Description |
-|-----------|-------------|
+| ---------|-------------|
 | `list` | List Docker Compose projects on a host |
 | `status` | Get status of services in a project |
 | `up` | Start a compose project |
@@ -52,70 +73,144 @@ The server provides a single unified tool `homelab` with multiple actions and su
 | `pull` | Pull images for a compose project |
 | `recreate` | Force recreate containers in a project |
 
-### Host Operations (`action: "host"`)
+#### Docker System Operations (`action: "docker"`) - 9 subactions
 
 | Subaction | Description |
-|-----------|-------------|
-| `status` | Check connectivity and container counts per host |
-| `resources` | Get CPU, memory, disk usage via SSH |
-
-### Docker System Operations (`action: "docker"`)
-
-| Subaction | Description |
-|-----------|-------------|
-| `info` | Get Docker version, resources, and system info |
+| ---------|-------------|
+| `info` | Get Docker daemon information |
 | `df` | Get Docker disk usage (images, containers, volumes, cache) |
 | `prune` | Remove unused Docker resources (requires `force: true`) |
+| `images` | List Docker images on a host |
+| `pull` | Pull a Docker image |
+| `build` | Build a Docker image from Dockerfile |
+| `rmi` | Remove a Docker image |
+| `networks` | List Docker networks |
+| `volumes` | List Docker volumes |
 
-### Image Operations (`action: "image"`)
+#### Host Operations (`action: "host"`) - 7 subactions
 
 | Subaction | Description |
-|-----------|-------------|
-| `list` | List Docker images on a host |
-| `pull` | Pull a Docker image |
-| `build` | Build a Docker image from a Dockerfile |
-| `remove` | Remove a Docker image (requires `force: true` if in use) |
+| ---------|-------------|
+| `status` | Check Docker connectivity to host |
+| `resources` | Get CPU, memory, disk usage via SSH |
+| `info` | Get OS, kernel, architecture, hostname |
+| `uptime` | Get system uptime |
+| `services` | Get systemd service status |
+| `network` | Get network interfaces and IP addresses |
+| `mounts` | Get mounted filesystems |
 
-### Example Usage
+---
 
-```typescript
+### Tool 2: `scout` - SSH Remote Operations
+
+**11 actions, 16 operations** - Read-mostly remote file and system operations.
+
+#### Simple Actions (9)
+
+| Action | Description |
+| ------|-------------|
+| `nodes` | List all configured SSH hosts |
+| `peek` | Read file or directory contents (with tree mode) |
+| `exec` | Execute command on remote host (allowlist validated) |
+| `find` | Find files by glob pattern |
+| `delta` | Compare files or content between locations |
+| `emit` | Multi-host operations (read files or execute commands) |
+| `beam` | File transfer between local/remote or remote/remote |
+| `ps` | List and search processes with filtering |
+| `df` | Disk usage information |
+
+#### ZFS Operations (`action: "zfs"`) - 3 subactions
+
+| Subaction | Description |
+| ---------|-------------|
+| `pools` | List ZFS storage pools with health status |
+| `datasets` | List ZFS datasets (filesystems and volumes) |
+| `snapshots` | List ZFS snapshots |
+
+#### Log Operations (`action: "logs"`) - 4 subactions
+
+| Subaction | Description |
+| ---------|-------------|
+| `syslog` | Access system log files (/var/log) |
+| `journal` | Access systemd journal logs with unit filtering |
+| `dmesg` | Access kernel ring buffer logs |
+| `auth` | Access authentication logs |
+
+---
+
+## Example Usage
+
+### Flux Tool Examples
+
+```json
 // List running containers
-{ action: "container", subaction: "list", state: "running" }
+{ "tool": "flux", "action": "container", "subaction": "list", "state": "running" }
 
 // Restart a container
-{ action: "container", subaction: "restart", container_id: "plex", host: "unraid" }
+{ "tool": "flux", "action": "container", "subaction": "restart", "container_id": "plex", "host": "tootie" }
 
 // Start a compose project
-{ action: "compose", subaction: "up", host: "unraid", project: "media-stack" }
+{ "tool": "flux", "action": "compose", "subaction": "up", "host": "tootie", "project": "media-stack" }
 
 // Get host resources
-{ action: "host", subaction: "resources", host: "unraid" }
+{ "tool": "flux", "action": "host", "subaction": "resources", "host": "tootie" }
 
 // Pull an image
-{ action: "image", subaction: "pull", host: "unraid", image: "nginx:latest" }
+{ "tool": "flux", "action": "docker", "subaction": "pull", "host": "tootie", "image": "nginx:latest" }
+
+// Execute command in container
+{ "tool": "flux", "action": "container", "subaction": "exec", "container_id": "nginx", "command": "nginx -t" }
+```
+
+### Scout Tool Examples
+
+```json
+// List configured SSH hosts
+{ "tool": "scout", "action": "nodes" }
+
+// Read a remote file
+{ "tool": "scout", "action": "peek", "target": "tootie:/etc/nginx/nginx.conf" }
+
+// Show directory tree
+{ "tool": "scout", "action": "peek", "target": "dookie:/var/log", "tree": true }
+
+// Execute remote command
+{ "tool": "scout", "action": "exec", "target": "tootie:/var/www", "command": "du -sh *" }
+
+// Transfer file between hosts
+{ "tool": "scout", "action": "beam", "source": "tootie:/tmp/backup.tar.gz", "destination": "dookie:/backup/" }
+
+// Check ZFS pool health
+{ "tool": "scout", "action": "zfs", "subaction": "pools", "host": "dookie" }
+
+// View systemd journal
+{ "tool": "scout", "action": "logs", "subaction": "journal", "host": "tootie", "unit": "docker.service" }
+
+// Multi-host command execution
+{ "tool": "scout", "action": "emit", "targets": ["tootie:/tmp", "dookie:/tmp"], "command": "df -h" }
 ```
 
 ## Installation
 
 ```bash
 # Clone or copy the server files
-cd homelab-mcp-server
+cd synapse-mcp
 
 # Install dependencies
-npm install
+pnpm install
 
 # Build
-npm run build
+pnpm run build
 ```
 
 ## Configuration
 
 Create a config file at one of these locations (checked in order):
 
-1. Path in `HOMELAB_CONFIG_FILE` env var
-2. `./homelab.config.json` (current directory)  
-3. `~/.config/homelab-mcp/config.json`
-4. `~/.homelab-mcp.json`
+1. Path in `SYNAPSE_CONFIG_FILE` env var
+2. `./synapse.config.json` (current directory)
+3. `~/.config/synapse-mcp/config.json`
+4. `~/.synapse-mcp.json`
 
 ### Example Config
 
@@ -146,11 +241,11 @@ Create a config file at one of these locations (checked in order):
 }
 ```
 
-Copy `homelab.config.example.json` as a starting point:
+Copy `synapse.config.example.json` as a starting point:
 ```bash
-cp homelab.config.example.json ~/.config/homelab-mcp/config.json
+cp synapse.config.example.json ~/.config/synapse-mcp/config.json
 # or
-cp homelab.config.example.json ~/.homelab-mcp.json
+cp synapse.config.example.json ~/.synapse-mcp.json
 ```
 
 > **Note:** If `/var/run/docker.sock` exists and isn't already in your config, it will be automatically added as a host using your machine's hostname. This means the server works out-of-the-box for local Docker without any configuration.
@@ -158,20 +253,20 @@ cp homelab.config.example.json ~/.homelab-mcp.json
 ### Host Configuration Options
 
 | Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Unique identifier for the host |
-| `host` | string | Hostname or IP address |
-| `port` | number | Docker API port (default: 2375) |
-| `protocol` | "http" \| "https" \| "ssh" | Connection protocol |
-| `dockerSocketPath` | string | Path to Docker socket (for local connections) |
-| `sshUser` | string | SSH username for remote connections (protocol: "ssh") |
-| `sshKeyPath` | string | Path to SSH private key for authentication |
-| `tags` | string[] | Optional tags for filtering |
+| ----- | ---- | ----------- |
+| `name` | `string` | Unique identifier for the host |
+| `host` | `string` | Hostname or IP address |
+| `port` | `number` | Docker API port (default: 2375) |
+| `protocol` | `"http"` / `"https"` / `"ssh"` | Connection protocol |
+| `dockerSocketPath` | `string` | Path to Docker socket (for local connections) |
+| `sshUser` | `string` | SSH username for remote connections (protocol: "ssh") |
+| `sshKeyPath` | `string` | Path to SSH private key for authentication |
+| `tags` | `string[]` | Optional tags for filtering |
 
 ### Resource Limits & Defaults
 
 | Setting | Value | Description |
-|---------|-------|-------------|
+| -------|-------|-------------|
 | `CHARACTER_LIMIT` | 40,000 | Maximum response size (~12.5k tokens) |
 | `DEFAULT_LIMIT` | 20 | Default pagination limit for list operations |
 | `MAX_LIMIT` | 100 | Maximum pagination limit |
@@ -214,11 +309,11 @@ Add to `~/.claude/claude_code_config.json`:
 ```json
 {
   "mcpServers": {
-    "homelab": {
+    "synapse": {
       "command": "node",
-      "args": ["/absolute/path/to/homelab-mcp-server/dist/index.js"],
+      "args": ["/absolute/path/to/synapse-mcp/dist/index.js"],
       "env": {
-        "HOMELAB_CONFIG_FILE": "/home/youruser/.config/homelab-mcp/config.json"
+        "SYNAPSE_CONFIG_FILE": "/home/youruser/.config/synapse-mcp/config.json"
       }
     }
   }
@@ -230,9 +325,9 @@ Or if your config is in one of the default locations, you can skip the env entir
 ```json
 {
   "mcpServers": {
-    "homelab": {
+    "synapse": {
       "command": "node",
-      "args": ["/absolute/path/to/homelab-mcp-server/dist/index.js"]
+      "args": ["/absolute/path/to/synapse-mcp/dist/index.js"]
     }
   }
 }
@@ -240,12 +335,13 @@ Or if your config is in one of the default locations, you can skip the env entir
 
 Then in Claude Code:
 ```
-> /mcp
-
-> List all running containers on unraid
-> Restart the plex container
-> Show me the logs from sonarr with errors in the last hour
-> Which containers are using the most memory?
+> List all running containers on tootie (uses flux tool)
+> Restart the plex container (uses flux tool)
+> Show me the logs from sonarr with errors in the last hour (uses flux tool)
+> Which containers are using the most memory? (uses flux tool)
+> Read the nginx config on tootie (uses scout tool)
+> Check ZFS pool health on dookie (uses scout tool)
+> Show me systemd journal errors from the last hour (uses scout tool)
 ```
 
 ### HTTP Mode
@@ -272,69 +368,67 @@ node dist/index.js --help
 
 ## Example Interactions
 
-### List containers
+### Flux Tool - Container Management
 ```
-User: What containers are running on my homelab?
+User: What containers are running on tootie?
 
-Claude: [calls homelab with action="container", subaction="list", state="running"]
+Claude: [calls flux with action="container", subaction="list", host="tootie", state="running"]
 
-I found 47 running containers across your hosts:
+I found 23 running containers on tootie:
 
-🟢 plex (unraid) - Image: linuxserver/plex | Up 3 days
-🟢 sonarr (unraid) - Image: linuxserver/sonarr | Up 3 days
-🟢 radarr (unraid) - Image: linuxserver/radarr | Up 3 days
+🟢 plex (tootie) - Image: linuxserver/plex | Up 3 days
+🟢 sonarr (tootie) - Image: linuxserver/sonarr | Up 3 days
+🟢 radarr (tootie) - Image: linuxserver/radarr | Up 3 days
 ...
 ```
 
-### Check logs
+### Flux Tool - Log Analysis
 ```
 User: Show me any errors from nginx in the last hour
 
-Claude: [calls homelab with action="container", subaction="logs",
+Claude: [calls flux with action="container", subaction="logs",
         container_id="nginx", since="1h", grep="error"]
 
 Found 3 error entries in nginx logs:
 [14:23:15] 2024/12/15 14:23:15 [error] connect() failed...
 ```
 
-### Resource monitoring
+### Scout Tool - Remote File Access
 ```
-User: Which containers are using the most CPU?
+User: Read the nginx config on tootie
 
-Claude: [calls homelab with action="container", subaction="stats"]
+Claude: [calls scout with action="peek", target="tootie:/etc/nginx/nginx.conf"]
 
-Top CPU consumers:
-| Container | Host | CPU% | Memory |
-|-----------|------|------|--------|
-| plex | unraid | 45.2% | 2.1 GB |
-| handbrake | unraid | 23.8% | 1.4 GB |
-```
+Here's the nginx configuration from tootie:
 
-### Compose operations
-```
-User: Start my media stack
-
-Claude: [calls homelab with action="compose", subaction="up",
-        host="unraid", project="media-stack"]
-
-Started media-stack compose project with 5 services:
-✓ sonarr - Running
-✓ radarr - Running
-✓ jackett - Running
-✓ transmission - Running
-✓ plex - Running
+user nginx;
+worker_processes auto;
+...
 ```
 
-### Image management
+### Scout Tool - ZFS Health Check
 ```
-User: Pull the latest nginx image on unraid
+User: Check ZFS pool health on dookie
 
-Claude: [calls homelab with action="image", subaction="pull",
-        host="unraid", image="nginx:latest"]
+Claude: [calls scout with action="zfs", subaction="pools", host="dookie"]
 
-Successfully pulled nginx:latest
-Digest: sha256:abc123...
-Size: 142 MB
+ZFS Pools on dookie:
+
+tank - ONLINE | Size: 24TB | Free: 8.2TB | Health: 100%
+backup - ONLINE | Size: 12TB | Free: 5.1TB | Health: 100%
+```
+
+### Scout Tool - System Logs
+```
+User: Show me Docker service errors from systemd journal
+
+Claude: [calls scout with action="logs", subaction="journal",
+        host="tootie", unit="docker.service", priority="err"]
+
+Recent errors from docker.service:
+
+[15:42:10] Failed to allocate directory watch: Too many open files
+[15:42:15] containerd: connection error: desc = "transport: error while dialing"
 ```
 
 ## Security
@@ -374,10 +468,16 @@ relative/path
 
 ```bash
 # Watch mode for development
-npm run dev
+pnpm run dev
 
 # Build
-npm run build
+pnpm run build
+
+# Run tests
+pnpm test
+
+# Run tests with coverage
+pnpm run test:coverage
 
 # Test with MCP Inspector
 npx @modelcontextprotocol/inspector node dist/index.js
@@ -386,30 +486,40 @@ npx @modelcontextprotocol/inspector node dist/index.js
 ## Architecture
 
 ```
-homelab-mcp-server/
+synapse-mcp/
 ├── src/
 │   ├── index.ts                         # Entry point, transport setup
 │   ├── types.ts                         # TypeScript interfaces
 │   ├── constants.ts                     # Configuration constants
+│   ├── config/
+│   │   └── command-allowlist.json       # Allowed commands for scout:exec
 │   ├── formatters/
 │   │   ├── index.ts                     # Response formatting utilities
 │   │   └── formatters.test.ts           # Formatter tests
 │   ├── tools/
 │   │   ├── index.ts                     # Tool registration router
-│   │   ├── unified.ts                   # Unified homelab tool implementation
-│   │   ├── unified.test.ts              # Unit tests
-│   │   └── unified.integration.test.ts  # Integration tests
+│   │   ├── flux.ts                      # Flux tool handler + routing
+│   │   ├── scout.ts                     # Scout tool handler + routing
+│   │   ├── container.ts                 # handleContainerAction()
+│   │   ├── compose.ts                   # handleComposeAction()
+│   │   ├── docker.ts                    # handleDockerAction()
+│   │   └── host.ts                      # handleHostAction()
 │   ├── services/
-│   │   ├── docker.ts                    # Docker API client
-│   │   ├── docker.test.ts               # Docker service tests
-│   │   ├── compose.ts                   # Docker Compose management
-│   │   ├── compose.test.ts              # Compose service tests
-│   │   ├── ssh.ts                       # SSH host resource monitoring
-│   │   └── ssh.test.ts                  # SSH service tests
+│   │   ├── docker.ts                    # DockerService
+│   │   ├── compose.ts                   # ComposeService
+│   │   ├── ssh.ts                       # SSHService
+│   │   └── scout/                       # Scout-specific services
+│   │       ├── pool.ts                  # SSH connection pool
+│   │       ├── executors.ts             # Command execution
+│   │       └── transfer.ts              # File transfer (beam)
 │   ├── schemas/
-│   │   ├── index.ts                     # Legacy schema exports
-│   │   ├── unified.ts                   # Unified action/subaction schemas
-│   │   └── unified.test.ts              # Schema validation tests
+│   │   ├── index.ts                     # FluxSchema + ScoutSchema exports
+│   │   ├── common.ts                    # Shared schemas (pagination, response_format)
+│   │   ├── container.ts                 # Container subaction schemas
+│   │   ├── compose.ts                   # Compose subaction schemas
+│   │   ├── docker.ts                    # Docker subaction schemas
+│   │   ├── host.ts                      # Host subaction schemas
+│   │   └── scout.ts                     # Scout action schemas
 │   └── lint.test.ts                     # Linting tests
 ├── dist/                                 # Compiled JavaScript
 ├── package.json
@@ -417,46 +527,50 @@ homelab-mcp-server/
 └── README.md
 ```
 
-### Key Architectural Changes
+### Key Architectural Decisions
 
-**Unified Tool Pattern** (Commit 07fccbd, 12/18/2025):
-- Consolidated 15 individual tools into a single `homelab` tool
-- Action/subaction routing pattern for better organization
-- Single entry point with type-safe parameter validation
+**V3 Schema Refactor - Two Tools Pattern**:
+- **Flux**: 4 actions (container, compose, docker, host) with 39 total subactions
+- **Scout**: 11 actions (9 simple + 2 with subactions) for 16 total operations
+- Clean separation: Flux = Docker/state changes, Scout = SSH/read operations
+- Total: 55 discriminator keys across both tools
 
-**Formatting Module** (Commit 147d563):
-- Extracted 40+ formatting helpers to dedicated `formatters/` module
-- Markdown output for all tool responses
-- Consistent formatting across all operations
-
-**Docker Compose Support** (Commit ec88df9):
-- Full compose project lifecycle management
-- Service-level operations and filtering
-- Build, pull, and recreate capabilities
-
-**Discriminated Union Optimization** (Commit f8e6e27, 12/24/2025):
-- Migrated schema validation from O(n) sequential to O(1) discriminated union
-- Uses composite `action_subaction` discriminator for instant schema lookup
-- Achieved <0.005ms validation latency across all 30 operations
+**Discriminated Union for O(1) Validation**:
+- **Flux**: Composite `action_subaction` discriminator (`container:list`, `compose:up`, etc.)
+- **Scout**: Primary `action` discriminator with nested discriminators for `zfs` and `logs`
+- Validation latency: <0.005ms average across all operations
 - Zero performance degradation regardless of which operation is called
+
+**Help System**:
+- Auto-generated help handlers for both tools
+- Introspects Zod schemas using `.describe()` metadata
+- Supports topic-specific help (e.g., `flux help container:logs`)
+- Available in markdown or JSON format
+
+**SSH Connection Pooling**:
+- 50× faster for repeated operations
+- Automatic idle timeout and health checks
+- Configurable pool size and connection reuse
+- Transparent integration (no code changes required)
 
 **Test Coverage**:
 - Unit tests for all services, schemas, and tools
 - Integration tests for end-to-end workflows
 - Performance benchmarks for schema validation
-- 8 test files covering core functionality
+- TDD approach for all new features
 
 ## Performance
 
 ### Schema Validation
 
-The unified tool uses Zod discriminated union for O(1) constant-time schema validation:
+Both Flux and Scout tools use Zod discriminated union for O(1) constant-time schema validation:
 
-- **Validation latency**: <0.005ms average across all 30 operations
-- **Optimization**: Discriminated union with `action_subaction` composite key
+- **Validation latency**: <0.005ms average across all 55 operations
+- **Flux optimization**: Composite `action_subaction` discriminator with preprocessor
+- **Scout optimization**: Primary `action` discriminator with nested discriminators for zfs/logs
 - **Consistency**: All operations perform identically fast (no worst-case scenarios)
 
-All inputs are automatically preprocessed to inject the discriminator key, maintaining backward compatibility.
+Flux inputs are automatically preprocessed to inject the `action_subaction` discriminator key.
 
 ### SSH Connection Pooling
 

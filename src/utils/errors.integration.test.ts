@@ -56,17 +56,9 @@ describe("Error Handling Integration", () => {
     });
 
     // Verify all context logged
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("req-456")
-    );
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("web-01")
-    );
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("production")
-    );
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("up")
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("req-456"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("web-01"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("production"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("up"));
   });
 });

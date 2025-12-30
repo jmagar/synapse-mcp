@@ -1,11 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { ServiceContainer } from "./container.js";
-import type {
-  IDockerService,
-  ISSHService,
-  IComposeService,
-  IFileService
-} from "./interfaces.js";
+import type { IDockerService, ISSHService, IComposeService, IFileService } from "./interfaces.js";
 
 describe("ServiceContainer", () => {
   it("creates default services lazily", () => {

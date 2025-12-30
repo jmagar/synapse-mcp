@@ -3161,41 +3161,1215 @@ Repeat steps 1-5 for each remaining subaction (images, pull, build, rmi), adding
 
 ### Task 19: Implement Host Handlers (RED-GREEN-REFACTOR)
 
-**Note:** Follow same TDD pattern as Task 16 for host handlers
-
 **Files:**
 - Create: `src/tools/handlers/host.ts`
 - Test: `src/tools/handlers/host.test.ts`
+
+**Step 1: Write failing tests for host handlers**
+
+```typescript
+// src/tools/handlers/host.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { handleHostAction } from './host.js';
+
+describe('Host Handler', () => {
+  it('should handle status subaction', async () => {
+    const mockDockerService = {
+      ping: vi.fn().mockResolvedValue(true),
+      getContainerCount: vi.fn().mockResolvedValue(23)
+    };
+    const mockContainer = {
+      getDockerService: () => mockDockerService,
+      getHostConfig: () => ({ name: 'tootie', host: 'tootie.local' })
+    } as any;
+
+    const result = await handleHostAction({
+      action: 'host',
+      subaction: 'status',
+      action_subaction: 'host:status',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockDockerService.ping).toHaveBeenCalled();
+    expect(result).toContain('tootie');
+    expect(result).toContain('23');
+  });
+
+  it('should handle resources subaction', async () => {
+    const mockSSHService = {
+      getSystemResources: vi.fn().mockResolvedValue({
+        cpu: { usage: 45.2, cores: 8 },
+        memory: { used: 16384, total: 32768 },
+        disk: { used: 500, total: 1000 }
+      })
+    };
+    const mockContainer = {
+      getSSHService: () => mockSSHService
+    } as any;
+
+    const result = await handleHostAction({
+      action: 'host',
+      subaction: 'resources',
+      action_subaction: 'host:resources',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockSSHService.getSystemResources).toHaveBeenCalledWith('tootie');
+    expect(result).toContain('45.2');
+    expect(result).toContain('16384');
+  });
+
+  it('should handle info subaction', async () => {
+    const mockSSHService = {
+      getSystemInfo: vi.fn().mockResolvedValue({
+        os: 'Linux',
+        kernel: '6.1.0',
+        arch: 'x86_64',
+        hostname: 'tootie.local'
+      })
+    };
+    const mockContainer = {
+      getSSHService: () => mockSSHService
+    } as any;
+
+    const result = await handleHostAction({
+      action: 'host',
+      subaction: 'info',
+      action_subaction: 'host:info',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockSSHService.getSystemInfo).toHaveBeenCalledWith('tootie');
+    expect(result).toContain('Linux');
+    expect(result).toContain('6.1.0');
+  });
+
+  it('should handle uptime subaction', async () => {
+    const mockSSHService = {
+      getUptime: vi.fn().mockResolvedValue({ uptime: '15 days, 3:42:10' })
+    };
+    const mockContainer = {
+      getSSHService: () => mockSSHService
+    } as any;
+
+    const result = await handleHostAction({
+      action: 'host',
+      subaction: 'uptime',
+      action_subaction: 'host:uptime',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockSSHService.getUptime).toHaveBeenCalledWith('tootie');
+    expect(result).toContain('15 days');
+  });
+
+  it('should handle services subaction with state filter', async () => {
+    const mockSSHService = {
+      getSystemdServices: vi.fn().mockResolvedValue([
+        { name: 'docker', state: 'running', enabled: true },
+        { name: 'nginx', state: 'running', enabled: true }
+      ])
+    };
+    const mockContainer = {
+      getSSHService: () => mockSSHService
+    } as any;
+
+    const result = await handleHostAction({
+      action: 'host',
+      subaction: 'services',
+      action_subaction: 'host:services',
+      host: 'tootie',
+      state: 'running'
+    }, mockContainer);
+
+    expect(mockSSHService.getSystemdServices).toHaveBeenCalledWith('tootie', { state: 'running' });
+    expect(result).toContain('docker');
+    expect(result).toContain('nginx');
+  });
+
+  it('should handle network subaction', async () => {
+    const mockSSHService = {
+      getNetworkInfo: vi.fn().mockResolvedValue({
+        interfaces: [
+          { name: 'eth0', ip: '192.168.1.100', mac: 'aa:bb:cc:dd:ee:ff' },
+          { name: 'docker0', ip: '172.17.0.1', mac: '02:42:ac:11:00:01' }
+        ]
+      })
+    };
+    const mockContainer = {
+      getSSHService: () => mockSSHService
+    } as any;
+
+    const result = await handleHostAction({
+      action: 'host',
+      subaction: 'network',
+      action_subaction: 'host:network',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockSSHService.getNetworkInfo).toHaveBeenCalledWith('tootie');
+    expect(result).toContain('eth0');
+    expect(result).toContain('192.168.1.100');
+  });
+
+  it('should handle mounts subaction', async () => {
+    const mockSSHService = {
+      getMounts: vi.fn().mockResolvedValue([
+        { device: '/dev/sda1', mountpoint: '/', type: 'ext4', size: '100G', used: '45G' },
+        { device: '/dev/sdb1', mountpoint: '/mnt/data', type: 'zfs', size: '2T', used: '1.2T' }
+      ])
+    };
+    const mockContainer = {
+      getSSHService: () => mockSSHService
+    } as any;
+
+    const result = await handleHostAction({
+      action: 'host',
+      subaction: 'mounts',
+      action_subaction: 'host:mounts',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockSSHService.getMounts).toHaveBeenCalledWith('tootie');
+    expect(result).toContain('/dev/sda1');
+    expect(result).toContain('/mnt/data');
+  });
+});
+```
+
+**Step 2: Run test to verify it fails (RED)**
+
+Run: `pnpm test src/tools/handlers/host.test.ts`
+Expected: FAIL with "Cannot find module './host.js'"
+
+**Step 3: Write minimal implementation (GREEN)**
+
+```typescript
+// src/tools/handlers/host.ts
+import type { ServiceContainer } from '../../services/container.js';
+
+export async function handleHostAction(
+  input: any,
+  container: ServiceContainer
+): Promise<string> {
+  switch (input.subaction) {
+    case 'status': {
+      const dockerService = container.getDockerService(input.host);
+      const config = container.getHostConfig(input.host);
+      const isOnline = await dockerService.ping();
+      const containerCount = isOnline ? await dockerService.getContainerCount() : 0;
+
+      return `Host: ${config.name} (${config.host})\nStatus: ${isOnline ? 'Online' : 'Offline'}\nContainers: ${containerCount}`;
+    }
+
+    case 'resources': {
+      const sshService = container.getSSHService();
+      const resources = await sshService.getSystemResources(input.host);
+
+      return `CPU: ${resources.cpu.usage}% (${resources.cpu.cores} cores)\n` +
+             `Memory: ${resources.memory.used} / ${resources.memory.total} MB\n` +
+             `Disk: ${resources.disk.used} / ${resources.disk.total} GB`;
+    }
+
+    case 'info': {
+      const sshService = container.getSSHService();
+      const info = await sshService.getSystemInfo(input.host);
+
+      return `OS: ${info.os}\nKernel: ${info.kernel}\nArch: ${info.arch}\nHostname: ${info.hostname}`;
+    }
+
+    case 'uptime': {
+      const sshService = container.getSSHService();
+      const { uptime } = await sshService.getUptime(input.host);
+
+      return `Uptime: ${uptime}`;
+    }
+
+    case 'services': {
+      const sshService = container.getSSHService();
+      const services = await sshService.getSystemdServices(input.host, {
+        state: input.state,
+        service: input.service
+      });
+
+      return services.map(s => `${s.name}: ${s.state} (${s.enabled ? 'enabled' : 'disabled'})`).join('\n');
+    }
+
+    case 'network': {
+      const sshService = container.getSSHService();
+      const { interfaces } = await sshService.getNetworkInfo(input.host);
+
+      return interfaces.map(i => `${i.name}: ${i.ip} (${i.mac})`).join('\n');
+    }
+
+    case 'mounts': {
+      const sshService = container.getSSHService();
+      const mounts = await sshService.getMounts(input.host);
+
+      return mounts.map(m => `${m.device} on ${m.mountpoint} (${m.type}) - ${m.used} / ${m.size}`).join('\n');
+    }
+
+    default:
+      throw new Error(`Unknown host subaction: ${input.subaction}`);
+  }
+}
+```
+
+**Step 4: Run test to verify it passes (GREEN)**
+
+Run: `pnpm test src/tools/handlers/host.test.ts`
+Expected: PASS
+
+**Step 5: Refactor (if needed) and commit**
+
+```bash
+git add src/tools/handlers/host.ts src/tools/handlers/host.test.ts
+git commit -m "feat(handlers): implement host handlers with TDD (all 7 subactions)"
+```
+
+**Step 6: Integration check**
+
+Run full test suite: `pnpm test`
+Expected: All tests PASS
 
 ---
 
 ### Task 20: Implement Scout Simple Handlers (RED-GREEN-REFACTOR)
 
-**Note:** Follow same TDD pattern as Task 16 for scout simple action handlers
-
 **Files:**
 - Create: `src/tools/handlers/scout-simple.ts`
 - Test: `src/tools/handlers/scout-simple.test.ts`
+
+**Step 1: Write failing tests for scout simple handlers (9 actions)**
+
+```typescript
+// src/tools/handlers/scout-simple.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { handleScoutSimpleAction } from './scout-simple.js';
+
+describe('Scout Simple Handler', () => {
+  it('should handle nodes action', async () => {
+    const mockScoutService = {
+      listNodes: vi.fn().mockResolvedValue([
+        { name: 'tootie', host: 'tootie.local', status: 'online' },
+        { name: 'dookie', host: 'dookie.local', status: 'online' }
+      ])
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'nodes'
+    }, mockContainer);
+
+    expect(mockScoutService.listNodes).toHaveBeenCalled();
+    expect(result).toContain('tootie');
+    expect(result).toContain('dookie');
+  });
+
+  it('should handle peek action for file read', async () => {
+    const mockScoutService = {
+      readRemoteFile: vi.fn().mockResolvedValue({
+        content: 'user nginx;\nworker_processes auto;'
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'peek',
+      target: 'tootie:/etc/nginx/nginx.conf',
+      tree: false
+    }, mockContainer);
+
+    expect(mockScoutService.readRemoteFile).toHaveBeenCalledWith('tootie', '/etc/nginx/nginx.conf');
+    expect(result).toContain('user nginx');
+  });
+
+  it('should handle peek action for directory tree', async () => {
+    const mockScoutService = {
+      getDirectoryTree: vi.fn().mockResolvedValue({
+        tree: '/var/log/\n├── nginx/\n│   ├── access.log\n│   └── error.log'
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'peek',
+      target: 'tootie:/var/log',
+      tree: true,
+      depth: 2
+    }, mockContainer);
+
+    expect(mockScoutService.getDirectoryTree).toHaveBeenCalledWith('tootie', '/var/log', { depth: 2 });
+    expect(result).toContain('nginx/');
+  });
+
+  it('should handle exec action', async () => {
+    const mockScoutService = {
+      executeCommand: vi.fn().mockResolvedValue({
+        stdout: '50M\t/var/www/html\n30M\t/var/www/app',
+        stderr: '',
+        exitCode: 0
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'exec',
+      target: 'tootie:/var/www',
+      command: 'du -sh *',
+      timeout: 30
+    }, mockContainer);
+
+    expect(mockScoutService.executeCommand).toHaveBeenCalledWith('tootie', '/var/www', 'du -sh *', { timeout: 30 });
+    expect(result).toContain('50M');
+  });
+
+  it('should handle find action', async () => {
+    const mockScoutService = {
+      findFiles: vi.fn().mockResolvedValue({
+        files: [
+          '/etc/nginx/nginx.conf',
+          '/etc/nginx/sites-available/default.conf'
+        ]
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'find',
+      target: 'tootie:/etc',
+      pattern: '*.conf',
+      depth: 3
+    }, mockContainer);
+
+    expect(mockScoutService.findFiles).toHaveBeenCalledWith('tootie', '/etc', '*.conf', { depth: 3 });
+    expect(result).toContain('nginx.conf');
+  });
+
+  it('should handle delta action for file comparison', async () => {
+    const mockScoutService = {
+      compareFiles: vi.fn().mockResolvedValue({
+        diff: '--- tootie:/etc/hosts\n+++ dookie:/etc/hosts\n@@ -1,2 +1,2 @@\n-127.0.0.1 localhost\n+127.0.0.1 localhost.localdomain'
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'delta',
+      source: 'tootie:/etc/hosts',
+      target: 'dookie:/etc/hosts'
+    }, mockContainer);
+
+    expect(mockScoutService.compareFiles).toHaveBeenCalledWith('tootie:/etc/hosts', 'dookie:/etc/hosts');
+    expect(result).toContain('localhost');
+  });
+
+  it('should handle delta action for content comparison', async () => {
+    const mockScoutService = {
+      compareWithContent: vi.fn().mockResolvedValue({
+        diff: '--- tootie:/etc/hosts\n+++ (content)\n@@ -1,2 +1,2 @@\n-127.0.0.1 localhost'
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'delta',
+      source: 'tootie:/etc/hosts',
+      content: '127.0.0.1 localhost\n::1 localhost'
+    }, mockContainer);
+
+    expect(mockScoutService.compareWithContent).toHaveBeenCalledWith('tootie:/etc/hosts', '127.0.0.1 localhost\n::1 localhost');
+    expect(result).toContain('localhost');
+  });
+
+  it('should handle emit action for multi-host file read', async () => {
+    const mockScoutService = {
+      readMultipleFiles: vi.fn().mockResolvedValue({
+        results: [
+          { host: 'web1', path: '/var/log/app.log', content: '[ERROR] Connection failed' },
+          { host: 'web2', path: '/var/log/app.log', content: '[INFO] Server started' }
+        ]
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'emit',
+      targets: ['web1:/var/log/app.log', 'web2:/var/log/app.log']
+    }, mockContainer);
+
+    expect(mockScoutService.readMultipleFiles).toHaveBeenCalledWith(['web1:/var/log/app.log', 'web2:/var/log/app.log']);
+    expect(result).toContain('web1');
+    expect(result).toContain('ERROR');
+  });
+
+  it('should handle emit action for multi-host command execution', async () => {
+    const mockScoutService = {
+      executeOnMultipleHosts: vi.fn().mockResolvedValue({
+        results: [
+          { host: 'tootie', stdout: 'Filesystem      Size  Used Avail Use%\n/dev/sda1       100G   45G   55G  45%' },
+          { host: 'dookie', stdout: 'Filesystem      Size  Used Avail Use%\n/dev/sda1       2.0T  1.2T  800G  60%' }
+        ]
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'emit',
+      targets: ['tootie:/tmp', 'dookie:/tmp'],
+      command: 'df -h'
+    }, mockContainer);
+
+    expect(mockScoutService.executeOnMultipleHosts).toHaveBeenCalledWith(
+      ['tootie:/tmp', 'dookie:/tmp'],
+      'df -h'
+    );
+    expect(result).toContain('tootie');
+    expect(result).toContain('45G');
+  });
+
+  it('should handle beam action for file transfer', async () => {
+    const mockScoutService = {
+      transferFile: vi.fn().mockResolvedValue({
+        success: true,
+        bytesTransferred: 1048576
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'beam',
+      source: 'tootie:/tmp/backup.tar.gz',
+      destination: 'dookie:/backup/'
+    }, mockContainer);
+
+    expect(mockScoutService.transferFile).toHaveBeenCalledWith('tootie:/tmp/backup.tar.gz', 'dookie:/backup/');
+    expect(result).toContain('1048576');
+  });
+
+  it('should handle ps action', async () => {
+    const mockScoutService = {
+      listProcesses: vi.fn().mockResolvedValue([
+        { pid: 1234, user: 'root', cpu: 15.2, mem: 2048, command: 'dockerd' },
+        { pid: 5678, user: 'nginx', cpu: 5.1, mem: 512, command: 'nginx: worker' }
+      ])
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'ps',
+      host: 'tootie',
+      grep: 'docker',
+      sort: 'cpu',
+      limit: 50
+    }, mockContainer);
+
+    expect(mockScoutService.listProcesses).toHaveBeenCalledWith('tootie', {
+      grep: 'docker',
+      sort: 'cpu',
+      limit: 50
+    });
+    expect(result).toContain('dockerd');
+    expect(result).toContain('15.2');
+  });
+
+  it('should handle df action', async () => {
+    const mockScoutService = {
+      getDiskUsage: vi.fn().mockResolvedValue({
+        filesystems: [
+          { device: '/dev/sda1', mountpoint: '/', size: '100G', used: '45G', avail: '55G', usePercent: '45%' },
+          { device: '/dev/sdb1', mountpoint: '/mnt/data', size: '2.0T', used: '1.2T', avail: '800G', usePercent: '60%' }
+        ]
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutSimpleAction({
+      action: 'df',
+      host: 'tootie',
+      path: '/mnt/data',
+      human_readable: true
+    }, mockContainer);
+
+    expect(mockScoutService.getDiskUsage).toHaveBeenCalledWith('tootie', {
+      path: '/mnt/data',
+      humanReadable: true
+    });
+    expect(result).toContain('/mnt/data');
+    expect(result).toContain('1.2T');
+  });
+});
+```
+
+**Step 2: Run test to verify it fails (RED)**
+
+Run: `pnpm test src/tools/handlers/scout-simple.test.ts`
+Expected: FAIL with "Cannot find module './scout-simple.js'"
+
+**Step 3: Write minimal implementation (GREEN)**
+
+```typescript
+// src/tools/handlers/scout-simple.ts
+import type { ServiceContainer } from '../../services/container.js';
+
+export async function handleScoutSimpleAction(
+  input: any,
+  container: ServiceContainer
+): Promise<string> {
+  const scoutService = container.getScoutService();
+
+  switch (input.action) {
+    case 'nodes': {
+      const nodes = await scoutService.listNodes();
+      return nodes.map(n => `${n.name} (${n.host}) - ${n.status}`).join('\n');
+    }
+
+    case 'peek': {
+      const [hostname, path] = input.target.split(':');
+
+      if (input.tree) {
+        const { tree } = await scoutService.getDirectoryTree(hostname, path, { depth: input.depth });
+        return tree;
+      } else {
+        const { content } = await scoutService.readRemoteFile(hostname, path);
+        return content;
+      }
+    }
+
+    case 'exec': {
+      const [hostname, workdir] = input.target.split(':');
+      const { stdout, stderr, exitCode } = await scoutService.executeCommand(
+        hostname,
+        workdir,
+        input.command,
+        { timeout: input.timeout }
+      );
+
+      return exitCode === 0 ? stdout : `${stdout}\n${stderr}`;
+    }
+
+    case 'find': {
+      const [hostname, searchRoot] = input.target.split(':');
+      const { files } = await scoutService.findFiles(hostname, searchRoot, input.pattern, {
+        depth: input.depth
+      });
+
+      return files.join('\n');
+    }
+
+    case 'delta': {
+      if (input.content) {
+        const { diff } = await scoutService.compareWithContent(input.source, input.content);
+        return diff;
+      } else {
+        const { diff } = await scoutService.compareFiles(input.source, input.target);
+        return diff;
+      }
+    }
+
+    case 'emit': {
+      if (input.command) {
+        const { results } = await scoutService.executeOnMultipleHosts(input.targets, input.command);
+        return results.map(r => `=== ${r.host} ===\n${r.stdout}`).join('\n\n');
+      } else {
+        const { results } = await scoutService.readMultipleFiles(input.targets);
+        return results.map(r => `=== ${r.host}:${r.path} ===\n${r.content}`).join('\n\n');
+      }
+    }
+
+    case 'beam': {
+      const { success, bytesTransferred } = await scoutService.transferFile(
+        input.source,
+        input.destination
+      );
+
+      return success ? `Transferred ${bytesTransferred} bytes` : 'Transfer failed';
+    }
+
+    case 'ps': {
+      const processes = await scoutService.listProcesses(input.host, {
+        grep: input.grep,
+        user: input.user,
+        sort: input.sort,
+        limit: input.limit
+      });
+
+      return processes
+        .map(p => `${p.pid}\t${p.user}\t${p.cpu}%\t${p.mem}MB\t${p.command}`)
+        .join('\n');
+    }
+
+    case 'df': {
+      const { filesystems } = await scoutService.getDiskUsage(input.host, {
+        path: input.path,
+        humanReadable: input.human_readable
+      });
+
+      return filesystems
+        .map(f => `${f.device}\t${f.mountpoint}\t${f.size}\t${f.used}\t${f.avail}\t${f.usePercent}`)
+        .join('\n');
+    }
+
+    default:
+      throw new Error(`Unknown scout action: ${input.action}`);
+  }
+}
+```
+
+**Step 4: Run test to verify it passes (GREEN)**
+
+Run: `pnpm test src/tools/handlers/scout-simple.test.ts`
+Expected: PASS
+
+**Step 5: Refactor (if needed) and commit**
+
+```bash
+git add src/tools/handlers/scout-simple.ts src/tools/handlers/scout-simple.test.ts
+git commit -m "feat(handlers): implement scout simple handlers with TDD (all 9 actions)"
+```
+
+**Step 6: Integration check**
+
+Run full test suite: `pnpm test`
+Expected: All tests PASS
 
 ---
 
 ### Task 21: Implement Scout ZFS Handler (RED-GREEN-REFACTOR)
 
-**Note:** Follow same TDD pattern as Task 16 for scout zfs handler
-
 **Files:**
 - Create: `src/tools/handlers/scout-zfs.ts`
 - Test: `src/tools/handlers/scout-zfs.test.ts`
+
+**Step 1: Write failing tests for scout zfs handlers**
+
+```typescript
+// src/tools/handlers/scout-zfs.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { handleScoutZfsAction } from './scout-zfs.js';
+
+describe('Scout ZFS Handler', () => {
+  it('should handle pools subaction', async () => {
+    const mockScoutService = {
+      getZfsPools: vi.fn().mockResolvedValue([
+        { name: 'tank', size: '10T', alloc: '5T', free: '5T', health: 'ONLINE' },
+        { name: 'cache', size: '2T', alloc: '500G', free: '1.5T', health: 'ONLINE' }
+      ])
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutZfsAction({
+      action: 'zfs',
+      subaction: 'pools',
+      action_subaction: 'zfs:pools',
+      host: 'tootie'
+    }, mockContainer);
+
+    expect(mockScoutService.getZfsPools).toHaveBeenCalledWith('tootie');
+    expect(result).toContain('tank');
+    expect(result).toContain('ONLINE');
+  });
+
+  it('should handle datasets subaction', async () => {
+    const mockScoutService = {
+      getZfsDatasets: vi.fn().mockResolvedValue([
+        { name: 'tank/data', used: '2T', avail: '3T', refer: '1.5T', mountpoint: '/mnt/data' },
+        { name: 'tank/media', used: '1T', avail: '4T', refer: '800G', mountpoint: '/mnt/media' }
+      ])
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutZfsAction({
+      action: 'zfs',
+      subaction: 'datasets',
+      action_subaction: 'zfs:datasets',
+      host: 'tootie',
+      pool: 'tank'
+    }, mockContainer);
+
+    expect(mockScoutService.getZfsDatasets).toHaveBeenCalledWith('tootie', 'tank');
+    expect(result).toContain('tank/data');
+    expect(result).toContain('/mnt/data');
+  });
+
+  it('should handle snapshots subaction', async () => {
+    const mockScoutService = {
+      getZfsSnapshots: vi.fn().mockResolvedValue([
+        { name: 'tank/data@daily-2025-12-29', used: '100M', refer: '1.5T', creation: '2025-12-29 00:00' },
+        { name: 'tank/data@daily-2025-12-28', used: '50M', refer: '1.5T', creation: '2025-12-28 00:00' }
+      ])
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutZfsAction({
+      action: 'zfs',
+      subaction: 'snapshots',
+      action_subaction: 'zfs:snapshots',
+      host: 'tootie',
+      pool: 'tank',
+      dataset: 'data'
+    }, mockContainer);
+
+    expect(mockScoutService.getZfsSnapshots).toHaveBeenCalledWith('tootie', 'tank', 'data');
+    expect(result).toContain('@daily-2025-12-29');
+  });
+
+  it('should handle health subaction', async () => {
+    const mockScoutService = {
+      getZfsHealth: vi.fn().mockResolvedValue({
+        pool: 'tank',
+        state: 'ONLINE',
+        scan: 'scrub repaired 0B in 12h with 0 errors on 2025-12-28',
+        errors: 'No known data errors'
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutZfsAction({
+      action: 'zfs',
+      subaction: 'health',
+      action_subaction: 'zfs:health',
+      host: 'tootie',
+      pool: 'tank'
+    }, mockContainer);
+
+    expect(mockScoutService.getZfsHealth).toHaveBeenCalledWith('tootie', 'tank');
+    expect(result).toContain('ONLINE');
+    expect(result).toContain('No known data errors');
+  });
+
+  it('should handle scrub subaction', async () => {
+    const mockScoutService = {
+      runZfsScrub: vi.fn().mockResolvedValue({
+        success: true,
+        message: 'Started scrub on pool tank'
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutZfsAction({
+      action: 'zfs',
+      subaction: 'scrub',
+      action_subaction: 'zfs:scrub',
+      host: 'tootie',
+      pool: 'tank'
+    }, mockContainer);
+
+    expect(mockScoutService.runZfsScrub).toHaveBeenCalledWith('tootie', 'tank');
+    expect(result).toContain('Started scrub');
+  });
+
+  it('should handle iostat subaction', async () => {
+    const mockScoutService = {
+      getZfsIostat: vi.fn().mockResolvedValue({
+        pool: 'tank',
+        capacity: '50%',
+        operations: { read: 1234, write: 5678 },
+        bandwidth: { read: '100M/s', write: '200M/s' }
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutZfsAction({
+      action: 'zfs',
+      subaction: 'iostat',
+      action_subaction: 'zfs:iostat',
+      host: 'tootie',
+      pool: 'tank'
+    }, mockContainer);
+
+    expect(mockScoutService.getZfsIostat).toHaveBeenCalledWith('tootie', 'tank');
+    expect(result).toContain('50%');
+    expect(result).toContain('100M/s');
+  });
+});
+```
+
+**Step 2: Run test to verify it fails (RED)**
+
+Run: `pnpm test src/tools/handlers/scout-zfs.test.ts`
+Expected: FAIL with "Cannot find module './scout-zfs.js'"
+
+**Step 3: Write minimal implementation (GREEN)**
+
+```typescript
+// src/tools/handlers/scout-zfs.ts
+import type { ServiceContainer } from '../../services/container.js';
+
+export async function handleScoutZfsAction(
+  input: any,
+  container: ServiceContainer
+): Promise<string> {
+  const scoutService = container.getScoutService();
+
+  switch (input.subaction) {
+    case 'pools': {
+      const pools = await scoutService.getZfsPools(input.host);
+      return pools
+        .map(p => `${p.name}\t${p.size}\t${p.alloc}\t${p.free}\t${p.health}`)
+        .join('\n');
+    }
+
+    case 'datasets': {
+      const datasets = await scoutService.getZfsDatasets(input.host, input.pool);
+      return datasets
+        .map(d => `${d.name}\t${d.used}\t${d.avail}\t${d.refer}\t${d.mountpoint}`)
+        .join('\n');
+    }
+
+    case 'snapshots': {
+      const snapshots = await scoutService.getZfsSnapshots(
+        input.host,
+        input.pool,
+        input.dataset
+      );
+      return snapshots
+        .map(s => `${s.name}\t${s.used}\t${s.refer}\t${s.creation}`)
+        .join('\n');
+    }
+
+    case 'health': {
+      const health = await scoutService.getZfsHealth(input.host, input.pool);
+      return `Pool: ${health.pool}
+State: ${health.state}
+Scan: ${health.scan}
+Errors: ${health.errors}`;
+    }
+
+    case 'scrub': {
+      const { success, message } = await scoutService.runZfsScrub(
+        input.host,
+        input.pool
+      );
+      return success ? message : `Failed to start scrub: ${message}`;
+    }
+
+    case 'iostat': {
+      const stats = await scoutService.getZfsIostat(input.host, input.pool);
+      return `Pool: ${stats.pool}
+Capacity: ${stats.capacity}
+Operations: Read=${stats.operations.read} Write=${stats.operations.write}
+Bandwidth: Read=${stats.bandwidth.read} Write=${stats.bandwidth.write}`;
+    }
+
+    default:
+      throw new Error(`Unknown zfs subaction: ${input.subaction}`);
+  }
+}
+```
+
+**Step 4: Run test to verify it passes (GREEN)**
+
+Run: `pnpm test src/tools/handlers/scout-zfs.test.ts`
+Expected: PASS
+
+**Step 5: Refactor (if needed) and commit**
+
+```bash
+git add src/tools/handlers/scout-zfs.ts src/tools/handlers/scout-zfs.test.ts
+git commit -m "feat(handlers): implement scout zfs handlers with TDD (6 subactions)"
+```
+
+**Step 6: Integration check**
+
+Run full test suite: `pnpm test`
+Expected: All tests PASS
 
 ---
 
 ### Task 22: Implement Scout Logs Handler (RED-GREEN-REFACTOR)
 
-**Note:** Follow same TDD pattern as Task 16 for scout logs handler
-
 **Files:**
 - Create: `src/tools/handlers/scout-logs.ts`
 - Test: `src/tools/handlers/scout-logs.test.ts`
+
+**Step 1: Write failing tests for scout logs handlers**
+
+```typescript
+// src/tools/handlers/scout-logs.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { handleScoutLogsAction } from './scout-logs.js';
+
+describe('Scout Logs Handler', () => {
+  it('should handle system subaction', async () => {
+    const mockScoutService = {
+      getSystemLogs: vi.fn().mockResolvedValue({
+        logs: [
+          { timestamp: '2025-12-29 10:00:00', level: 'INFO', message: 'System started' },
+          { timestamp: '2025-12-29 10:01:00', level: 'WARN', message: 'Low memory' }
+        ]
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutLogsAction({
+      action: 'logs',
+      subaction: 'system',
+      action_subaction: 'logs:system',
+      host: 'tootie',
+      lines: 100,
+      follow: false
+    }, mockContainer);
+
+    expect(mockScoutService.getSystemLogs).toHaveBeenCalledWith('tootie', { lines: 100, follow: false });
+    expect(result).toContain('System started');
+    expect(result).toContain('WARN');
+  });
+
+  it('should handle docker subaction', async () => {
+    const mockScoutService = {
+      getDockerLogs: vi.fn().mockResolvedValue({
+        logs: [
+          { timestamp: '2025-12-29 10:00:00', container: 'plex', message: 'Container started' },
+          { timestamp: '2025-12-29 10:01:00', container: 'nginx', message: 'Request handled' }
+        ]
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutLogsAction({
+      action: 'logs',
+      subaction: 'docker',
+      action_subaction: 'logs:docker',
+      host: 'tootie',
+      container: 'plex',
+      lines: 50,
+      since: '1h'
+    }, mockContainer);
+
+    expect(mockScoutService.getDockerLogs).toHaveBeenCalledWith(
+      'tootie',
+      'plex',
+      { lines: 50, since: '1h' }
+    );
+    expect(result).toContain('Container started');
+    expect(result).toContain('plex');
+  });
+
+  it('should handle kernel subaction', async () => {
+    const mockScoutService = {
+      getKernelLogs: vi.fn().mockResolvedValue({
+        logs: [
+          { timestamp: '2025-12-29 09:00:00', facility: 'kern', message: 'Boot complete' },
+          { timestamp: '2025-12-29 09:01:00', facility: 'kern', message: 'USB device connected' }
+        ]
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutLogsAction({
+      action: 'logs',
+      subaction: 'kernel',
+      action_subaction: 'logs:kernel',
+      host: 'tootie',
+      lines: 200,
+      grep: 'USB'
+    }, mockContainer);
+
+    expect(mockScoutService.getKernelLogs).toHaveBeenCalledWith('tootie', { lines: 200, grep: 'USB' });
+    expect(result).toContain('USB device connected');
+  });
+
+  it('should handle app subaction', async () => {
+    const mockScoutService = {
+      getAppLogs: vi.fn().mockResolvedValue({
+        logs: [
+          { timestamp: '2025-12-29 10:00:00', level: 'INFO', message: 'Request received' },
+          { timestamp: '2025-12-29 10:00:01', level: 'ERROR', message: 'Database connection failed' }
+        ]
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutLogsAction({
+      action: 'logs',
+      subaction: 'app',
+      action_subaction: 'logs:app',
+      host: 'tootie',
+      path: '/var/log/app/server.log',
+      lines: 500,
+      grep: 'ERROR'
+    }, mockContainer);
+
+    expect(mockScoutService.getAppLogs).toHaveBeenCalledWith(
+      'tootie',
+      '/var/log/app/server.log',
+      { lines: 500, grep: 'ERROR' }
+    );
+    expect(result).toContain('Database connection failed');
+  });
+
+  it('should handle auth subaction', async () => {
+    const mockScoutService = {
+      getAuthLogs: vi.fn().mockResolvedValue({
+        logs: [
+          { timestamp: '2025-12-29 08:00:00', user: 'admin', event: 'login', result: 'success' },
+          { timestamp: '2025-12-29 08:05:00', user: 'attacker', event: 'login', result: 'failed' }
+        ]
+      })
+    };
+    const mockContainer = {
+      getScoutService: () => mockScoutService
+    } as any;
+
+    const result = await handleScoutLogsAction({
+      action: 'logs',
+      subaction: 'auth',
+      action_subaction: 'logs:auth',
+      host: 'tootie',
+      lines: 100,
+      grep: 'failed'
+    }, mockContainer);
+
+    expect(mockScoutService.getAuthLogs).toHaveBeenCalledWith('tootie', { lines: 100, grep: 'failed' });
+    expect(result).toContain('attacker');
+    expect(result).toContain('failed');
+  });
+});
+```
+
+**Step 2: Run test to verify it fails (RED)**
+
+Run: `pnpm test src/tools/handlers/scout-logs.test.ts`
+Expected: FAIL with "Cannot find module './scout-logs.js'"
+
+**Step 3: Write minimal implementation (GREEN)**
+
+```typescript
+// src/tools/handlers/scout-logs.ts
+import type { ServiceContainer } from '../../services/container.js';
+
+export async function handleScoutLogsAction(
+  input: any,
+  container: ServiceContainer
+): Promise<string> {
+  const scoutService = container.getScoutService();
+
+  switch (input.subaction) {
+    case 'system': {
+      const { logs } = await scoutService.getSystemLogs(input.host, {
+        lines: input.lines,
+        follow: input.follow
+      });
+      return logs
+        .map(l => `${l.timestamp} [${l.level}] ${l.message}`)
+        .join('\n');
+    }
+
+    case 'docker': {
+      const { logs } = await scoutService.getDockerLogs(
+        input.host,
+        input.container,
+        {
+          lines: input.lines,
+          since: input.since
+        }
+      );
+      return logs
+        .map(l => `${l.timestamp} [${l.container}] ${l.message}`)
+        .join('\n');
+    }
+
+    case 'kernel': {
+      const { logs } = await scoutService.getKernelLogs(input.host, {
+        lines: input.lines,
+        grep: input.grep
+      });
+      return logs
+        .map(l => `${l.timestamp} [${l.facility}] ${l.message}`)
+        .join('\n');
+    }
+
+    case 'app': {
+      const { logs } = await scoutService.getAppLogs(
+        input.host,
+        input.path,
+        {
+          lines: input.lines,
+          grep: input.grep
+        }
+      );
+      return logs
+        .map(l => `${l.timestamp} [${l.level}] ${l.message}`)
+        .join('\n');
+    }
+
+    case 'auth': {
+      const { logs } = await scoutService.getAuthLogs(input.host, {
+        lines: input.lines,
+        grep: input.grep
+      });
+      return logs
+        .map(l => `${l.timestamp} ${l.user} ${l.event} ${l.result}`)
+        .join('\n');
+    }
+
+    default:
+      throw new Error(`Unknown logs subaction: ${input.subaction}`);
+  }
+}
+```
+
+**Step 4: Run test to verify it passes (GREEN)**
+
+Run: `pnpm test src/tools/handlers/scout-logs.test.ts`
+Expected: PASS
+
+**Step 5: Refactor (if needed) and commit**
+
+```bash
+git add src/tools/handlers/scout-logs.ts src/tools/handlers/scout-logs.test.ts
+git commit -m "feat(handlers): implement scout logs handlers with TDD (5 subactions)"
+```
+
+**Step 6: Integration check**
+
+Run full test suite: `pnpm test`
+Expected: All tests PASS
 
 ---
 

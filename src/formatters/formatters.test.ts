@@ -183,8 +183,10 @@ describe("scout formatters", () => {
   describe("formatScoutTransferMarkdown", () => {
     it("formats transfer result", () => {
       const result = formatScoutTransferMarkdown(
-        "tootie", "/tmp/file.txt",
-        "shart", "/backup/file.txt",
+        "tootie",
+        "/tmp/file.txt",
+        "shart",
+        "/backup/file.txt",
         1024
       );
       expect(result).toContain("tootie:/tmp/file.txt");
@@ -194,8 +196,10 @@ describe("scout formatters", () => {
 
     it("includes warning if present", () => {
       const result = formatScoutTransferMarkdown(
-        "tootie", "/tmp/file.txt",
-        "shart", "/etc/config",
+        "tootie",
+        "/tmp/file.txt",
+        "shart",
+        "/etc/config",
         512,
         "Warning: system path"
       );
@@ -206,11 +210,7 @@ describe("scout formatters", () => {
   describe("formatScoutDiffMarkdown", () => {
     it("formats diff output", () => {
       const diff = "--- a/hosts\n+++ b/hosts\n@@ -1 +1 @@\n-old\n+new";
-      const result = formatScoutDiffMarkdown(
-        "tootie", "/etc/hosts",
-        "shart", "/etc/hosts",
-        diff
-      );
+      const result = formatScoutDiffMarkdown("tootie", "/etc/hosts", "shart", "/etc/hosts", diff);
       expect(result).toContain("tootie:/etc/hosts");
       expect(result).toContain("shart:/etc/hosts");
       expect(result).toContain("---");

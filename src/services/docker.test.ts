@@ -1,11 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  formatBytes,
-  formatUptime,
-  isSocketPath,
-  formatImageId,
-  DockerService
-} from "./docker.js";
+import { formatBytes, formatUptime, isSocketPath, formatImageId, DockerService } from "./docker.js";
 import type { HostConfig } from "../types.js";
 
 describe("formatBytes", () => {
@@ -91,7 +85,6 @@ describe("isSocketPath", () => {
   });
 });
 
-
 describe("formatImageId", () => {
   it("should truncate sha256 image ID to 12 characters", () => {
     const fullId = "sha256:abc123def456789012345678901234567890abcd";
@@ -112,7 +105,6 @@ describe("formatImageId", () => {
     expect(formatImageId("")).toBe("");
   });
 });
-
 
 describe("DockerService buildImage method", () => {
   it("should reject with validation error for invalid tag characters", async () => {

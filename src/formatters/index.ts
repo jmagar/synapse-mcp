@@ -667,18 +667,8 @@ export function formatScoutReadMarkdown(
 /**
  * Format directory listing as markdown
  */
-export function formatScoutListMarkdown(
-  host: string,
-  path: string,
-  listing: string
-): string {
-  return truncateIfNeeded([
-    `## 📁 ${host}:${path}`,
-    "",
-    "```",
-    listing,
-    "```"
-  ].join("\n"));
+export function formatScoutListMarkdown(host: string, path: string, listing: string): string {
+  return truncateIfNeeded([`## 📁 ${host}:${path}`, "", "```", listing, "```"].join("\n"));
 }
 
 /**
@@ -690,13 +680,9 @@ export function formatScoutTreeMarkdown(
   tree: string,
   depth: number
 ): string {
-  return truncateIfNeeded([
-    `## 🌳 ${host}:${path} (depth: ${depth})`,
-    "",
-    "```",
-    tree,
-    "```"
-  ].join("\n"));
+  return truncateIfNeeded(
+    [`## 🌳 ${host}:${path} (depth: ${depth})`, "", "```", tree, "```"].join("\n")
+  );
 }
 
 /**
@@ -711,17 +697,19 @@ export function formatScoutExecMarkdown(
 ): string {
   const statusEmoji = exitCode === 0 ? "✅" : "❌";
 
-  return truncateIfNeeded([
-    `## ${statusEmoji} Command: ${host}:${path}`,
-    "",
-    `**Command:** \`${command}\``,
-    `**Exit:** ${exitCode}`,
-    "",
-    "**Output:**",
-    "```",
-    stdout,
-    "```"
-  ].join("\n"));
+  return truncateIfNeeded(
+    [
+      `## ${statusEmoji} Command: ${host}:${path}`,
+      "",
+      `**Command:** \`${command}\``,
+      `**Exit:** ${exitCode}`,
+      "",
+      "**Output:**",
+      "```",
+      stdout,
+      "```"
+    ].join("\n")
+  );
 }
 
 /**
@@ -733,18 +721,20 @@ export function formatScoutFindMarkdown(
   pattern: string,
   results: string
 ): string {
-  const lines = results.split("\n").filter(l => l.trim());
+  const lines = results.split("\n").filter((l) => l.trim());
 
-  return truncateIfNeeded([
-    `## 🔍 Find: ${host}:${path}`,
-    "",
-    `**Pattern:** \`${pattern}\``,
-    `**Results:** ${lines.length} files`,
-    "",
-    "```",
-    results,
-    "```"
-  ].join("\n"));
+  return truncateIfNeeded(
+    [
+      `## 🔍 Find: ${host}:${path}`,
+      "",
+      `**Pattern:** \`${pattern}\``,
+      `**Results:** ${lines.length} files`,
+      "",
+      "```",
+      results,
+      "```"
+    ].join("\n")
+  );
 }
 
 /**
@@ -784,14 +774,16 @@ export function formatScoutDiffMarkdown(
   path2: string,
   diff: string
 ): string {
-  return truncateIfNeeded([
-    `## 📊 Diff`,
-    "",
-    `**File 1:** ${host1}:${path1}`,
-    `**File 2:** ${host2}:${path2}`,
-    "",
-    "```diff",
-    diff,
-    "```"
-  ].join("\n"));
+  return truncateIfNeeded(
+    [
+      `## 📊 Diff`,
+      "",
+      `**File 1:** ${host1}:${path1}`,
+      `**File 2:** ${host2}:${path2}`,
+      "",
+      "```diff",
+      diff,
+      "```"
+    ].join("\n")
+  );
 }

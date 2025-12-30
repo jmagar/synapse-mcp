@@ -38,6 +38,10 @@ export const MAX_TREE_DEPTH = 10;
 export const DEFAULT_FIND_LIMIT = 100;
 export const MAX_FIND_LIMIT = 1000;
 
+// Diff context lines limits
+export const DEFAULT_DIFF_CONTEXT_LINES = 3;
+export const MAX_DIFF_CONTEXT_LINES = 50;
+
 // Allowed commands for exec subaction (read-only operations)
 export const ALLOWED_COMMANDS = new Set([
   "cat",

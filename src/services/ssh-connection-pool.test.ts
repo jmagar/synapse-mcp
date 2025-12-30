@@ -12,7 +12,7 @@ describe("SSHConnectionPoolImpl - DI Readiness", () => {
   it("implements SSHConnectionPool interface", () => {
     pool = new SSHConnectionPoolImpl({
       maxConnections: 1,
-      enableHealthChecks: false,
+      enableHealthChecks: false
     });
 
     // Verify interface compliance
