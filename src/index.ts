@@ -9,7 +9,7 @@ import { registerTools } from "./tools/index.js";
 import { createDefaultContainer, type ServiceContainer } from "./services/container.js";
 
 // Server metadata
-const SERVER_NAME = "homelab-mcp-server";
+const SERVER_NAME = "synapse-mcp";
 const SERVER_VERSION = "1.0.0";
 
 // Global service container instance
