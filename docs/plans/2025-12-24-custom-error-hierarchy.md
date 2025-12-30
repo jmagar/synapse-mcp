@@ -2417,8 +2417,8 @@ Replace lines 115-117 (env config parse error):
 ```typescript
       } catch (error) {
         throw new ConfigurationError(
-          `Failed to parse HOMELAB_HOSTS_CONFIG: ${error instanceof Error ? error.message : "Invalid JSON"}`,
-          "HOMELAB_HOSTS_CONFIG",
+          `Failed to parse SYNAPSE_HOSTS_CONFIG: ${error instanceof Error ? error.message : "Invalid JSON"}`,
+          "SYNAPSE_HOSTS_CONFIG",
           undefined,
           error instanceof Error ? error : undefined
         );

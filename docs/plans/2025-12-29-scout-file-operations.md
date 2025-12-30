@@ -65,14 +65,14 @@ cat, head, tail, grep, rg, find, ls, tree, wc, sort, uniq,
 diff, stat, file, du, df, pwd, hostname, uptime, whoami
 ```
 
-Override: `HOMELAB_ALLOW_ANY_COMMAND=true`
+Override: `SYNAPSE_ALLOW_ANY_COMMAND=true`
 
 ### Resource Limits
 
 | Resource | Default | Max | Env Override |
 |----------|---------|-----|--------------|
-| File read size | 1MB | 10MB | `HOMELAB_MAX_FILE_SIZE` |
-| Command timeout | 30s | 300s | `HOMELAB_COMMAND_TIMEOUT` |
+| File read size | 1MB | 10MB | `SYNAPSE_MAX_FILE_SIZE` |
+| Command timeout | 30s | 300s | `SYNAPSE_COMMAND_TIMEOUT` |
 | Tree depth | 3 | 10 | (parameter) |
 | Find max results | 100 | 1000 | (parameter) |
 
@@ -499,7 +499,7 @@ export const ALLOWED_COMMANDS = new Set([
 ]);
 
 // Environment variable to disable command allowlist
-export const ENV_ALLOW_ANY_COMMAND = "HOMELAB_ALLOW_ANY_COMMAND";
+export const ENV_ALLOW_ANY_COMMAND = "SYNAPSE_ALLOW_ANY_COMMAND";
 ```
 
 ### Step 2.4: Run tests to verify they pass
@@ -1100,15 +1100,15 @@ describe("FileService", () => {
         }
       });
 
-      it("allows any command when HOMELAB_ALLOW_ANY_COMMAND=true", async () => {
-        process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      it("allows any command when SYNAPSE_ALLOW_ANY_COMMAND=true", async () => {
+        process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
         vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue("ok");
 
         await expect(
           fileService.executeCommand(testHost, "/tmp", "rm -rf /tmp/test", 30000)
         ).resolves.not.toThrow();
 
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       });
     });
   });

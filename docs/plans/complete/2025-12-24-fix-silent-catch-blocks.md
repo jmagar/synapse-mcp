@@ -765,7 +765,7 @@ import { logError } from "../utils/errors.js";
       } catch (error) {
         logError(error, {
           operation: "loadHostConfigs",
-          metadata: { source: "HOMELAB_HOSTS_CONFIG" }
+          metadata: { source: "SYNAPSE_HOSTS_CONFIG" }
         });
         // Continue to default config - this is expected behavior
       }
