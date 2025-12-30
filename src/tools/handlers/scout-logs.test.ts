@@ -258,6 +258,102 @@ describe('Scout Logs Handler', () => {
     });
   });
 
+  describe('grep pattern security validation', () => {
+    beforeEach(async () => {
+      // Reset mock to return valid host
+      vi.mocked(await import('../../services/docker.js')).loadHostConfigs.mockReturnValue([
+        { name: 'tootie', host: 'tootie', protocol: 'http', port: 2375 }
+      ]);
+    });
+
+    it('should reject grep patterns with shell metacharacters', async () => {
+      const maliciousPatterns = [
+        "'; rm -rf / ; echo '",  // Single quote injection
+        '`whoami`',               // Backtick command substitution
+        '$(cat /etc/passwd)',     // Dollar command substitution
+        'foo; bar',               // Semicolon command separator
+        'foo && bar',             // AND operator
+        'foo || bar',             // OR operator
+        'foo | bar',              // Pipe operator
+        'foo > /tmp/out',         // Output redirect
+        'foo < /tmp/in',          // Input redirect
+        '$()',                    // Command substitution
+        '\\n',                    // Backslash escape
+        'foo"bar',                // Double quote
+      ];
+
+      for (const pattern of maliciousPatterns) {
+        await expect(
+          handleLogsAction({
+            action: 'logs',
+            subaction: 'syslog',
+            host: 'tootie',
+            lines: 100,
+            grep: pattern
+          } as unknown as ScoutInput, mockContainer as ServiceContainer)
+        ).rejects.toThrow('Invalid character in grep pattern');
+      }
+    });
+
+    it('should reject grep patterns that are too long', async () => {
+      const longPattern = 'a'.repeat(201);
+
+      await expect(
+        handleLogsAction({
+          action: 'logs',
+          subaction: 'syslog',
+          host: 'tootie',
+          lines: 100,
+          grep: longPattern
+        } as unknown as ScoutInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow('Grep pattern too long');
+    });
+
+    it('should allow safe grep patterns', async () => {
+      (mockSSHService.executeSSHCommand as ReturnType<typeof vi.fn>).mockResolvedValue(
+        'Dec 15 10:00:00 tootie CRON[12345]: job ran\n'
+      );
+
+      const safePatterns = ['CRON', 'error', 'warning', '12345', 'foo-bar', 'foo_bar', 'foo.bar'];
+
+      for (const pattern of safePatterns) {
+        await expect(
+          handleLogsAction({
+            action: 'logs',
+            subaction: 'syslog',
+            host: 'tootie',
+            lines: 100,
+            grep: pattern
+          } as unknown as ScoutInput, mockContainer as ServiceContainer)
+        ).resolves.not.toThrow();
+      }
+    });
+
+    it('should validate grep patterns for dmesg subaction', async () => {
+      await expect(
+        handleLogsAction({
+          action: 'logs',
+          subaction: 'dmesg',
+          host: 'tootie',
+          lines: 100,
+          grep: "'; rm -rf /"
+        } as unknown as ScoutInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow('Invalid character in grep pattern');
+    });
+
+    it('should validate grep patterns for auth subaction', async () => {
+      await expect(
+        handleLogsAction({
+          action: 'logs',
+          subaction: 'auth',
+          host: 'tootie',
+          lines: 100,
+          grep: '$(whoami)'
+        } as unknown as ScoutInput, mockContainer as ServiceContainer)
+      ).rejects.toThrow('Invalid character in grep pattern');
+    });
+  });
+
   describe('error handling', () => {
     it('should throw on invalid action', async () => {
       await expect(
