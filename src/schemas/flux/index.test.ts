@@ -30,13 +30,13 @@ describe('FluxSchema', () => {
     expect(result.action_subaction).toBe('compose:up');
   });
 
-  it('should validate docker:networks', () => {
+  it('should validate docker:images', () => {
     const result = FluxSchema.parse({
       action: 'docker',
-      subaction: 'networks',
+      subaction: 'images',
       host: 'tootie'
     });
-    expect(result.action_subaction).toBe('docker:networks');
+    expect(result.action_subaction).toBe('docker:images');
   });
 
   it('should validate host:services', () => {
@@ -64,11 +64,14 @@ describe('FluxSchema', () => {
     })).toThrow();
   });
 
-  it('should count 39 total subactions', () => {
+  it('should count 35 total subactions (4 not yet implemented)', () => {
     // Access the inner discriminated union options
     // FluxSchema is a pipe, so we need to get the out schema
+    // NOTE: 4 subactions removed until handlers implemented:
+    //   - container:exec, container:top, docker:networks, docker:volumes
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const innerSchema = (FluxSchema as any)._def.out;
     const options = innerSchema._def?.options;
-    expect(options?.length).toBe(39);
+    expect(options?.length).toBe(35);
   });
 });

@@ -60,6 +60,38 @@ export const projectSchema = z.string().min(1).describe("Docker Compose project 
 export const imageSchema = z.string().min(1).describe("Image name with optional tag");
 
 /**
+ * ZFS pool name schema with security validation
+ * SECURITY: Prevents command injection (CWE-78) by rejecting shell metacharacters
+ * Valid characters: alphanumeric, underscore, hyphen, period
+ * Does NOT allow forward slash (pools are top-level only)
+ */
+export const zfsPoolSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(/^[a-zA-Z0-9_\-.]+$/, "Pool name must be alphanumeric with dashes/underscores/periods")
+  .describe("ZFS pool name");
+
+/**
+ * ZFS dataset name schema with security validation
+ * SECURITY: Prevents command injection (CWE-78) by rejecting shell metacharacters
+ * Valid characters: alphanumeric, underscore, hyphen, period, forward slash, @, #
+ * Allows hierarchical paths like tank/data/backup
+ * Allows snapshot notation like tank/data@snap
+ * Allows bookmark notation like tank/data#bookmark
+ *
+ * Note: Colon (:) is intentionally excluded. While ZFS allows it for user properties
+ * (e.g., com.example:property), this schema is for dataset/snapshot/bookmark paths only.
+ * If user property support is needed, create a separate zfsPropertySchema.
+ */
+export const zfsDatasetSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(/^[a-zA-Z0-9_\-./@#]+$/, "Dataset name must be alphanumeric with valid ZFS characters (/, @, # allowed)")
+  .describe("ZFS dataset name (can include path like pool/dataset, snapshot @, or bookmark #)");
+
+/**
  * Preprocessor to inject composite discriminator key
  * Used by Flux tool to create action_subaction from action + subaction
  *

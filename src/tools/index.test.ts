@@ -18,7 +18,8 @@ describe('Tool Registration', () => {
     expect(server.registerTool).toHaveBeenCalledTimes(2);
 
     // Check first call (flux)
-    const fluxCall = (server.registerTool as any).mock.calls[0];
+    const mockFn = server.registerTool as ReturnType<typeof vi.fn>;
+    const fluxCall = mockFn.mock.calls[0] as unknown[];
     expect(fluxCall[0]).toBe('flux');
     expect(fluxCall[1]).toMatchObject({
       title: 'Flux Tool',
@@ -27,7 +28,7 @@ describe('Tool Registration', () => {
     });
 
     // Check second call (scout)
-    const scoutCall = (server.registerTool as any).mock.calls[1];
+    const scoutCall = mockFn.mock.calls[1] as unknown[];
     expect(scoutCall[0]).toBe('scout');
     expect(scoutCall[1]).toMatchObject({
       title: 'Scout Tool',

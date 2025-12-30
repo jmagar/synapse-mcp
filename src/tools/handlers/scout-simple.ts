@@ -2,11 +2,24 @@
 import type { ServiceContainer } from '../../services/container.js';
 import type { ScoutInput } from '../../schemas/scout/index.js';
 import { loadHostConfigs } from '../../services/docker.js';
+import type { HostConfig } from '../../types.js';
 import { ResponseFormat } from '../../types.js';
 import { DEFAULT_MAX_FILE_SIZE } from '../../constants.js';
+import { escapeShellArg } from '../../utils/path-security.js';
 
 // Simple actions that this handler can process
 const SIMPLE_ACTIONS = ['nodes', 'peek', 'exec', 'find', 'delta', 'emit', 'beam', 'ps', 'df'];
+
+/**
+ * Valid sort options for 'ps' command.
+ * SECURITY NOTE: These values are passed directly to `ps --sort -${sort}`.
+ * The Zod schema (scoutPsSchema) validates against z.enum(['cpu', 'mem', 'pid', 'time']),
+ * but we maintain this const array as defense-in-depth in case the enum is extended
+ * with values that could be interpreted differently by the shell or ps command.
+ * Any new sort options MUST be alphanumeric and safe for shell arguments.
+ */
+const VALID_PS_SORTS = ['cpu', 'mem', 'pid', 'time'] as const;
+type ValidPsSort = typeof VALID_PS_SORTS[number];
 
 /**
  * Parse target string in format 'hostname:/path'
@@ -279,11 +292,17 @@ export async function handleScoutSimpleAction(
     }
 
     case 'ps': {
-      const inp = input as { host: string; grep?: string; user?: string; sort?: string; limit?: number };
+      const inp = input as { host: string; grep?: string; user?: string; sort?: ValidPsSort; limit?: number };
       const hostConfig = findHost(inp.host);
 
       // Build ps command with options
-      const args = ['aux', '--sort', `-${inp.sort || 'cpu'}`];
+      // SECURITY: Defense-in-depth validation - sort is already validated by Zod enum in scoutPsSchema,
+      // but we verify here to guard against schema changes that might introduce unsafe values.
+      const sortValue = inp.sort || 'cpu';
+      if (!VALID_PS_SORTS.includes(sortValue)) {
+        throw new Error(`Invalid sort option: ${sortValue}. Must be one of: ${VALID_PS_SORTS.join(', ')}`);
+      }
+      const args = ['aux', '--sort', `-${sortValue}`];
 
       let output = await sshService.executeSSHCommand(hostConfig, 'ps', args);
 
@@ -323,7 +342,9 @@ export async function handleScoutSimpleAction(
         args.push('-h');
       }
       if (inp.path) {
-        args.push(inp.path);
+        // SECURITY: Path is already validated by safePathSchema in scoutDfSchema,
+        // but we escape it here as defense-in-depth against any schema bypass.
+        args.push(escapeShellArg(inp.path));
       }
 
       const output = await sshService.executeSSHCommand(hostConfig, 'df', args);

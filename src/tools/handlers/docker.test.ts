@@ -305,25 +305,28 @@ describe('Docker Handler', () => {
     });
   });
 
-  describe('networks subaction', () => {
-    it('should throw not implemented for networks', async () => {
+  // NOTE: 'networks' and 'volumes' subactions are NOT in the schema
+  // These tests verify that the handler correctly rejects unknown subactions
+  // When implementing these, re-add the schemas to flux/index.ts first
+  describe('networks subaction (not yet implemented)', () => {
+    it('should throw unknown subaction for networks', async () => {
       await expect(handleDockerAction({
         action: 'docker',
         subaction: 'networks',
         action_subaction: 'docker:networks',
         host: 'tootie'
-      } as unknown as FluxInput, mockContainer as ServiceContainer)).rejects.toThrow('not yet implemented');
+      } as unknown as FluxInput, mockContainer as ServiceContainer)).rejects.toThrow('Unknown subaction');
     });
   });
 
-  describe('volumes subaction', () => {
-    it('should throw not implemented for volumes', async () => {
+  describe('volumes subaction (not yet implemented)', () => {
+    it('should throw unknown subaction for volumes', async () => {
       await expect(handleDockerAction({
         action: 'docker',
         subaction: 'volumes',
         action_subaction: 'docker:volumes',
         host: 'tootie'
-      } as unknown as FluxInput, mockContainer as ServiceContainer)).rejects.toThrow('not yet implemented');
+      } as unknown as FluxInput, mockContainer as ServiceContainer)).rejects.toThrow('Unknown subaction');
     });
   });
 

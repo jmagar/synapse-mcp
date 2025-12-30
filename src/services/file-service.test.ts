@@ -329,5 +329,70 @@ describe("FileService", () => {
         expect.any(Object)
       );
     });
+
+    describe("transferFile host validation", () => {
+      it("rejects targetHost with invalid hostname containing shell metacharacters", async () => {
+        vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue("100");
+
+        const sourceHost = { ...testHost, name: "source" };
+        const maliciousHost = {
+          ...testHost,
+          name: "target",
+          host: "192.168.1.1; rm -rf /" // Command injection attempt
+        };
+
+        await expect(
+          fileService.transferFile(sourceHost, "/tmp/file.txt", maliciousHost, "/backup/")
+        ).rejects.toThrow(/invalid host format/i);
+      });
+
+      it("rejects targetHost with invalid sshUser containing shell metacharacters", async () => {
+        vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue("100");
+
+        const sourceHost = { ...testHost, name: "source" };
+        const maliciousHost = {
+          ...testHost,
+          name: "target",
+          host: "192.168.1.101",
+          sshUser: "user; rm -rf /" // Command injection attempt
+        };
+
+        await expect(
+          fileService.transferFile(sourceHost, "/tmp/file.txt", maliciousHost, "/backup/")
+        ).rejects.toThrow(/invalid ssh user/i);
+      });
+
+      it("allows valid hostnames for cross-host transfers", async () => {
+        vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue("100");
+
+        const sourceHost = { ...testHost, name: "source" };
+        const validHost = {
+          ...testHost,
+          name: "target",
+          host: "server-01.example.com",
+          sshUser: "deploy_user"
+        };
+
+        await expect(
+          fileService.transferFile(sourceHost, "/tmp/file.txt", validHost, "/backup/")
+        ).resolves.not.toThrow();
+      });
+
+      it("allows IPv6 hostnames for cross-host transfers", async () => {
+        vi.mocked(mockSSHService.executeSSHCommand).mockResolvedValue("100");
+
+        const sourceHost = { ...testHost, name: "source" };
+        const ipv6Host = {
+          ...testHost,
+          name: "target",
+          host: "[::1]",
+          sshUser: "admin"
+        };
+
+        await expect(
+          fileService.transferFile(sourceHost, "/tmp/file.txt", ipv6Host, "/backup/")
+        ).resolves.not.toThrow();
+      });
+    });
   });
 });

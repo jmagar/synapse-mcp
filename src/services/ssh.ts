@@ -40,10 +40,16 @@ export function sanitizeForShell(input: string): string {
 
 /**
  * Validate host configuration for SSH
+ * SECURITY: Validates host before shell interpolation to prevent command injection
  */
 export function validateHostForSsh(host: HostConfig): void {
+  // Reject empty or missing hostname explicitly for clearer error messages
+  if (!host.host || host.host.length === 0) {
+    throw new Error('Host is required and cannot be empty');
+  }
+
   // Validate hostname/IP - allow alphanumeric, dots, hyphens, colons (IPv6), and brackets
-  if (host.host && !/^[a-zA-Z0-9.\-:[\]/]+$/.test(host.host)) {
+  if (!/^[a-zA-Z0-9.\-:[\]/]+$/.test(host.host)) {
     throw new Error(`Invalid host format: ${host.host}`);
   }
 

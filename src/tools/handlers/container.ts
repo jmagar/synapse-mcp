@@ -27,9 +27,12 @@ export async function handleContainerAction(
   const hosts = loadHostConfigs();
   const format = input.response_format ?? ResponseFormat.MARKDOWN;
 
+  // Use type assertion for accessing subaction-specific fields validated by Zod
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const inp = input as any;
+
   switch (input.subaction) {
     case 'list': {
-      const inp = input as any;
       const containers = await dockerService.listContainers(hosts, {
         state: inp.state === 'all' ? undefined : inp.state,
         nameFilter: inp.name_filter,
@@ -55,7 +58,6 @@ export async function handleContainerAction(
     case 'stop':
     case 'restart':
     case 'pause': {
-      const inp = input as any;
       const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
         throw new Error(`Container not found: ${inp.container_id}`);
@@ -65,7 +67,6 @@ export async function handleContainerAction(
     }
 
     case 'resume': {
-      const inp = input as any;
       const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
         throw new Error(`Container not found: ${inp.container_id}`);
@@ -76,7 +77,6 @@ export async function handleContainerAction(
     }
 
     case 'logs': {
-      const inp = input as any;
       const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
         throw new Error(`Container not found: ${inp.container_id}`);
@@ -91,7 +91,7 @@ export async function handleContainerAction(
 
       // Apply grep filter if specified
       const filteredLogs = inp.grep
-        ? logs.filter(log => log.message.includes(inp.grep!))
+        ? logs.filter((log: { message: string }) => log.message.includes(inp.grep))
         : logs;
 
       if (format === ResponseFormat.JSON) {
@@ -101,7 +101,6 @@ export async function handleContainerAction(
     }
 
     case 'stats': {
-      const inp = input as any;
       // If container_id is provided, get stats for specific container
       if (inp.container_id) {
         const found = await dockerService.findContainerHost(inp.container_id, hosts);
@@ -129,6 +128,7 @@ export async function handleContainerAction(
         }
       });
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const allStats = (await Promise.all(statsPromises)).filter((s): s is { stats: any; host: string } => s !== null);
 
       if (format === ResponseFormat.JSON) {
@@ -141,7 +141,6 @@ export async function handleContainerAction(
     }
 
     case 'inspect': {
-      const inp = input as any;
       const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
         throw new Error(`Container not found: ${inp.container_id}`);
@@ -164,10 +163,14 @@ export async function handleContainerAction(
           restartCount: inspection.RestartCount,
           ports: Object.entries(inspection.NetworkSettings.Ports || {})
             .filter(([, bindings]) => bindings && bindings.length > 0)
-            .map(([containerPort, bindings]) =>
-              `${bindings![0].HostIp || '0.0.0.0'}:${bindings![0].HostPort} → ${containerPort}`
-            ),
-          mounts: (inspection.Mounts || []).map(m => ({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .map(([containerPort, bindings]: [string, any]) => {
+              const binding = bindings?.[0];
+              return binding
+                ? `${binding.HostIp || '0.0.0.0'}:${binding.HostPort} → ${containerPort}`
+                : containerPort;
+            }),
+          mounts: (inspection.Mounts || []).map((m: { Source: string; Destination: string; Type: string }) => ({
             src: m.Source,
             dst: m.Destination,
             type: m.Type
@@ -180,11 +183,11 @@ export async function handleContainerAction(
         return formatInspectSummaryMarkdown(summary);
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return formatInspectMarkdown(inspection as any, found.host.name);
     }
 
     case 'search': {
-      const inp = input as any;
       const containers = await dockerService.listContainers(hosts, {
         nameFilter: inp.query
       });
@@ -203,18 +206,16 @@ export async function handleContainerAction(
     }
 
     case 'pull': {
-      const inp = input as any;
       const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
         throw new Error(`Container not found: ${inp.container_id}`);
       }
-      const image = (found.container as any).Image || inp.container_id;
+      const image = found.container.Image || inp.container_id;
       const result = await dockerService.pullImage(image, found.host);
       return `Pulled image ${image}: ${result.status}`;
     }
 
     case 'recreate': {
-      const inp = input as any;
       const found = await dockerService.findContainerHost(inp.container_id, hosts);
       if (!found) {
         throw new Error(`Container not found: ${inp.container_id}`);
@@ -225,18 +226,15 @@ export async function handleContainerAction(
       return `Container recreated: ${result.containerId} (${result.status})`;
     }
 
-    case 'exec': {
-      // exec requires execContainer method which may not exist yet
-      throw new Error(`exec subaction not yet implemented`);
-    }
-
-    case 'top': {
-      // top requires getContainerProcesses method which may not exist yet
-      throw new Error(`top subaction not yet implemented`);
-    }
+    // NOTE: 'exec' and 'top' subactions are NOT in the schema yet
+    // because handlers are not implemented. When implementing:
+    // 1. Add exec: execContainer method to IDockerService
+    // 2. Add top: getContainerProcesses method to IDockerService
+    // 3. Re-add containerExecSchema and containerTopSchema to flux/index.ts
 
     default:
       // This should never be reached due to Zod validation
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       throw new Error(`Unknown subaction: ${(input as any).subaction}`);
   }
 }

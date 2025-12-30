@@ -152,5 +152,109 @@ describe('Scout Simple Schemas', () => {
       });
       expect(result.human_readable).toBe(true);
     });
+
+    // Security tests for command injection prevention (CWE-78)
+    it('should reject path with semicolon injection', () => {
+      expect(() => scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/tmp; cat /etc/shadow'
+      })).toThrow(/invalid characters/i);
+    });
+
+    it('should reject path with pipe injection', () => {
+      expect(() => scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/tmp | cat /etc/passwd'
+      })).toThrow(/invalid characters/i);
+    });
+
+    it('should reject path with backtick injection', () => {
+      expect(() => scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/tmp/`id`'
+      })).toThrow(/invalid characters/i);
+    });
+
+    it('should reject path with command substitution', () => {
+      expect(() => scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/tmp/$(whoami)'
+      })).toThrow(/invalid characters/i);
+    });
+
+    it('should accept valid absolute paths', () => {
+      const result = scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/home/user/data'
+      });
+      expect(result.path).toBe('/home/user/data');
+    });
+
+    it('should accept paths with dots in filenames', () => {
+      const result = scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/var/log/nginx.access.log'
+      });
+      expect(result.path).toBe('/var/log/nginx.access.log');
+    });
+
+    it('should accept paths with hyphens and underscores', () => {
+      const result = scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/mnt/my-data_backup/files'
+      });
+      expect(result.path).toBe('/mnt/my-data_backup/files');
+    });
+
+    // Path traversal prevention tests (CWE-22)
+    it('should reject path with parent directory traversal', () => {
+      expect(() => scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '../../../etc/passwd'
+      })).toThrow(/path traversal/i);
+    });
+
+    it('should reject path with embedded traversal', () => {
+      expect(() => scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/var/log/../../../etc/shadow'
+      })).toThrow(/path traversal/i);
+    });
+
+    it('should reject path with double dot at end', () => {
+      expect(() => scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/var/log/..'
+      })).toThrow(/path traversal/i);
+    });
+
+    it('should allow single dots in path components', () => {
+      // Single dots are valid (current directory or file extensions)
+      const result = scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/var/log/./nginx.log'
+      });
+      expect(result.path).toBe('/var/log/./nginx.log');
+    });
+
+    it('should allow files starting with dot', () => {
+      const result = scoutDfSchema.parse({
+        action: 'df',
+        host: 'tootie',
+        path: '/home/user/.bashrc'
+      });
+      expect(result.path).toBe('/home/user/.bashrc');
+    });
   });
 });

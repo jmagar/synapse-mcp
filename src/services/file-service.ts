@@ -1,6 +1,7 @@
 import type { HostConfig } from "../types.js";
 import type { ISSHService, IFileService } from "./interfaces.js";
 import { validateSecurePath, escapeShellArg, isSystemPath } from "../utils/path-security.js";
+import { validateHostForSsh } from "./ssh.js";
 import {
   ALLOWED_COMMANDS,
   ENV_ALLOW_ANY_COMMAND,
@@ -8,7 +9,8 @@ import {
   MAX_COMMAND_TIMEOUT,
   MAX_TREE_DEPTH,
   MAX_FIND_LIMIT,
-  MAX_DIFF_CONTEXT_LINES
+  MAX_DIFF_CONTEXT_LINES,
+  MAX_FILE_SIZE_LIMIT
 } from "../constants.js";
 
 /**
@@ -91,9 +93,12 @@ export class FileService implements IFileService {
   ): Promise<{ content: string; size: number; truncated: boolean }> {
     this.validatePath(path);
 
+    // SECURITY: Validate maxSize is a safe integer to prevent injection
+    const safeMaxSize = validatePositiveInt(maxSize, "maxSize", MAX_FILE_SIZE_LIMIT);
+
     const escapedPath = escapeShellArg(path);
     // Read maxSize + 1 bytes to detect if truncation is needed
-    const command = `cat ${escapedPath} | head -c ${maxSize + 1}`;
+    const command = `cat ${escapedPath} | head -c ${safeMaxSize + 1}`;
 
     const output = await this.sshService.executeSSHCommand(host, command, [], {
       timeoutMs: DEFAULT_COMMAND_TIMEOUT
@@ -269,18 +274,31 @@ export class FileService implements IFileService {
     // For cross-host transfers, use SSH cat piping
     // This avoids SCP's path escaping issues with user@host:path format
     // Command: cat /source/path | ssh user@target 'cat > /target/path'
+    //
+    // SECURITY: Validate targetHost before interpolating into shell command
+    // to prevent command injection via malicious hostname or sshUser values
+    validateHostForSsh(targetHost);
+
     const targetUser = targetHost.sshUser || "root";
-    const escapedTarget = escapeShellArg(targetPath);
 
-    // The target path needs to be escaped twice:
-    // 1. For the source host's shell (outer escapeShellArg)
-    // 2. For the target host's shell (inner escapeShellArg already applied)
-    // We wrap the entire remote command in single quotes, so we need to
-    // escape any single quotes in the target path for the outer shell
-    const remoteCmd = `cat > ${escapedTarget}`;
-    const escapedRemoteCmd = escapeShellArg(remoteCmd);
+    // Build the remote command that will run on the target host.
+    // The command goes through TWO shell parsing stages:
+    //
+    //   1. SOURCE SHELL: Parses the full `ssh user@host 'remote-cmd'` line
+    //   2. REMOTE SHELL: Parses 'remote-cmd' after SSH delivers it
+    //
+    // Example for targetPath = "/data/my file.txt":
+    //
+    //   Step 1: Escape for remote shell -> "cat > '/data/my file.txt'"
+    //   Step 2: Escape for source shell -> "'cat > '\\'''/data/my file.txt'\\''''"
+    //
+    // The source shell strips the outer quotes and escapes, then SSH passes
+    // "cat > '/data/my file.txt'" to the remote shell, which handles it correctly.
+    //
+    const remoteCmdUnescaped = `cat > ${escapeShellArg(targetPath)}`;  // For remote shell
+    const remoteCmdForSourceShell = escapeShellArg(remoteCmdUnescaped); // For source shell
 
-    const transferCmd = `cat ${escapedSource} | ssh ${targetUser}@${targetHost.host} ${escapedRemoteCmd}`;
+    const transferCmd = `cat ${escapedSource} | ssh ${targetUser}@${targetHost.host} ${remoteCmdForSourceShell}`;
 
     await this.sshService.executeSSHCommand(
       sourceHost,

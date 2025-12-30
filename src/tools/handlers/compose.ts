@@ -25,7 +25,8 @@ export async function handleComposeAction(
   const hosts = loadHostConfigs();
   const format = input.response_format ?? ResponseFormat.MARKDOWN;
 
-  // Use type assertion to access subaction-specific fields
+  // Use type assertion to access subaction-specific fields validated by Zod
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const inp = input as any;
 
   // Find the target host

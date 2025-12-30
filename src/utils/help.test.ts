@@ -94,10 +94,11 @@ describe("Help Handler", () => {
   });
 
   describe("Integration with FluxSchema", () => {
-    it("should generate help for all 39 flux actions", () => {
+    it("should generate help for all 35 flux actions (4 not yet implemented)", () => {
       const help = generateHelp(FluxSchema);
-      // 14 container + 9 compose + 9 docker + 7 host = 39
-      expect(help.length).toBe(39);
+      // 12 container + 9 compose + 7 docker + 7 host = 35
+      // (exec, top, networks, volumes not yet implemented)
+      expect(help.length).toBe(35);
     });
 
     it("should filter by specific action", () => {

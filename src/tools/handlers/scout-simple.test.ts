@@ -355,10 +355,11 @@ describe('Scout Simple Handlers', () => {
         human_readable: true
       } as ScoutInput, mockContainer as ServiceContainer);
 
+      // Path is now escaped with single quotes for shell safety
       expect(mockSSHService.executeSSHCommand).toHaveBeenCalledWith(
         expect.anything(),
         'df',
-        expect.arrayContaining(['-h', '/'])
+        expect.arrayContaining(['-h', "'/'"])
       );
     });
   });

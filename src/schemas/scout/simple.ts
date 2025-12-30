@@ -21,6 +21,27 @@ const scoutTargetSchema = z.string()
   .regex(/^[a-zA-Z0-9_-]+:\/.*$/, "Must be 'hostname:/path' format")
   .describe('Remote location in hostname:/path format');
 
+/**
+ * Safe filesystem path schema - validates against shell metacharacters and path traversal
+ * SECURITY: Prevents command injection (CWE-78) by rejecting dangerous characters
+ * SECURITY: Prevents path traversal (CWE-22) by rejecting '..' as path components
+ * Allows: alphanumeric, underscore, hyphen, period, forward slash
+ *
+ * Note: The regex /(^|\/)\.\.(\/|$)/ specifically matches '..' as a path COMPONENT
+ * (preceded by start/slash and followed by slash/end). This intentionally allows:
+ * - 'file..backup' (dots within filename, not traversal)
+ * - 'foo...bar' (multiple dots in filename)
+ * These are safe because '..' only enables traversal when it's a complete path component.
+ */
+const safePathSchema = z.string()
+  .min(1)
+  .regex(/^[a-zA-Z0-9._\-/]+$/, 'Path contains invalid characters (shell metacharacters not allowed)')
+  .refine(
+    (path) => !/(^|\/)\.\.(\/|$)/.test(path),
+    'Path traversal sequences (..) are not allowed'
+  )
+  .describe('Filesystem path (must be safe for shell use)');
+
 export const scoutNodesSchema = z.object({
   action: z.literal('nodes'),
   response_format: responseFormatSchema
@@ -86,7 +107,7 @@ export const scoutPsSchema = z.object({
 export const scoutDfSchema = z.object({
   action: z.literal('df'),
   host: hostSchema,
-  path: z.string().optional().describe('Specific filesystem path or mount point'),
+  path: safePathSchema.optional().describe('Specific filesystem path or mount point'),
   human_readable: z.boolean().default(true),
   response_format: responseFormatSchema
 }).describe('Disk usage information for a remote host');

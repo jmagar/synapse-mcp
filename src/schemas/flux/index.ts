@@ -3,6 +3,8 @@ import { z } from "zod";
 import { preprocessWithDiscriminator } from "../common.js";
 
 // Import all schemas
+// NOTE: containerExecSchema and containerTopSchema are defined but NOT exported here
+// because their handlers are not yet implemented. Re-add them when implementing handlers.
 import {
   containerListSchema,
   containerStartSchema,
@@ -15,9 +17,7 @@ import {
   containerInspectSchema,
   containerSearchSchema,
   containerPullSchema,
-  containerRecreateSchema,
-  containerExecSchema,
-  containerTopSchema
+  containerRecreateSchema
 } from "./container.js";
 
 import {
@@ -32,6 +32,8 @@ import {
   composeRecreateSchema
 } from "./compose.js";
 
+// NOTE: dockerNetworksSchema and dockerVolumesSchema are defined but NOT exported here
+// because their handlers are not yet implemented. Re-add them when implementing handlers.
 import {
   dockerInfoSchema,
   dockerDfSchema,
@@ -39,9 +41,7 @@ import {
   dockerImagesSchema,
   dockerPullSchema,
   dockerBuildSchema,
-  dockerRmiSchema,
-  dockerNetworksSchema,
-  dockerVolumesSchema
+  dockerRmiSchema
 } from "./docker.js";
 
 import {
@@ -59,6 +59,7 @@ import {
  * Handles both Zod 3.x (innerType) and Zod 4.x (pipe structure)
  */
 function unwrapPreprocess(schema: z.ZodTypeAny): z.ZodTypeAny {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const def = (schema as any)._def;
   // Zod 4.x: z.preprocess creates a pipe with type='pipe' and out field
   if (def?.type === 'pipe' && def?.out) return def.out;
@@ -70,7 +71,7 @@ function unwrapPreprocess(schema: z.ZodTypeAny): z.ZodTypeAny {
 
 // All inner schemas (unwrapped from preprocess)
 const allSchemas = [
-  // Container (14)
+  // Container (12 - exec and top not yet implemented)
   containerListSchema,
   containerStartSchema,
   containerStopSchema,
@@ -83,8 +84,6 @@ const allSchemas = [
   containerSearchSchema,
   containerPullSchema,
   containerRecreateSchema,
-  containerExecSchema,
-  containerTopSchema,
   // Compose (9)
   composeListSchema,
   composeStatusSchema,
@@ -95,7 +94,7 @@ const allSchemas = [
   composeBuildSchema,
   composePullSchema,
   composeRecreateSchema,
-  // Docker (9)
+  // Docker (7 - networks and volumes not yet implemented)
   dockerInfoSchema,
   dockerDfSchema,
   dockerPruneSchema,
@@ -103,8 +102,6 @@ const allSchemas = [
   dockerPullSchema,
   dockerBuildSchema,
   dockerRmiSchema,
-  dockerNetworksSchema,
-  dockerVolumesSchema,
   // Host (7)
   hostStatusSchema,
   hostResourcesSchema,
@@ -113,16 +110,19 @@ const allSchemas = [
   hostServicesSchema,
   hostNetworkSchema,
   hostMountsSchema
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ].map(unwrapPreprocess) as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]];
 
 /**
  * Flux Tool Schema - Docker infrastructure management
  *
  * Actions: 4 (container, compose, docker, host)
- * Subactions: 39 total
- *   - container: 14 (list, start, stop, restart, pause, resume, logs, stats, inspect, search, pull, recreate, exec, top)
+ * Subactions: 35 total (4 not yet implemented)
+ *   - container: 12 (list, start, stop, restart, pause, resume, logs, stats, inspect, search, pull, recreate)
+ *     - NOT YET IMPLEMENTED: exec, top
  *   - compose: 9 (list, status, up, down, restart, logs, build, pull, recreate)
- *   - docker: 9 (info, df, prune, images, pull, build, rmi, networks, volumes)
+ *   - docker: 7 (info, df, prune, images, pull, build, rmi)
+ *     - NOT YET IMPLEMENTED: networks, volumes
  *   - host: 7 (status, resources, info, uptime, services, network, mounts)
  *
  * Uses composite discriminator: action_subaction (e.g., "container:list")

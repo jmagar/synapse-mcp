@@ -2,10 +2,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleContainerAction } from './container.js';
 import type { ServiceContainer } from '../../services/container.js';
+import type { IDockerService } from '../../services/interfaces.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
 
 describe('Container Handler', () => {
-  let mockDockerService: any;
+  let mockDockerService: Partial<IDockerService>;
   let mockContainer: ServiceContainer;
 
   beforeEach(() => {
@@ -320,7 +321,7 @@ describe('Container Handler', () => {
     it('should throw for unknown subaction', async () => {
       await expect(handleContainerAction({
         action: 'container',
-        subaction: 'invalid' as any,
+        subaction: 'invalid' as unknown as 'list',
         action_subaction: 'container:invalid'
       } as FluxInput, mockContainer)).rejects.toThrow('Unknown subaction');
     });

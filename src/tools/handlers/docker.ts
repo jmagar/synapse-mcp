@@ -162,15 +162,10 @@ export async function handleDockerAction(
       return `Image '${imageName}' removed from ${hostConfig.name}: ${result.status}`;
     }
 
-    case 'networks': {
-      // listNetworks method not yet implemented in IDockerService
-      throw new Error('docker:networks subaction not yet implemented');
-    }
-
-    case 'volumes': {
-      // listVolumes method not yet implemented in IDockerService
-      throw new Error('docker:volumes subaction not yet implemented');
-    }
+    // NOTE: 'networks' and 'volumes' subactions are NOT in the schema yet
+    // because handlers are not implemented. When implementing:
+    // 1. Add listNetworks/listVolumes methods to IDockerService
+    // 2. Re-add dockerNetworksSchema and dockerVolumesSchema to flux/index.ts
 
     default:
       // This should never be reached due to Zod validation
