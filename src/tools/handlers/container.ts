@@ -208,7 +208,10 @@ export async function handleContainerAction(
       if (!found) {
         throw new Error(`Container not found: ${inp.container_id}`);
       }
-      const image = (found.container as any).Image || inp.container_id;
+      const image = (found.container as any).Image;
+      if (!image) {
+        throw new Error(`Cannot determine image for container: ${inp.container_id}`);
+      }
       const result = await dockerService.pullImage(image, found.host);
       return `Pulled image ${image}: ${result.status}`;
     }
