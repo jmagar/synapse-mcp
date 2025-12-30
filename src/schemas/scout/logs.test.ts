@@ -1,6 +1,7 @@
 // src/schemas/scout/logs.test.ts
 import { describe, it, expect } from 'vitest';
 import { scoutLogsSchema } from './logs.js';
+import { DEFAULT_LOG_LINES } from '../../constants.js';
 
 describe('Scout Logs Schema', () => {
   it('should validate syslog subaction', () => {
@@ -60,6 +61,6 @@ describe('Scout Logs Schema', () => {
       subaction: 'syslog',
       host: 'tootie'
     });
-    expect(result.lines).toBe(50); // DEFAULT_LOG_LINES
+    expect(result.lines).toBe(DEFAULT_LOG_LINES);
   });
 });
