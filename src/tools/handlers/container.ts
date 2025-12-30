@@ -7,6 +7,7 @@ import {
   formatContainersMarkdown,
   formatLogsMarkdown,
   formatStatsMarkdown,
+  formatMultiStatsMarkdown,
   formatInspectMarkdown,
   formatSearchResultsMarkdown,
   formatInspectSummaryMarkdown
@@ -136,7 +137,6 @@ export async function handleContainerAction(
       }
 
       // Use formatMultiStatsMarkdown for multiple containers
-      const { formatMultiStatsMarkdown } = await import('../../formatters/index.js');
       return formatMultiStatsMarkdown(allStats);
     }
 
