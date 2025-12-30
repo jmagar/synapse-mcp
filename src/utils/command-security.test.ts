@@ -135,18 +135,18 @@ describe("validateCommandAllowlist", () => {
       process.env = originalEnv;
     });
 
-    it("allows any command when HOMELAB_ALLOW_ANY_COMMAND=true", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+    it("allows any command when SYNAPSE_ALLOW_ANY_COMMAND=true", () => {
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       expect(() => validateCommandAllowlist("rm -rf /")).not.toThrow();
     });
 
-    it("still validates normally when HOMELAB_ALLOW_ANY_COMMAND is not set", () => {
-      delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+    it("still validates normally when SYNAPSE_ALLOW_ANY_COMMAND is not set", () => {
+      delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       expect(() => validateCommandAllowlist("rm")).toThrow(/not in allowed list/);
     });
 
-    it("still validates normally when HOMELAB_ALLOW_ANY_COMMAND=false", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "false";
+    it("still validates normally when SYNAPSE_ALLOW_ANY_COMMAND=false", () => {
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "false";
       expect(() => validateCommandAllowlist("rm")).toThrow(/not in allowed list/);
     });
   });
@@ -190,74 +190,74 @@ describe("buildSafeShellCommand", () => {
     it("allows command names with underscores", () => {
       // Would need to be in allowlist or ENV_ALLOW_ANY_COMMAND=true to actually work
       // This test verifies the character pattern accepts underscores
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         expect(() => buildSafeShellCommand("my_command")).not.toThrow();
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
     it("allows command names with hyphens", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         expect(() => buildSafeShellCommand("my-command")).not.toThrow();
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
     it("allows full paths like /usr/bin/grep", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         expect(() => buildSafeShellCommand("/usr/bin/grep pattern")).not.toThrow();
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
     it("throws for command with semicolon", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         expect(() => buildSafeShellCommand("ls;rm")).toThrow(/unsafe characters/i);
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
     it("throws for command with pipe", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         expect(() => buildSafeShellCommand("ls|cat")).toThrow(/unsafe characters/i);
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
     it("throws for command with dollar sign", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         expect(() => buildSafeShellCommand("$HOME/bin/evil")).toThrow(/unsafe characters/i);
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
     it("throws for command with backtick", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         expect(() => buildSafeShellCommand("`whoami`")).toThrow(/unsafe characters/i);
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
     it("throws for command with subshell syntax", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         expect(() => buildSafeShellCommand("$(id)")).toThrow(/unsafe characters/i);
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
@@ -265,35 +265,35 @@ describe("buildSafeShellCommand", () => {
       // Note: parseCommandParts splits on whitespace, so "my command" becomes ["my", "command"]
       // The base command "my" is valid (alphanumeric only)
       // This is expected behavior - spaces are never part of the base command name
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         const result = buildSafeShellCommand("my command");
         expect(result).toBe("my 'command'");
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
     it("throws for command with ampersand", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         expect(() => buildSafeShellCommand("cmd&bg")).toThrow(/unsafe characters/i);
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
     it("throws for command with parentheses", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         expect(() => buildSafeShellCommand("cmd(evil)")).toThrow(/unsafe characters/i);
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
 
     it("error message indicates the issue is with the command name", () => {
-      process.env.HOMELAB_ALLOW_ANY_COMMAND = "true";
+      process.env.SYNAPSE_ALLOW_ANY_COMMAND = "true";
       try {
         buildSafeShellCommand("evil;cmd");
         expect.fail("Should have thrown");
@@ -301,7 +301,7 @@ describe("buildSafeShellCommand", () => {
         expect((error as Error).message).toContain("command");
         expect((error as Error).message).toContain("unsafe");
       } finally {
-        delete process.env.HOMELAB_ALLOW_ANY_COMMAND;
+        delete process.env.SYNAPSE_ALLOW_ANY_COMMAND;
       }
     });
   });
