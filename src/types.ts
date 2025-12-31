@@ -108,8 +108,8 @@ export interface HostStatus {
   error?: string;
 }
 
-// Compose project info
-export interface ComposeProject {
+// Compose project summary (legacy - use ComposeProject from services/compose.ts for detailed info)
+export interface ComposeProjectSummary {
   name: string;
   host: string;
   services: string[];
@@ -147,4 +147,29 @@ export interface DockerVolumeInfo {
   createdAt?: string;
   labels?: Record<string, string>;
   hostName: string;
+}
+
+/**
+ * Docker Compose project information
+ */
+export interface ComposeProject {
+  name: string;
+  status: "running" | "partial" | "stopped" | "unknown";
+  configFiles: string[];
+  services: ComposeServiceInfo[];
+}
+
+/**
+ * Compose service info
+ */
+export interface ComposeServiceInfo {
+  name: string;
+  status: string;
+  health?: string;
+  exitCode?: number;
+  publishers?: Array<{
+    publishedPort: number;
+    targetPort: number;
+    protocol: string;
+  }>;
 }

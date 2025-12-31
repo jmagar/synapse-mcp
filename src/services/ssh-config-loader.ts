@@ -51,6 +51,8 @@ function getStringValue(value: string | { val: string }[]): string {
  * ```
  */
 export function loadFromSSHConfig(configPath: string = join(homedir(), ".ssh", "config")): HostConfig[] {
+  const debug = Boolean(process.env.SYNAPSE_DEBUG);
+
   // Return empty array if config doesn't exist
   if (!existsSync(configPath)) {
     return [];
@@ -129,27 +131,15 @@ export function loadFromSSHConfig(configPath: string = join(homedir(), ".ssh", "
         const rawPath = getStringValue(identityFile.value);
         const expandedPath = expandTildePath(rawPath);
         hostConfig.sshKeyPath = expandedPath;
-
-        // === Layer 0: SSH Config Loading ===
-        console.error("=== SSH Config Loaded ===");
-        console.error("Host:", hostConfig.name);
-        console.error("Host address:", hostConfig.host);
-        console.error("Port:", hostConfig.port || 22);
-        console.error("User:", hostConfig.sshUser || "(not set)");
-        console.error("Raw key path:", rawPath);
-        console.error("Expanded key path:", expandedPath);
       }
 
       hosts.push(hostConfig);
     }
 
-    console.error(`=== SSH Config Parse Complete ===`);
-    console.error(`Loaded ${hosts.length} host(s) from ${configPath}`);
-
     return hosts;
   } catch (error) {
     // Log error but don't crash - return empty array on parse errors
-    console.error(`Failed to parse SSH config at ${configPath}:`, error);
+    if (debug) console.error(`Failed to parse SSH config at ${configPath}:`, error);
     return [];
   }
 }

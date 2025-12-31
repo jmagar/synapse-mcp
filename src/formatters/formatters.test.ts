@@ -392,5 +392,58 @@ describe("docker formatters", () => {
       expect(result).not.toContain("vol1");
       expect(result).not.toContain("vol3");
     });
+
+    it("should handle out-of-bounds offset with empty volumes array", () => {
+      // totalCount=2 but offset=5 (beyond available items)
+      const result = formatVolumesMarkdown([], 2, 5);
+      expect(result).toContain("No volumes found");
+    });
+
+    it("should preserve host header order for pre-sorted paginated volumes", () => {
+      // Pre-sorted volumes spanning multiple hosts
+      const volumes = [
+        {
+          name: "vol1",
+          driver: "local",
+          scope: "local",
+          hostName: "alpha"
+        },
+        {
+          name: "vol2",
+          driver: "local",
+          scope: "local",
+          hostName: "alpha"
+        },
+        {
+          name: "vol3",
+          driver: "nfs",
+          scope: "global",
+          hostName: "bravo"
+        },
+        {
+          name: "vol4",
+          driver: "nfs",
+          scope: "global",
+          hostName: "bravo"
+        },
+        {
+          name: "vol5",
+          driver: "local",
+          scope: "local",
+          hostName: "charlie"
+        }
+      ];
+
+      const result = formatVolumesMarkdown(volumes, 5, 0);
+      const alphaIndex = result.indexOf("### alpha");
+      const bravoIndex = result.indexOf("### bravo");
+      const charlieIndex = result.indexOf("### charlie");
+
+      expect(alphaIndex).toBeGreaterThan(-1);
+      expect(bravoIndex).toBeGreaterThan(-1);
+      expect(charlieIndex).toBeGreaterThan(-1);
+      expect(alphaIndex).toBeLessThan(bravoIndex);
+      expect(bravoIndex).toBeLessThan(charlieIndex);
+    });
   });
 });

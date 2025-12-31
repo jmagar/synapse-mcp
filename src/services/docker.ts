@@ -74,7 +74,7 @@ function createDefaultDockerClient(config: HostConfig): Docker {
     if (config.sshKeyPath) {
       dockerOptions.sshOptions = {
         agent: process.env.SSH_AUTH_SOCK,
-        privateKey: require("fs").readFileSync(config.sshKeyPath)
+        privateKey: readFileSync(config.sshKeyPath)
       };
     }
 

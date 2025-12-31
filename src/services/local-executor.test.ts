@@ -72,7 +72,7 @@ describe("LocalExecutorService", () => {
       it("includes command in error message", async () => {
         try {
           await service.executeLocalCommand("ls", ["/nonexistent/path/12345"]);
-          expect.fail("Should have thrown");
+          throw new Error("Should have thrown");
         } catch (error) {
           expect(error).toBeInstanceOf(Error);
           const err = error as Error;
@@ -118,7 +118,7 @@ describe("LocalExecutorService", () => {
         } catch (error) {
           // If docker is not installed, skip
           if (error instanceof Error && error.message.includes("ENOENT")) {
-            console.log("Docker not available, skipping test");
+            console.error("Docker not available, skipping test");
           } else {
             throw error;
           }
@@ -127,6 +127,8 @@ describe("LocalExecutorService", () => {
     });
 
     describe("systemctl commands", () => {
+      // Note: This test requires systemd to be available on the system
+      // Skip on non-systemd systems (containers, WSL without systemd, etc.)
       it("can execute systemctl list-units", async () => {
         try {
           const result = await service.executeLocalCommand("systemctl", [
@@ -137,15 +139,17 @@ describe("LocalExecutorService", () => {
           expect(result).toBeTruthy();
           expect(result.length).toBeGreaterThan(0);
         } catch (error) {
-          // If systemd is not available or not running as init, skip
+          // Skip if systemd is not available (container, WSL, etc.)
           if (
             error instanceof Error &&
-            (error.message.includes("ENOENT") || error.message.includes("not been booted with systemd"))
+            (error.message.includes("ENOENT") ||
+              error.message.includes("not been booted with systemd") ||
+              error.message.includes("Failed to connect to bus"))
           ) {
-            console.log("systemctl not available or systemd not running, skipping test");
-          } else {
-            throw error;
+            console.error("systemctl not available or systemd not running, skipping test");
+            return;
           }
+          throw error;
         }
       });
     });

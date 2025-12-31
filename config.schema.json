@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/homelab-mcp-server/config.schema.json",
+  "$id": "https://github.com/synapse-mcp/config.schema.json",
   "title": "Synapse MCP Server Configuration",
   "description": "Configuration file for the Synapse MCP server - manages Docker infrastructure across multiple hosts",
   "type": "object",

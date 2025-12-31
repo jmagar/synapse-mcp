@@ -27,7 +27,7 @@ function createServer(): McpServer {
   // Create and register service container
   globalContainer = createDefaultContainer();
 
-  // Register all homelab tools
+  // Register all tools
   registerTools(server, globalContainer);
 
   return server;
@@ -142,11 +142,11 @@ ENVIRONMENT VARIABLES:
 CLAUDE CODE CONFIG (~/.claude/claude_code_config.json):
   {
     "mcpServers": {
-      "homelab": {
+      "synapse": {
         "command": "node",
-        "args": ["/path/to/homelab-mcp-server/dist/index.js"],
+        "args": ["/path/to/synapse-mcp-server/dist/index.js"],
         "env": {
-          "SYNAPSE_CONFIG_FILE": "/path/to/your/homelab.config.json"
+          "SYNAPSE_CONFIG_FILE": "/path/to/your/synapse.config.json"
         }
       }
     }

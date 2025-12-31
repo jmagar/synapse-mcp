@@ -6,8 +6,7 @@
 
 import { CHARACTER_LIMIT } from "../constants.js";
 import { formatBytes } from "../services/docker.js";
-import type { ContainerInfo, ImageInfo } from "../types.js";
-import type { ComposeProject } from "../services/compose.js";
+import type { ContainerInfo, ImageInfo, ComposeProject } from "../types.js";
 
 // Re-export formatBytes for convenience
 export { formatBytes };

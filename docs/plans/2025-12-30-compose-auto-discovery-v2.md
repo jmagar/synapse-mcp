@@ -26,8 +26,10 @@
 
 **Step 0a: Move ComposeProject types to types.ts**
 
+NOTE: types.ts already has a legacy `ComposeProject` interface (renamed to `ComposeProjectSummary`). The compose.ts version is more detailed and will be the canonical version.
+
 ```typescript
-// src/types.ts - ADD these interfaces at the end of the file (after HostConfig)
+// src/types.ts - ADD these interfaces at the end of the file (after ComposeProjectSummary)
 
 /**
  * Docker Compose project information
@@ -58,7 +60,7 @@ export interface ComposeServiceInfo {
 **Step 0b: Update compose.ts to import from types**
 
 ```typescript
-// src/services/compose.ts - REMOVE lines 44-64 (ComposeProject and ComposeServiceInfo interfaces)
+// src/services/compose.ts - REMOVE lines 67-87 (ComposeProject and ComposeServiceInfo interfaces)
 // ADD this import at the top of the file (after existing imports)
 import type { ComposeProject, ComposeServiceInfo } from '../types.js';
 
@@ -312,6 +314,50 @@ describe('ComposeProjectCache', () => {
     const project = await cache.getProject('test-host', 'missing');
     expect(project).toBeUndefined();
   });
+
+  it('should invalidate stale cache entries based on TTL', async () => {
+    const staleDate = new Date(Date.now() - 25 * 60 * 60 * 1000); // 25 hours ago
+    const data = {
+      lastScan: staleDate.toISOString(),
+      searchPaths: ['/compose'],
+      projects: {
+        plex: {
+          path: '/mnt/cache/compose/plex/docker-compose.yaml',
+          name: 'plex',
+          discoveredFrom: 'docker-ls' as const,
+          lastSeen: staleDate.toISOString()
+        }
+      }
+    };
+
+    await cache.save('test-host', data);
+
+    // Should return undefined for stale entry (default TTL: 24 hours)
+    const project = await cache.getProject('test-host', 'plex');
+    expect(project).toBeUndefined();
+  });
+
+  it('should return valid cache entries within TTL', async () => {
+    const recentDate = new Date(Date.now() - 1 * 60 * 60 * 1000); // 1 hour ago
+    const data = {
+      lastScan: recentDate.toISOString(),
+      searchPaths: ['/compose'],
+      projects: {
+        plex: {
+          path: '/mnt/cache/compose/plex/docker-compose.yaml',
+          name: 'plex',
+          discoveredFrom: 'docker-ls' as const,
+          lastSeen: recentDate.toISOString()
+        }
+      }
+    };
+
+    await cache.save('test-host', data);
+
+    // Should return entry within TTL
+    const project = await cache.getProject('test-host', 'plex');
+    expect(project?.path).toBe('/mnt/cache/compose/plex/docker-compose.yaml');
+  });
 });
 ```
 
@@ -340,10 +386,37 @@ export interface CacheData {
   projects: Record<string, CachedProject>;
 }
 
+const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * ⚠️  SECURITY RECOMMENDATION (Code Review Finding):
+ *
+ * The `host` parameter in load() and save() is used directly in path construction
+ * without validation. If `host` contains `../`, it could read/write files outside
+ * the cache directory (path traversal vulnerability).
+ *
+ * REQUIRED FIX:
+ * 1. Sanitize `host` parameter to reject path separators (`/`, `\`, `..`)
+ * 2. Or use existing `validateSecurePath()` from path-security.ts
+ * 3. Add validation in constructor or at start of load()/save()
+ *
+ * Example:
+ * ```typescript
+ * private validateHostname(host: string): void {
+ *   if (!/^[a-zA-Z0-9_-]+$/.test(host)) {
+ *     throw new ValidationError(`Invalid host identifier: ${host}`);
+ *   }
+ * }
+ * ```
+ */
 export class ComposeProjectCache {
-  constructor(private cacheDir = '.cache/compose-projects') {}
+  constructor(
+    private cacheDir = '.cache/compose-projects',
+    private cacheTtlMs = DEFAULT_CACHE_TTL_MS
+  ) {}
 
   async load(host: string): Promise<CacheData> {
+    // TODO: Add host validation here before path construction
     const file = join(this.cacheDir, `${host}.json`);
     try {
       const data = await readFile(file, 'utf-8');
@@ -366,7 +439,23 @@ export class ComposeProjectCache {
 
   async getProject(host: string, projectName: string): Promise<CachedProject | undefined> {
     const data = await this.load(host);
-    return data.projects[projectName];
+    const project = data.projects[projectName];
+
+    // Check TTL - return undefined if stale
+    if (project && this.isStale(project.lastSeen)) {
+      return undefined;
+    }
+
+    return project;
+  }
+
+  /**
+   * Check if a cache entry is stale based on TTL
+   */
+  private isStale(lastSeenIso: string): boolean {
+    const lastSeen = new Date(lastSeenIso).getTime();
+    const now = Date.now();
+    return (now - lastSeen) > this.cacheTtlMs;
   }
 
   async updateProject(
@@ -585,6 +674,9 @@ export class ComposeScanner {
   /**
    * Parse compose file to extract explicit 'name:' field
    * Returns null if no explicit name is defined
+   *
+   * ⚠️  CODE REVIEW FINDING (P2):
+   * Silent error swallowing makes debugging difficult. Add logging before returning null.
    */
   async parseComposeName(host: HostConfig, composePath: string): Promise<string | null> {
     try {
@@ -607,7 +699,9 @@ export class ComposeScanner {
 
       const parsed = parseYaml(content) as { name?: string };
       return parsed.name ?? null;
-    } catch {
+    } catch (error) {
+      // TODO: Add structured logging here for debugging
+      // Example: logger.debug(`Failed to parse compose name from ${composePath}`, { error, host: host.name });
       return null;
     }
   }
@@ -1062,10 +1156,17 @@ Expected: PASS
 
 **Step 5: Remove obsolete tests that verified host was required**
 
-Now that host is optional, remove tests that verified it was required:
+Now that host is optional, update/remove tests that verified host was required:
 
 ```typescript
-// src/schemas/flux/compose.test.ts - REMOVE this test
+// src/schemas/flux/compose.test.ts
+
+// ACTION 1: REMOVE the entire test block that checks "should require host" for composeListSchema
+// Search for and delete this test (approximately lines 50-58):
+describe('composeListSchema', () => {
+  // ... keep other tests ...
+
+  // DELETE THIS ENTIRE TEST:
   it("should require host", () => {
     expect(() =>
       composeListSchema.parse({
@@ -1074,16 +1175,38 @@ Now that host is optional, remove tests that verified it was required:
       })
     ).toThrow();
   });
+});
 
-// CHANGE this test from "should require host and project" to "should require project":
+// ACTION 2: UPDATE the composeStatusSchema test
+// Find the test "should require host and project" (approximately line 80)
+// CHANGE the test name and body:
+describe('composeStatusSchema', () => {
+  // ... keep other tests ...
+
+  // CHANGE FROM:
+  it("should require host and project", () => { ... });
+
+  // CHANGE TO:
   it("should require project", () => {
     expect(() =>
       composeStatusSchema.parse({
         action: "compose",
         subaction: "status"
+        // No project parameter - should fail
       })
     ).toThrow();
   });
+});
+
+// ACTION 3: Repeat for all other compose operation schemas
+// Find and remove "should require host" tests from:
+// - composeUpSchema tests
+// - composeDownSchema tests
+// - composeRestartSchema tests
+// - composeLogsSchema tests
+// - composeBuildSchema tests
+// - composePullSchema tests
+// - composeRecreateSchema tests
 ```
 
 **Step 6: Commit**
@@ -1274,23 +1397,24 @@ git commit -m "feat: implement auto-host resolution for compose operations"
 - Modify: `src/services/compose.ts` (add discovery integration)
 - Test: `src/services/compose.test.ts` (update existing tests)
 
-**Architectural Decision: Bidirectional Dependency via Setter Injection**
+**Architectural Decision: Optional Discovery Injection**
 
-This task creates a bidirectional runtime dependency between ComposeService and ComposeDiscovery:
+ComposeService can optionally use ComposeDiscovery to resolve compose file paths:
 - ComposeDiscovery depends on IComposeProjectLister (implemented by ComposeService) to query running projects
-- ComposeService depends on ComposeDiscovery (optional) to resolve compose file paths
+- ComposeService optionally receives ComposeDiscovery via constructor for path resolution
 
-**Why setter injection is acceptable here:**
-1. **Circular dependency is inherent to the domain:** Discovery needs to query running projects (ComposeService responsibility), and compose operations benefit from discovery (ComposeDiscovery responsibility)
-2. **Optional dependency:** ComposeService works without discovery (falls back to Docker's default resolution)
-3. **Lazy initialization in ServiceContainer:** Both services are created first, then wired together after instantiation
-4. **Alternative considered:** Extracting a separate ComposeProjectLister service would add complexity without significant architectural benefit, as listComposeProjects is a core ComposeService responsibility
+**Architecture:**
+- Constructor injection makes dependency explicit and visible
+- Optional parameter (`discovery?: ComposeDiscovery`) allows ComposeService to work independently
+- ComposeDiscovery still gets IComposeProjectLister interface, avoiding direct ComposeService dependency
+- No circular dependency - clean unidirectional flow
 
-**Trade-offs accepted:**
-- ✅ Simple implementation, minimal code changes
-- ✅ Optional dependency makes ComposeService independently testable
-- ⚠️ Hidden runtime dependency (not visible in constructor signature)
-- ⚠️ Requires careful initialization order in ServiceContainer
+**Benefits:**
+- ✅ Explicit dependencies in constructor signature
+- ✅ No hidden runtime dependencies
+- ✅ ComposeService independently testable (discovery is optional)
+- ✅ Type-safe with proper TypeScript optional parameter
+- ✅ No special initialization order required in ServiceContainer
 
 **Step 1: Write failing test for ComposeService with discovery integration**
 
@@ -1301,11 +1425,15 @@ it('should use discovery to resolve compose file path', async () => {
     resolveProjectPath: vi.fn().mockResolvedValue('/compose/plex/docker-compose.yaml')
   };
 
-  // Inject discovery into service (via setter or constructor)
-  composeService.setDiscovery(mockDiscovery as any);
+  // Create service with discovery injected via constructor
+  const composeServiceWithDiscovery = new ComposeService(
+    mockSSH,
+    mockLocalExecutor,
+    mockDiscovery as any
+  );
 
   const host = { name: 'test', host: 'localhost', protocol: 'ssh' as const };
-  await composeService.composeUp(host, 'plex', true);
+  await composeServiceWithDiscovery.composeUp(host, 'plex', true);
 
   // Verify discovery was called
   expect(mockDiscovery.resolveProjectPath).toHaveBeenCalledWith(host, 'plex');
@@ -1323,12 +1451,16 @@ it('should fall back gracefully when discovery fails', async () => {
     resolveProjectPath: vi.fn().mockRejectedValue(new Error('Project not found'))
   };
 
-  composeService.setDiscovery(mockDiscovery as any);
+  const composeServiceWithDiscovery = new ComposeService(
+    mockSSH,
+    mockLocalExecutor,
+    mockDiscovery as any
+  );
 
   const host = { name: 'test', host: 'localhost', protocol: 'ssh' as const };
 
   // Should NOT throw - should fall back to project name only
-  await composeService.composeUp(host, 'plex', true);
+  await composeServiceWithDiscovery.composeUp(host, 'plex', true);
 
   // Should NOT include -f flag when discovery fails
   expect(mockLocalExecutor.executeLocalCommand).toHaveBeenCalledWith(
@@ -1347,23 +1479,15 @@ Expected: FAIL - discovery integration not yet implemented
 **Step 3: Update ComposeService to use discovery**
 
 ```typescript
-// src/services/compose.ts - add discovery property and setter
+// src/services/compose.ts - add optional discovery parameter to constructor
 import type { ComposeDiscovery } from './compose-discovery.js';
 
 export class ComposeService implements IComposeService {
-  private discovery?: ComposeDiscovery;
-
   constructor(
     private sshService: ISSHService,
-    private localExecutor: ILocalExecutorService
+    private localExecutor: ILocalExecutorService,
+    private discovery?: ComposeDiscovery
   ) {}
-
-  /**
-   * Set discovery service (called after both services are instantiated)
-   */
-  setDiscovery(discovery: ComposeDiscovery): void {
-    this.discovery = discovery;
-  }
 
   // ... existing methods ...
 }
@@ -1485,18 +1609,39 @@ export class ServiceContainer {
     return this.composeScanner;
   }
 
+  // Modified: Create ComposeService WITHOUT discovery first
+  getComposeService(): ComposeService {
+    if (!this.composeService) {
+      this.composeService = new ComposeService(
+        this.getSSHService(),
+        this.getLocalExecutor()
+        // No discovery yet - will be added via getComposeServiceWithDiscovery()
+      );
+    }
+    return this.composeService;
+  }
+
   getComposeDiscovery(): ComposeDiscovery {
     if (!this.composeDiscovery) {
       this.composeDiscovery = new ComposeDiscovery(
-        this.getComposeService(),  // IComposeProjectLister
+        this.getComposeService(),  // IComposeProjectLister (no circular dependency)
         this.getComposeCache(),
         this.getComposeScanner()
       );
-
-      // Inject discovery back into compose service (bidirectional dependency)
-      this.getComposeService().setDiscovery(this.composeDiscovery);
     }
     return this.composeDiscovery;
+  }
+
+  // New: Get ComposeService with discovery injected
+  getComposeServiceWithDiscovery(): ComposeService {
+    if (!this.composeServiceWithDiscovery) {
+      this.composeServiceWithDiscovery = new ComposeService(
+        this.getSSHService(),
+        this.getLocalExecutor(),
+        this.getComposeDiscovery()  // Inject discovery
+      );
+    }
+    return this.composeServiceWithDiscovery;
   }
 }
 ```
@@ -1529,13 +1674,20 @@ git commit -m "feat: wire ComposeDiscovery in ServiceContainer with lazy initial
 - Modify: `src/tools/handlers/compose.ts` (update ALL handlers)
 - Modify: `src/services/interfaces.ts` (add to Services interface)
 
-**Important: Error Detection Limitations**
+**Cache Invalidation Strategy**
 
-This implementation uses string-based error detection for cache invalidation. Be aware:
-- ⚠️ **Fragile:** Error messages may vary across Docker versions, OS locales, or custom configurations
-- ⚠️ **False negatives:** Internationalized errors (non-English) may not be detected
-- ⚠️ **Mitigation:** Users can manually refresh cache with `compose:refresh` if issues persist
-- 💡 **Future improvement:** Consider adding explicit file validation or cache TTL
+This implementation uses a **dual-layer invalidation approach**:
+
+1. **Primary: Time-based TTL (24 hours)**
+   - Implemented in Task 2 ComposeProjectCache
+   - Automatic, reliable, works across all environments
+   - Prevents indefinite stale cache accumulation
+
+2. **Secondary: Error-based invalidation**
+   - String-based error detection as backup
+   - Handles immediate file moves/deletions
+   - **Limitation:** May not work with internationalized errors (non-English locales)
+   - **Mitigation:** Manual `compose:refresh` available if needed
 
 **Step 1: Create cache invalidation utility**
 
@@ -1547,13 +1699,36 @@ import { logError } from '../../utils/errors.js';
 /**
  * Check if error is a file-not-found error
  *
+ * SECONDARY invalidation mechanism (TTL is primary).
+ * Handles immediate file moves/deletions between cache refresh cycles.
+ *
  * LIMITATION: Uses string matching which may not work with:
  * - Internationalized error messages (non-English locales)
  * - Different Docker versions with different error formats
  * - Custom Docker installations with modified error messages
  *
- * Users can manually refresh cache with compose:refresh if automatic
- * invalidation fails to detect stale entries.
+ * Primary TTL mechanism (24hr) ensures stale entries don't persist indefinitely.
+ * Users can manually refresh cache with compose:refresh if needed.
+ *
+ * ⚠️  CODE REVIEW FINDING (P2):
+ * The pattern 'not found' is too generic and could match unrelated errors:
+ * - 'Host not found', 'Service not found', 'Network not found'
+ *
+ * RECOMMENDED FIX - Use more specific patterns or check error codes:
+ * ```typescript
+ * function isFileNotFoundError(error: unknown): boolean {
+ *   if (!(error instanceof Error)) return false;
+ *
+ *   // Check Node.js error code (most reliable)
+ *   if ('code' in error && error.code === 'ENOENT') return true;
+ *
+ *   // Fall back to specific message patterns
+ *   const msg = error.message.toLowerCase();
+ *   return msg.includes('no such file') ||
+ *          msg.includes('file not found') ||
+ *          msg.includes('cannot find file');
+ * }
+ * ```
  */
 function isFileNotFoundError(error: unknown): boolean {
   return error instanceof Error &&
@@ -1564,7 +1739,7 @@ function isFileNotFoundError(error: unknown): boolean {
 
 /**
  * Wrapper for compose operations with automatic cache invalidation
- * on file-not-found errors (lazy invalidation pattern)
+ * on file-not-found errors (secondary lazy invalidation)
  */
 export async function withCacheInvalidation<T>(
   operation: () => Promise<T>,
@@ -1621,7 +1796,7 @@ export async function handleComposeUp(
   // Execute operation with automatic cache invalidation
   return withCacheInvalidation(
     async () => {
-      const result = await container.getComposeService().composeUp(host, input.project, input.detach);
+      const result = await container.getComposeServiceWithDiscovery().composeUp(host, input.project, input.detach);
       return formatComposeResult('up', host.name, input.project, result);
     },
     input.project,
@@ -2354,6 +2529,8 @@ Estimated time: 4-6 hours
 ✓ Full documentation
 
 **Architectural notes:**
-- ComposeService ↔ ComposeDiscovery bidirectional dependency is acceptable via setter injection
+- Clean unidirectional dependency: ComposeDiscovery → IComposeProjectLister (no circular dependency)
+- ComposeService has optional discovery parameter for path resolution
+- Two service instances: one without discovery (for IComposeProjectLister), one with discovery (for handlers)
 - Lazy invalidation happens at handler level (not discovery layer) for optimal performance
 - Discovery layer trusts cache; handlers catch file-not-found errors and invalidate

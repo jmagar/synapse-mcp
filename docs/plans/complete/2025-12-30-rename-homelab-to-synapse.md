@@ -658,6 +658,8 @@ After this refactor, users need to:
    - `HOMELAB_DEFAULT_HOST` → `SYNAPSE_DEFAULT_HOST`
    - `HOMELAB_ALLOW_ANY_COMMAND` → `SYNAPSE_ALLOW_ANY_COMMAND`
 
+   **Note:** SSH connection pool environment variables (e.g., `SYNAPSE_SSH_*`) are not yet implemented. The SSH pool currently uses hardcoded defaults from `src/services/ssh-pool.ts`. Do not attempt to configure SSH variables in your environment.
+
 2. **Rename config file:**
    - `homelab.config.json` → `synapse.config.json`
    - `~/.homelab-mcp.json` → `~/.synapse-mcp.json`

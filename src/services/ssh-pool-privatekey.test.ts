@@ -41,8 +41,8 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
 
     // This should read the key file and attempt connection
     // The connection will fail (no SSH server on localhost:22)
-    // but we can verify it tried to read the key
-    await expect(pool.getConnection(host)).rejects.toThrow();
+    // but we verify it successfully read the key (not a file read error)
+    await expect(pool.getConnection(host)).rejects.toThrow(/SSH connection failed/);
 
     await pool.closeAll();
   });

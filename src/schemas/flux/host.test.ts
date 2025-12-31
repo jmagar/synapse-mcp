@@ -9,7 +9,8 @@ import {
   hostNetworkSchema,
   hostMountsSchema,
   hostPortsSchema,
-  hostDoctorSchema
+  hostDoctorSchema,
+  type HostNetworkInput
 } from "./host.js";
 
 describe("Host Schemas", () => {
@@ -133,6 +134,18 @@ describe("Host Schemas", () => {
         host: "tootie"
       });
       expect(result.host).toBe("tootie");
+    });
+
+    it("should have correct type inference for HostNetworkInput", () => {
+      // This test ensures HostNetworkInput type matches hostNetworkSchema
+      const networkInput: HostNetworkInput = {
+        action: "host",
+        subaction: "network",
+        action_subaction: "host:network",
+        response_format: "markdown"
+      };
+      const result = hostNetworkSchema.parse(networkInput);
+      expect(result.subaction).toBe("network");
     });
   });
 

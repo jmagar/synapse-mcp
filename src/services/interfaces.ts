@@ -8,7 +8,8 @@ import type {
   LogEntry,
   ImageInfo,
   DockerNetworkInfo,
-  DockerVolumeInfo
+  DockerVolumeInfo,
+  ComposeProject
 } from "../types.js";
 import type Docker from "dockerode";
 import type { NodeSSH } from "node-ssh";
@@ -20,7 +21,6 @@ import type {
   ListImagesOptions
 } from "./docker.js";
 import type { PoolStats } from "./ssh-pool.js";
-import type { ComposeProject } from "./compose.js";
 
 /**
  * Docker service interface for managing Docker containers, images, and resources.
@@ -522,8 +522,9 @@ export interface ILocalExecutorService {
    * @param options - Execution options
    * @param options.timeoutMs - Command timeout in milliseconds (default: 30000)
    * @param options.cwd - Working directory for command execution
-   * @returns Command output as string (stdout)
-   * @throws Error if command fails, times out, or produces stderr
+   * @returns Command output as string (stdout, trimmed)
+   * @throws Error if command fails (non-zero exit code), times out, or binary not found
+   * @note stderr output is included in error messages but does not cause failure by itself
    */
   executeLocalCommand(
     command: string,

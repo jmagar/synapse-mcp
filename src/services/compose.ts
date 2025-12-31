@@ -1,4 +1,4 @@
-import { HostConfig } from "../types.js";
+import { HostConfig, ComposeProject, ComposeServiceInfo } from "../types.js";
 import { validateHostForSsh } from "./ssh.js";
 import { ComposeOperationError, logError } from "../utils/errors.js";
 import { isLocalHost } from "../utils/host-utils.js";
@@ -11,6 +11,29 @@ import type { ISSHService, IComposeService, ILocalExecutorService } from "./inte
 export function validateProjectName(name: string): void {
   if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
     throw new Error(`Invalid project name: ${name}`);
+  }
+}
+
+/**
+ * Validate Docker Compose action
+ *
+ * SECURITY: Prevents command injection by only allowing known compose actions.
+ * This is a whitelist approach - only explicitly allowed actions can be executed.
+ *
+ * @throws {Error} If action is not in the whitelist
+ */
+export function validateComposeAction(action: string): void {
+  const ALLOWED_ACTIONS = [
+    "up", "down", "start", "stop", "restart",
+    "ps", "logs", "build", "pull", "push",
+    "config", "create", "exec", "kill",
+    "pause", "unpause", "port", "rm",
+    "run", "scale", "top", "version",
+    "events", "images", "ls"
+  ];
+
+  if (!ALLOWED_ACTIONS.includes(action)) {
+    throw new Error(`Invalid compose action: ${action}`);
   }
 }
 
@@ -36,31 +59,6 @@ function validateComposeArgs(args: string[]): void {
       throw new Error(`Compose argument too long: ${arg.substring(0, 50)}...`);
     }
   }
-}
-
-/**
- * Compose project status
- */
-export interface ComposeProject {
-  name: string;
-  status: "running" | "partial" | "stopped" | "unknown";
-  configFiles: string[];
-  services: ComposeServiceInfo[];
-}
-
-/**
- * Compose service info
- */
-export interface ComposeServiceInfo {
-  name: string;
-  status: string;
-  health?: string;
-  exitCode?: number;
-  publishers?: Array<{
-    publishedPort: number;
-    targetPort: number;
-    protocol: string;
-  }>;
 }
 
 /**
@@ -134,6 +132,7 @@ export class ComposeService implements IComposeService {
     extraArgs: string[] = []
   ): Promise<string> {
     validateProjectName(project);
+    validateComposeAction(action);
     validateComposeArgs(extraArgs);
 
     // Build command parts for docker compose

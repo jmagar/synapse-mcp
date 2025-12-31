@@ -80,6 +80,18 @@ describe('Config Loading Integration (Rename Verification)', () => {
     expect(existsSync(testConfigFile)).toBe(true);
     expect(testConfigFile).toContain('synapse');
     expect(testConfigFile).not.toContain('homelab');
+
+    // Integration: Set SYNAPSE_CONFIG_FILE to point to the temp file and load it
+    process.env.SYNAPSE_CONFIG_FILE = testConfigFile;
+    const hosts = loadHostConfigs();
+
+    // Verify the config was actually loaded from the file
+    expect(hosts.some(h => h.name === 'test')).toBe(true);
+    const testHost = hosts.find(h => h.name === 'test');
+    expect(testHost).toBeDefined();
+    expect(testHost?.host).toBe('localhost');
+    expect(testHost?.port).toBe(2375);
+    expect(testHost?.protocol).toBe('http');
   });
 
   it('should use SYNAPSE_ prefix for environment variables (renamed from HOMELAB_)', () => {

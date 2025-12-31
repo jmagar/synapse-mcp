@@ -70,8 +70,10 @@ export class LocalExecutorService implements ILocalExecutorService {
           stdout?: string;
         };
 
-        // Handle timeout
-        if (execError.killed || execError.signal === "SIGTERM") {
+        // Handle timeout or forced termination
+        // killed=true indicates process was forcibly terminated
+        // SIGTERM is graceful termination, SIGKILL is forced termination
+        if (execError.killed || execError.signal === "SIGTERM" || execError.signal === "SIGKILL") {
           throw new Error(
             `Local command timeout after ${timeoutMs}ms: ${command} ${args.join(" ")}`
           );

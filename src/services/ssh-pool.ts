@@ -1,7 +1,7 @@
 import { HostConfig } from "../types.js";
 import { NodeSSH } from "node-ssh";
 import { HostOperationError, logError } from "../utils/errors.js";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync, statSync } from "fs";
 
 /**
  * SSH connection pool configuration
@@ -205,47 +205,13 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
   private async createConnection(host: HostConfig): Promise<NodeSSH> {
     const ssh = new NodeSSH();
 
-    // === Layer 1: Host Config Passed to Connection ===
-    console.error("=== Creating SSH Connection ===");
-    console.error("Host config:", JSON.stringify(host, null, 2));
-
     // Read private key content if path is provided
     // Using privateKey (content) instead of privateKeyPath is more reliable
     let privateKey: string | undefined;
     if (host.sshKeyPath) {
-      // === Layer 2: File System Checks ===
-      console.error("=== File System Checks ===");
-      console.error("Key path:", host.sshKeyPath);
-
-      const { existsSync, statSync } = await import("fs");
-      const keyExists = existsSync(host.sshKeyPath);
-      console.error("Exists:", keyExists);
-
-      if (keyExists) {
-        try {
-          const stats = statSync(host.sshKeyPath);
-          console.error("Is file:", stats.isFile());
-          console.error("Permissions:", stats.mode.toString(8));
-          console.error("Size:", stats.size, "bytes");
-        } catch (statError) {
-          console.error("Failed to stat key file:", statError);
-        }
-      }
-
-      // === Layer 3: Private Key Reading ===
-      console.error("=== Private Key Reading ===");
       try {
         privateKey = readFileSync(host.sshKeyPath, "utf-8");
-        console.error("Key read successfully");
-        console.error("Key length:", privateKey.length, "characters");
-        console.error("Key first 50 chars:", privateKey.substring(0, 50));
-        console.error("Key last 50 chars:", privateKey.substring(privateKey.length - 50));
-        console.error("Has BEGIN marker:", privateKey.includes("BEGIN"));
-        console.error("Has END marker:", privateKey.includes("END"));
       } catch (error) {
-        console.error("Failed to read private key:");
-        console.error("Error type:", error instanceof Error ? error.constructor.name : typeof error);
-        console.error("Error message:", error instanceof Error ? error.message : String(error));
         throw new HostOperationError(
           `Failed to read SSH private key at ${host.sshKeyPath}`,
           host.name,
@@ -253,9 +219,6 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
           error
         );
       }
-    } else {
-      console.error("=== No Private Key Path ===");
-      console.error("host.sshKeyPath is undefined or empty");
     }
 
     const connectionConfig = {
@@ -266,34 +229,10 @@ export class SSHConnectionPoolImpl implements SSHConnectionPool {
       readyTimeout: this.config.connectionTimeoutMs
     };
 
-    // === Layer 4: node-ssh Connection Config ===
-    console.error("=== node-ssh Config ===");
-    console.error("Connection config:", {
-      host: connectionConfig.host,
-      port: connectionConfig.port,
-      username: connectionConfig.username,
-      privateKey: connectionConfig.privateKey ? `${connectionConfig.privateKey.length} chars` : "undefined",
-      readyTimeout: connectionConfig.readyTimeout
-    });
-
-    // === Layer 5: Actual Connection Attempt ===
-    console.error("=== Attempting Connection ===");
     try {
       await ssh.connect(connectionConfig);
-      console.error("=== Connection Success ===");
-      console.error(`Successfully connected to ${host.name}`);
       return ssh;
     } catch (error) {
-      console.error("=== Connection Failed ===");
-      console.error("Error type:", error instanceof Error ? error.constructor.name : typeof error);
-      console.error("Error message:", error instanceof Error ? error.message : String(error));
-      console.error("Error stack:", error instanceof Error ? error.stack : "N/A");
-
-      // Try to extract more details from the error object
-      if (error && typeof error === "object") {
-        console.error("Error details:", JSON.stringify(error, null, 2));
-      }
-
       throw new HostOperationError(
         "SSH connection failed",
         host.name,
