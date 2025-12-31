@@ -255,6 +255,19 @@ describe('ComposeProjectCache', () => {
     const project = await cache.getProject('test-host', 'missing');
     expect(project).toBeUndefined();
   });
+
+  // Security: Path traversal protection (CWE-22)
+  it('should reject host names with path traversal attempts', async () => {
+    await expect(cache.load('../../../etc')).rejects.toThrow('Invalid');
+    await expect(cache.load('host/../passwd')).rejects.toThrow('Invalid');
+    await expect(cache.load('../../secret')).rejects.toThrow('Invalid');
+  });
+
+  it('should reject host names with invalid characters', async () => {
+    await expect(cache.load('host;rm -rf')).rejects.toThrow('Invalid');
+    await expect(cache.load('host|cat /etc/passwd')).rejects.toThrow('Invalid');
+    await expect(cache.load('host$HOME')).rejects.toThrow('Invalid');
+  });
 });
 ```
 
@@ -269,6 +282,7 @@ Expected: FAIL with "Cannot find module './compose-cache.js'"
 // src/services/compose-cache.ts
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
+import { validateHostFormat } from '../utils/path-security.js';
 
 export interface CachedProject {
   path: string;
@@ -286,7 +300,16 @@ export interface CacheData {
 export class ComposeProjectCache {
   constructor(private cacheDir = '.cache/compose-projects') {}
 
+  /**
+   * Validates host name to prevent path traversal attacks (CWE-22)
+   * Reuses existing validateHostFormat from path-security.ts
+   */
+  private validateHost(host: string): void {
+    validateHostFormat(host);
+  }
+
   async load(host: string): Promise<CacheData> {
+    this.validateHost(host);
     const file = join(this.cacheDir, `${host}.json`);
     try {
       const data = await readFile(file, 'utf-8');
@@ -297,6 +320,7 @@ export class ComposeProjectCache {
   }
 
   async save(host: string, data: CacheData): Promise<void> {
+    this.validateHost(host);
     await mkdir(this.cacheDir, { recursive: true });
     const file = join(this.cacheDir, `${host}.json`);
     await writeFile(file, JSON.stringify(data, null, 2));
