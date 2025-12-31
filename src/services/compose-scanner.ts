@@ -5,7 +5,12 @@ import type { ISSHService, ILocalExecutorService } from "./interfaces.js";
 /**
  * Default search paths for compose files if not specified in host config
  */
-const DEFAULT_COMPOSE_SEARCH_PATHS = ["/var/lib/docker"];
+const DEFAULT_SEARCH_PATHS = ["/compose", "/mnt/cache/compose", "/mnt/cache/code"];
+
+/**
+ * Maximum depth to search for compose files
+ */
+const MAX_SCAN_DEPTH = 3;
 
 /**
  * Compose file patterns to search for
@@ -35,13 +40,15 @@ export class ComposeScanner {
    * @returns Array of absolute paths to compose files
    */
   async findComposeFiles(host: HostConfig): Promise<string[]> {
-    const searchPaths = host.composeSearchPaths ?? DEFAULT_COMPOSE_SEARCH_PATHS;
+    const searchPaths = host.composeSearchPaths ?? DEFAULT_SEARCH_PATHS;
     const isLocal = this.isLocalHost(host);
 
     // Build find command args to avoid shell injection
-    // find /path1 /path2 -type f \( -name "docker-compose.yml" -o -name "compose.yaml" ... \) -print
+    // find /path1 /path2 -maxdepth 3 -type f \( -name "docker-compose.yml" -o -name "compose.yaml" ... \) -print
     const args = [
       ...searchPaths,
+      "-maxdepth",
+      MAX_SCAN_DEPTH.toString(),
       "-type",
       "f",
       "("
@@ -62,11 +69,13 @@ export class ComposeScanner {
         ? await this.localExecutor.executeLocalCommand("find", args, { timeoutMs: 60000 })
         : await this.sshService.executeSSHCommand(host, "find", args, { timeoutMs: 60000 });
 
-      // Split output by newlines and filter empty lines
-      return output
+      // Split output by newlines, filter empty lines, and deduplicate
+      const allFiles = output
         .split("\n")
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
+
+      return Array.from(new Set(allFiles));
     } catch (error) {
       // Return empty array on errors (e.g., permission denied, path not found)
       // This allows graceful degradation when search paths don't exist

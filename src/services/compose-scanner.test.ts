@@ -91,7 +91,11 @@ describe("ComposeScanner", () => {
       expect(mockLocalExecutor.executeLocalCommand).toHaveBeenCalledWith(
         "find",
         expect.arrayContaining([
-          "/var/lib/docker",
+          "/compose",
+          "/mnt/cache/compose",
+          "/mnt/cache/code",
+          "-maxdepth",
+          "3",
           "-type",
           "f"
         ]),
@@ -113,7 +117,7 @@ describe("ComposeScanner", () => {
       expect(mockSSHService.executeSSHCommand).toHaveBeenCalledWith(
         hostWithoutPaths,
         "find",
-        expect.arrayContaining(["/var/lib/docker"]),
+        expect.arrayContaining(["/compose", "/mnt/cache/compose", "/mnt/cache/code", "-maxdepth", "3"]),
         expect.any(Object)
       );
     });
