@@ -219,6 +219,17 @@ describe("Compose Schemas", () => {
       });
       expect(result.force).toBe(false);
     });
+
+    it("should accept compose:down without host parameter", () => {
+      const input = {
+        action: "compose",
+        subaction: "down",
+        project: "plex"
+      };
+
+      const result = composeDownSchema.parse(input);
+      expect(result.host).toBeUndefined();
+    });
   });
 
   describe("composeRestartSchema", () => {
@@ -241,6 +252,17 @@ describe("Compose Schemas", () => {
         project: "plex"
       });
       expect(result.action_subaction).toBe("compose:restart");
+    });
+
+    it("should accept compose:restart without host parameter", () => {
+      const input = {
+        action: "compose",
+        subaction: "restart",
+        project: "plex"
+      };
+
+      const result = composeRestartSchema.parse(input);
+      expect(result.host).toBeUndefined();
     });
   });
 
@@ -328,6 +350,17 @@ describe("Compose Schemas", () => {
         })
       ).toThrow();
     });
+
+    it("should accept compose:logs without host parameter", () => {
+      const input = {
+        action: "compose",
+        subaction: "logs",
+        project: "plex"
+      };
+
+      const result = composeLogsSchema.parse(input);
+      expect(result.host).toBeUndefined();
+    });
   });
 
   describe("composeBuildSchema", () => {
@@ -364,6 +397,17 @@ describe("Compose Schemas", () => {
       expect(result.no_cache).toBe(true);
       expect(result.service).toBe("frontend");
     });
+
+    it("should accept compose:build without host parameter", () => {
+      const input = {
+        action: "compose",
+        subaction: "build",
+        project: "app"
+      };
+
+      const result = composeBuildSchema.parse(input);
+      expect(result.host).toBeUndefined();
+    });
   });
 
   describe("composePullSchema", () => {
@@ -398,6 +442,17 @@ describe("Compose Schemas", () => {
       });
       expect(result.service).toBe("backend");
     });
+
+    it("should accept compose:pull without host parameter", () => {
+      const input = {
+        action: "compose",
+        subaction: "pull",
+        project: "app"
+      };
+
+      const result = composePullSchema.parse(input);
+      expect(result.host).toBeUndefined();
+    });
   });
 
   describe("composeRecreateSchema", () => {
@@ -431,6 +486,17 @@ describe("Compose Schemas", () => {
         service: "api"
       });
       expect(result.service).toBe("api");
+    });
+
+    it("should accept compose:recreate without host parameter", () => {
+      const input = {
+        action: "compose",
+        subaction: "recreate",
+        project: "app"
+      };
+
+      const result = composeRecreateSchema.parse(input);
+      expect(result.host).toBeUndefined();
     });
   });
 });
