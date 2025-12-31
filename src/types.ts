@@ -11,6 +11,8 @@ export interface HostConfig {
   dockerSocketPath?: string;
   // Tags for filtering
   tags?: string[];
+  // Custom compose file search paths
+  composeSearchPaths?: string[];
 }
 
 // Container info returned from Docker API
