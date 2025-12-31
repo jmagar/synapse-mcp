@@ -65,7 +65,13 @@ export class ComposeDiscovery {
       const cacheData = await this.cache.load(host.name);
       const searchPaths = this.getSearchPaths(host, cacheData.searchPaths);
 
-      const files = await this.scanner.findComposeFiles(host, searchPaths);
+      // Create a modified host config with custom search paths
+      const hostWithSearchPaths: HostConfig = {
+        ...host,
+        composeSearchPaths: searchPaths
+      };
+
+      const files = await this.scanner.findComposeFiles(hostWithSearchPaths);
 
       // Parse all files in parallel
       const projects = await Promise.all(

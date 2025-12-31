@@ -4,6 +4,9 @@ import { SSHService } from "./ssh-service.js";
 import { ComposeService } from "./compose.js";
 import { FileService } from "./file-service.js";
 import { LocalExecutorService } from "./local-executor.js";
+import { ComposeProjectCache } from "./compose-cache.js";
+import { ComposeScanner } from "./compose-scanner.js";
+import { ComposeDiscovery } from "./compose-discovery.js";
 import type {
   IDockerService,
   ISSHService,
@@ -22,6 +25,10 @@ import type {
  * - SSHConnectionPool (no dependencies)
  * - SSHService (requires SSHConnectionPool)
  * - ComposeService (requires SSHService, LocalExecutorService)
+ * - ComposeProjectCache (no dependencies)
+ * - ComposeScanner (requires SSHService, LocalExecutorService)
+ * - ComposeDiscovery (requires ComposeService, ComposeProjectCache, ComposeScanner)
+ * - ComposeServiceWithDiscovery (requires SSHService, LocalExecutorService, ComposeDiscovery)
  * - FileService (requires SSHService)
  * - DockerService (no dependencies)
  */
@@ -32,6 +39,10 @@ export class ServiceContainer {
   private sshPool?: ISSHConnectionPool;
   private fileService?: IFileService;
   private localExecutor?: ILocalExecutorService;
+  private composeCache?: ComposeProjectCache;
+  private composeScanner?: ComposeScanner;
+  private composeDiscovery?: ComposeDiscovery;
+  private composeServiceWithDiscovery?: ComposeService;
 
   /**
    * Get Docker service instance (lazy initialization)
@@ -123,6 +134,58 @@ export class ServiceContainer {
    */
   setFileService(service: IFileService): void {
     this.fileService = service;
+  }
+
+  /**
+   * Get Compose project cache instance (lazy initialization)
+   */
+  getComposeCache(): ComposeProjectCache {
+    if (!this.composeCache) {
+      this.composeCache = new ComposeProjectCache();
+    }
+    return this.composeCache;
+  }
+
+  /**
+   * Get Compose scanner instance (lazy initialization with dependencies)
+   */
+  getComposeScanner(): ComposeScanner {
+    if (!this.composeScanner) {
+      this.composeScanner = new ComposeScanner(
+        this.getSSHService(),
+        this.getLocalExecutor()
+      );
+    }
+    return this.composeScanner;
+  }
+
+  /**
+   * Get Compose discovery instance (lazy initialization with dependencies)
+   */
+  getComposeDiscovery(): ComposeDiscovery {
+    if (!this.composeDiscovery) {
+      this.composeDiscovery = new ComposeDiscovery(
+        this.getComposeService(),
+        this.getComposeCache(),
+        this.getComposeScanner()
+      );
+    }
+    return this.composeDiscovery;
+  }
+
+  /**
+   * Get Compose service with discovery enabled (lazy initialization with dependencies).
+   * Use this instead of getComposeService() when you want auto-discovery enabled.
+   */
+  getComposeServiceWithDiscovery(): ComposeService {
+    if (!this.composeServiceWithDiscovery) {
+      this.composeServiceWithDiscovery = new ComposeService(
+        this.getSSHService(),
+        this.getLocalExecutor(),
+        this.getComposeDiscovery()
+      );
+    }
+    return this.composeServiceWithDiscovery;
   }
 
   /**
