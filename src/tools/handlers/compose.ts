@@ -19,6 +19,15 @@ import {
   formatComposeListMarkdown,
   formatComposeStatusMarkdown
 } from '../../formatters/index.js';
+import {
+  handleComposeUp,
+  handleComposeDown,
+  handleComposeRestart,
+  handleComposeLogs,
+  handleComposeBuild,
+  handleComposePull,
+  handleComposeRecreate
+} from './compose-handlers.js';
 
 /**
  * Handle all compose subactions
@@ -103,23 +112,17 @@ export async function handleComposeAction(
 
     case 'up': {
       const upInput = inp as ComposeUpInput;
-      await composeService.composeUp(hostConfig, upInput.project, upInput.detach ?? true);
-      return `Project '${upInput.project}' started successfully on ${hostConfig.name}`;
+      return handleComposeUp(upInput, hosts, container);
     }
 
     case 'down': {
       const downInput = inp as ComposeDownInput;
-      if (downInput.remove_volumes && !downInput.force) {
-        throw new Error('Compose down with remove_volumes requires force=true to prevent accidental data loss');
-      }
-      await composeService.composeDown(hostConfig, downInput.project, downInput.remove_volumes ?? false);
-      return `Project '${downInput.project}' stopped successfully on ${hostConfig.name}`;
+      return handleComposeDown(downInput, hosts, container);
     }
 
     case 'restart': {
       const restartInput = inp as ComposeRestartInput;
-      await composeService.composeRestart(hostConfig, restartInput.project);
-      return `Project '${restartInput.project}' restarted successfully on ${hostConfig.name}`;
+      return handleComposeRestart(restartInput, hosts, container);
     }
 
     case 'logs': {

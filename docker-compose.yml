@@ -1,0 +1,74 @@
+services:
+  synapse-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: synapse-mcp
+    ports:
+      - "${SYNAPSE_PORT:-53200}:3000"
+    environment:
+      # Server Configuration
+      SYNAPSE_HOST: "0.0.0.0"
+      SYNAPSE_PORT: "3000"
+      SYNAPSE_CONFIG_FILE: "/app/synapse.config.json"
+
+      # OAuth Configuration
+      MCP_ENABLE_OAUTH: "${MCP_ENABLE_OAUTH:-true}"
+      MCP_OAUTH_SECRET: "${MCP_OAUTH_SECRET}"
+      MCP_OAUTH_TOKEN_TTL: "${MCP_OAUTH_TOKEN_TTL:-3600}"
+
+      # Google OAuth Credentials
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+      GOOGLE_REDIRECT_URI: "${GOOGLE_REDIRECT_URI:-http://localhost:53200/auth/callback}"
+
+      # Redis Configuration
+      REDIS_URL: "redis://synapse-redis:6379"
+
+    volumes:
+      - ./synapse.config.json:/app/synapse.config.json:ro
+      - ~/.ssh:/root/.ssh:ro  # SSH keys for remote hosts
+    networks:
+      - synapse-network
+    depends_on:
+      synapse-redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  synapse-redis:
+    image: redis:7-alpine
+    container_name: synapse-redis
+    ports:
+      - "${REDIS_PORT:-53201}:6379"  # Optional external access for debugging
+    volumes:
+      - synapse-redis-data:/data
+    networks:
+      - synapse-network
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  synapse-redis-data:
+    name: synapse_redis_data
+
+networks:
+  synapse-network:
+    name: synapse_network
+    driver: bridge
