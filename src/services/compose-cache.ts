@@ -1,6 +1,8 @@
 // src/services/compose-cache.ts
 import { readFile, writeFile, mkdir, rename } from 'fs/promises';
 import { join } from 'path';
+import { z } from 'zod';
+import { validateHostFormat } from '../utils/path-security.js';
 
 export interface CachedProject {
   path: string;
@@ -17,27 +19,20 @@ export interface CacheData {
 
 const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-/**
- * ⚠️  SECURITY RECOMMENDATION (Code Review Finding):
- *
- * The `host` parameter in load() and save() is used directly in path construction
- * without validation. If `host` contains `../`, it could read/write files outside
- * the cache directory (path traversal vulnerability).
- *
- * REQUIRED FIX:
- * 1. Sanitize `host` parameter to reject path separators (`/`, `\`, `..`)
- * 2. Or use existing `validateSecurePath()` from path-security.ts
- * 3. Add validation in constructor or at start of load()/save()
- *
- * Example:
- * ```typescript
- * private validateHostname(host: string): void {
- *   if (!/^[a-zA-Z0-9_-]+$/.test(host)) {
- *     throw new ValidationError(`Invalid host identifier: ${host}`);
- *   }
- * }
- * ```
- */
+// Zod schemas for runtime validation of JSON cache files
+const CachedProjectSchema = z.object({
+  path: z.string(),
+  name: z.string(),
+  discoveredFrom: z.enum(['docker-ls', 'scan', 'user-provided']),
+  lastSeen: z.string()
+});
+
+const CacheDataSchema = z.object({
+  lastScan: z.string(),
+  searchPaths: z.array(z.string()),
+  projects: z.record(z.string(), CachedProjectSchema)
+});
+
 export class ComposeProjectCache {
   constructor(
     private cacheDir = '.cache/compose-projects',
@@ -45,17 +40,31 @@ export class ComposeProjectCache {
   ) {}
 
   async load(host: string): Promise<CacheData> {
-    // TODO: Add host validation here before path construction
+    // SECURITY: Validate host to prevent path traversal attacks (CWE-22)
+    validateHostFormat(host);
+
     const file = join(this.cacheDir, `${host}.json`);
     try {
       const data = await readFile(file, 'utf-8');
-      return JSON.parse(data);
-    } catch {
+      const parsed = JSON.parse(data);
+
+      // Runtime validation: protect against corrupted cache files
+      return CacheDataSchema.parse(parsed);
+    } catch (error) {
+      // Only return empty cache if file doesn't exist
+      // Re-throw validation errors to catch corrupted cache files
+      if (error instanceof z.ZodError) {
+        throw new Error(`Cache file validation failed for ${host}: ${error.message}`);
+      }
+      // File not found or JSON parse error - return empty cache
       return this.emptyCache();
     }
   }
 
   async save(host: string, data: CacheData): Promise<void> {
+    // SECURITY: Validate host to prevent path traversal attacks (CWE-22)
+    validateHostFormat(host);
+
     await mkdir(this.cacheDir, { recursive: true });
     const file = join(this.cacheDir, `${host}.json`);
     const tempFile = join(this.cacheDir, `${host}.json.tmp`);
