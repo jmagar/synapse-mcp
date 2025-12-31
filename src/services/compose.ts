@@ -3,6 +3,7 @@ import { validateHostForSsh } from "./ssh.js";
 import { ComposeOperationError, logError } from "../utils/errors.js";
 import { isLocalHost } from "../utils/host-utils.js";
 import type { ISSHService, IComposeService, ILocalExecutorService } from "./interfaces.js";
+import type { ComposeDiscovery } from "./compose-discovery.js";
 
 /**
  * Validate Docker Compose project name
@@ -67,14 +68,20 @@ function validateComposeArgs(args: string[]): void {
  * @param project - Project name (optional, for commands that need -p flag)
  * @param action - Compose action (up, down, ps, ls, etc.)
  * @param extraArgs - Additional arguments
+ * @param composePath - Optional path to compose file (adds -f flag)
  * @returns Command string
  */
 function buildComposeCommand(
   project: string | null,
   action: string,
-  extraArgs: string[] = []
+  extraArgs: string[] = [],
+  composePath?: string | null
 ): string {
   const parts = ["docker", "compose"];
+
+  if (composePath) {
+    parts.push("-f", composePath);
+  }
 
   if (project) {
     parts.push("-p", project);
@@ -109,7 +116,8 @@ function parseComposeStatus(status: string): ComposeProject["status"] {
 export class ComposeService implements IComposeService {
   constructor(
     private sshService: ISSHService,
-    private localExecutor: ILocalExecutorService
+    private localExecutor: ILocalExecutorService,
+    private discovery?: ComposeDiscovery
   ) {}
 
   /**
@@ -135,8 +143,28 @@ export class ComposeService implements IComposeService {
     validateComposeAction(action);
     validateComposeArgs(extraArgs);
 
+    // Try to resolve compose file path via discovery (if available)
+    let composePath: string | null = null;
+    if (this.discovery) {
+      try {
+        composePath = await this.discovery.resolveProjectPath(host, project);
+      } catch (error) {
+        // Graceful fallback - log error but proceed without -f flag
+        logError(error as Error, {
+          operation: "composeExec",
+          metadata: { host: host.name, project, action }
+        });
+      }
+    }
+
     // Build command parts for docker compose
     const args = ["compose"];
+
+    // Add -f flag if we discovered the compose file path
+    if (composePath) {
+      args.push("-f", composePath);
+    }
+
     if (project) {
       args.push("-p", project);
     }
@@ -152,7 +180,7 @@ export class ComposeService implements IComposeService {
       } else {
         // Remote host - use SSH
         validateHostForSsh(host);
-        const command = buildComposeCommand(project, action, extraArgs);
+        const command = buildComposeCommand(project, action, extraArgs, composePath);
         return await this.sshService.executeSSHCommand(host, command, [], { timeoutMs: 30000 });
       }
     } catch (error) {

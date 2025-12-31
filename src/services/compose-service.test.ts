@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ComposeService } from "./compose.js";
 import type { ISSHService, ILocalExecutorService } from "./interfaces.js";
 import type { HostConfig } from "../types.js";
+import type { ComposeDiscovery } from "./compose-discovery.js";
 
 describe("ComposeService", () => {
   let ssh: ISSHService;
@@ -53,5 +54,49 @@ describe("ComposeService", () => {
     const host: HostConfig = { name: "test", host: "remote.example.com", protocol: "ssh" };
     await service.composeExec(host, "proj", "ps");
     expect(ssh.executeSSHCommand).toHaveBeenCalled();
+  });
+
+  describe("discovery integration", () => {
+    it("should use discovery to resolve compose file path", async () => {
+      const host: HostConfig = { name: "test", host: "localhost", protocol: "local" };
+      const mockDiscovery: ComposeDiscovery = {
+        resolveProjectPath: vi.fn().mockResolvedValue("/compose/myproject/compose.yaml"),
+        cache: {} as never,
+      } as unknown as ComposeDiscovery;
+
+      const serviceWithDiscovery = new ComposeService(ssh, localExecutor, mockDiscovery);
+
+      await serviceWithDiscovery.composeExec(host, "myproject", "ps");
+
+      // Should call discovery to resolve path
+      expect(mockDiscovery.resolveProjectPath).toHaveBeenCalledWith(host, "myproject");
+
+      // Should execute with -f flag pointing to discovered path
+      expect(localExecutor.executeLocalCommand).toHaveBeenCalledWith(
+        "docker",
+        expect.arrayContaining(["-f", "/compose/myproject/compose.yaml"]),
+        expect.anything()
+      );
+    });
+
+    it("should fall back gracefully when discovery fails", async () => {
+      const host: HostConfig = { name: "test", host: "localhost", protocol: "local" };
+      const mockDiscovery: ComposeDiscovery = {
+        resolveProjectPath: vi.fn().mockRejectedValue(new Error("Project not found")),
+        cache: {} as never,
+      } as unknown as ComposeDiscovery;
+
+      const serviceWithDiscovery = new ComposeService(ssh, localExecutor, mockDiscovery);
+
+      // Should not throw - should fall back to executing without -f flag
+      await expect(serviceWithDiscovery.composeExec(host, "myproject", "ps")).resolves.toBeDefined();
+
+      // Should still attempt to execute compose command (without -f flag)
+      expect(localExecutor.executeLocalCommand).toHaveBeenCalledWith(
+        "docker",
+        expect.not.arrayContaining(["-f"]),
+        expect.anything()
+      );
+    });
   });
 });
