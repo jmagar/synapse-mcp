@@ -703,3 +703,11 @@ export interface IFileService {
     contextLines: number
   ): Promise<string>;
 }
+
+/**
+ * Minimal interface for listing compose projects
+ * Used by ComposeDiscovery to avoid circular dependency with ComposeService
+ */
+export interface IComposeProjectLister {
+  listComposeProjects(host: HostConfig): Promise<ComposeProject[]>;
+}
