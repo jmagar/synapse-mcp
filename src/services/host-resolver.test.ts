@@ -1,27 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { HostResolver } from "./host-resolver.js";
-import type { ComposeDiscoveryService } from "./compose-discovery.js";
+import type { ComposeDiscovery } from "./compose-discovery.js";
 import type { HostConfig } from "../types.js";
 
 describe("HostResolver", () => {
-	let mockDiscovery: ComposeDiscoveryService;
+	let mockDiscovery: ComposeDiscovery;
 	let resolver: HostResolver;
 	const hosts: HostConfig[] = [
-		{ name: "host1", address: "192.168.1.10" },
-		{ name: "host2", address: "192.168.1.20" },
+		{ name: "host1", host: "192.168.1.10", protocol: "ssh" },
+		{ name: "host2", host: "192.168.1.20", protocol: "ssh" },
 	];
 
 	beforeEach(() => {
 		mockDiscovery = {
-			findProject: vi.fn(),
-		} as unknown as ComposeDiscoveryService;
-		resolver = new HostResolver(hosts, mockDiscovery);
+			resolveProjectPath: vi.fn(),
+		} as unknown as ComposeDiscovery;
+		resolver = new HostResolver(mockDiscovery, hosts);
 	});
 
 	describe("resolveHost", () => {
 		it("should return specified host if provided", async () => {
 			const result = await resolver.resolveHost("myproject", "host1");
-			expect(result).toEqual({ name: "host1", address: "192.168.1.10" });
+			expect(result).toEqual({ name: "host1", host: "192.168.1.10", protocol: "ssh" });
 		});
 
 		it("should throw error if specified host not found", async () => {
@@ -31,33 +31,23 @@ describe("HostResolver", () => {
 		});
 
 		it("should auto-resolve to single matching host", async () => {
-			vi.mocked(mockDiscovery.findProject).mockImplementation(
-				async (projectName: string, hostName: string) => {
-					if (hostName === "host2" && projectName === "myproject") {
-						return {
-							projectName: "myproject",
-							host: "host2",
-							composeFiles: ["/opt/myproject/compose.yaml"],
-							workingDirectory: "/opt/myproject",
-							discoveredAt: new Date().toISOString(),
-						};
+			vi.mocked(mockDiscovery.resolveProjectPath).mockImplementation(
+				async (host: HostConfig, projectName: string) => {
+					if (host.name === "host2" && projectName === "myproject") {
+						return "/opt/myproject/compose.yaml";
 					}
 					throw new Error("Project not found");
 				},
 			);
 
 			const result = await resolver.resolveHost("myproject");
-			expect(result).toEqual({ name: "host2", address: "192.168.1.20" });
+			expect(result).toEqual({ name: "host2", host: "192.168.1.20", protocol: "ssh" });
 		});
 
 		it("should throw error if project found on multiple hosts", async () => {
-			vi.mocked(mockDiscovery.findProject).mockResolvedValue({
-				projectName: "myproject",
-				host: "host1",
-				composeFiles: ["/opt/myproject/compose.yaml"],
-				workingDirectory: "/opt/myproject",
-				discoveredAt: new Date().toISOString(),
-			});
+			vi.mocked(mockDiscovery.resolveProjectPath).mockResolvedValue(
+				"/opt/myproject/compose.yaml"
+			);
 
 			await expect(resolver.resolveHost("myproject")).rejects.toThrow(
 				'Project "myproject" found on multiple hosts: host1, host2. Please specify which host to use.',
@@ -65,7 +55,7 @@ describe("HostResolver", () => {
 		});
 
 		it("should throw error if project not found on any host", async () => {
-			vi.mocked(mockDiscovery.findProject).mockRejectedValue(
+			vi.mocked(mockDiscovery.resolveProjectPath).mockRejectedValue(
 				new Error("Project not found"),
 			);
 
@@ -75,25 +65,18 @@ describe("HostResolver", () => {
 		});
 
 		it("should throw error if no hosts configured", async () => {
-			const emptyResolver = new HostResolver([], mockDiscovery);
+			const emptyResolver = new HostResolver(mockDiscovery, []);
 			await expect(emptyResolver.resolveHost("myproject")).rejects.toThrow(
 				"No hosts configured",
 			);
 		});
 
 		it("should respect timeout during auto-resolution", async () => {
-			vi.mocked(mockDiscovery.findProject).mockImplementation(
+			vi.mocked(mockDiscovery.resolveProjectPath).mockImplementation(
 				() =>
 					new Promise((resolve) => {
 						setTimeout(
-							() =>
-								resolve({
-									projectName: "myproject",
-									host: "host1",
-									composeFiles: ["/opt/myproject/compose.yaml"],
-									workingDirectory: "/opt/myproject",
-									discoveredAt: new Date().toISOString(),
-								}),
+							() => resolve("/opt/myproject/compose.yaml"),
 							35000,
 						);
 					}),

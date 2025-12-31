@@ -1,5 +1,5 @@
 import type { HostConfig } from "../types.js";
-import type { ComposeDiscoveryService } from "./compose-discovery.js";
+import type { ComposeDiscovery } from "./compose-discovery.js";
 
 /**
  * Timeout for host resolution operations (30 seconds)
@@ -21,8 +21,8 @@ export class HostResolutionError extends Error {
  */
 export class HostResolver {
 	constructor(
+		private readonly discovery: ComposeDiscovery,
 		private readonly hosts: HostConfig[],
-		private readonly discovery: ComposeDiscoveryService,
 	) {}
 
 	/**
@@ -95,7 +95,7 @@ export class HostResolver {
 	private async checkAllHosts(projectName: string): Promise<HostConfig[]> {
 		const checks = this.hosts.map(async (host) => {
 			try {
-				await this.discovery.findProject(projectName, host.name);
+				await this.discovery.resolveProjectPath(host, projectName);
 				return host;
 			} catch {
 				return null;
