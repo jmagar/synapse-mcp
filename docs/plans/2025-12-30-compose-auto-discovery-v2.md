@@ -12,15 +12,64 @@
 
 ---
 
-## Task 0: Create IComposeProjectLister Interface
+## Task 0: Move ComposeProject Types and Create IComposeProjectLister Interface
 
 **Files:**
+- Modify: `src/types.ts` (move ComposeProject and ComposeServiceInfo)
+- Modify: `src/services/compose.ts` (remove ComposeProject and ComposeServiceInfo, add import)
 - Modify: `src/services/interfaces.ts` (add IComposeProjectLister interface)
 - Test: `src/services/interfaces.test.ts` (new file)
 
-**Purpose:** Create foundational interface needed by ComposeDiscovery to avoid circular dependency with ComposeService.
+**Purpose:** Move ComposeProject to shared types to prevent circular imports, then create interface needed by ComposeDiscovery.
 
-**Note:** We're using TypeScript interfaces (no Zod schemas needed for internal types).
+**Architectural Note:** Moving ComposeProject to types.ts breaks the circular dependency chain: `compose-discovery.ts → interfaces.ts → compose.ts → compose-discovery.ts`
+
+**Step 0a: Move ComposeProject types to types.ts**
+
+```typescript
+// src/types.ts - ADD these interfaces at the end of the file (after HostConfig)
+
+/**
+ * Docker Compose project information
+ */
+export interface ComposeProject {
+  name: string;
+  status: "running" | "partial" | "stopped" | "unknown";
+  configFiles: string[];
+  services: ComposeServiceInfo[];
+}
+
+/**
+ * Compose service info
+ */
+export interface ComposeServiceInfo {
+  name: string;
+  status: string;
+  health?: string;
+  exitCode?: number;
+  publishers?: Array<{
+    publishedPort: number;
+    targetPort: number;
+    protocol: string;
+  }>;
+}
+```
+
+**Step 0b: Update compose.ts to import from types**
+
+```typescript
+// src/services/compose.ts - REMOVE lines 44-64 (ComposeProject and ComposeServiceInfo interfaces)
+// ADD this import at the top of the file (after existing imports)
+import type { ComposeProject, ComposeServiceInfo } from '../types.js';
+
+// Remove the export interface declarations for ComposeProject and ComposeServiceInfo
+// They now come from types.ts
+```
+
+**Step 0c: Run typecheck to verify no circular imports**
+
+Run: `pnpm run typecheck`
+Expected: No errors, no circular dependency warnings
 
 **Step 1: Write the failing test**
 
@@ -28,8 +77,7 @@
 // src/services/interfaces.test.ts - NEW FILE
 import { describe, it, expect } from 'vitest';
 import type { IComposeProjectLister } from './interfaces.js';
-import type { HostConfig } from '../types.js';
-import type { ComposeProject } from './compose.js';
+import type { HostConfig, ComposeProject } from '../types.js';
 
 describe('IComposeProjectLister', () => {
   it('should be implemented with listComposeProjects method', async () => {
@@ -70,7 +118,7 @@ Expected: FAIL with "Cannot find type 'IComposeProjectLister'"
 
 ```typescript
 // src/services/interfaces.ts - ADD this interface to the end of the file
-import type { ComposeProject } from "./compose.js";
+import type { ComposeProject } from "../types.js";
 
 /**
  * Minimal interface for listing compose projects
@@ -86,16 +134,21 @@ export interface IComposeProjectLister {
 Run: `pnpm test src/services/interfaces.test.ts`
 Expected: PASS
 
-**Step 5: Verify no syntax errors**
+**Step 5: Verify no syntax errors or circular imports**
 
 Run: `pnpm run typecheck`
-Expected: No errors
+Expected: No errors, no circular dependency warnings
 
 **Step 6: Commit**
 
 ```bash
-git add src/services/interfaces.ts src/services/interfaces.test.ts
-git commit -m "feat: add IComposeProjectLister interface with TDD"
+git add src/types.ts src/services/compose.ts src/services/interfaces.ts src/services/interfaces.test.ts
+git commit -m "feat: move ComposeProject to types.ts and add IComposeProjectLister interface
+
+- Move ComposeProject and ComposeServiceInfo from compose.ts to types.ts
+- Prevents circular import: compose-discovery → interfaces → compose → compose-discovery
+- Add IComposeProjectLister interface for dependency inversion
+- All tests passing, no circular dependencies"
 ```
 
 ---
@@ -145,8 +198,8 @@ Expected: FAIL with "composeSearchPaths does not exist in type HostConfig"
 **Step 3: Add composeSearchPaths to HostConfig interface**
 
 ```typescript
-// src/types.ts - modify existing HostConfig interface (lines 2-14)
-// Add composeSearchPaths at line 13, after tags?: string[];
+// src/types.ts - modify existing HostConfig interface
+// INSERT composeSearchPaths AFTER line 13 (after tags?: string[];)
 export interface HostConfig {
   name: string;
   host: string;
@@ -159,8 +212,8 @@ export interface HostConfig {
   dockerSocketPath?: string;
   // Tags for filtering
   tags?: string[];
-  // Custom compose file search paths
-  composeSearchPaths?: string[];  // Add this line at line 13
+  // Custom compose file search paths (insert this line AFTER tags)
+  composeSearchPaths?: string[];
 }
 ```
 
@@ -271,7 +324,7 @@ Expected: FAIL with "Cannot find module './compose-cache.js'"
 
 ```typescript
 // src/services/compose-cache.ts
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { readFile, writeFile, mkdir, rename } from 'fs/promises';
 import { join } from 'path';
 
 export interface CachedProject {
@@ -303,7 +356,12 @@ export class ComposeProjectCache {
   async save(host: string, data: CacheData): Promise<void> {
     await mkdir(this.cacheDir, { recursive: true });
     const file = join(this.cacheDir, `${host}.json`);
-    await writeFile(file, JSON.stringify(data, null, 2));
+    const tempFile = join(this.cacheDir, `${host}.json.tmp`);
+
+    // Atomic write: write to temp file in same directory, then rename
+    // Using same directory ensures rename works across all filesystems
+    await writeFile(tempFile, JSON.stringify(data, null, 2));
+    await rename(tempFile, file);
   }
 
   async getProject(host: string, projectName: string): Promise<CachedProject | undefined> {
@@ -711,7 +769,7 @@ const DEFAULT_SEARCH_PATHS = ['/compose', '/mnt/cache/compose', '/mnt/cache/code
 export class ComposeDiscovery {
   constructor(
     private projectLister: IComposeProjectLister,
-    private cache: ComposeProjectCache,
+    public cache: ComposeProjectCache,  // Public for cache invalidation in handlers
     private scanner: ComposeScanner
   ) {}
 
@@ -1124,6 +1182,8 @@ Expected: FAIL with "Cannot find module './host-resolver.js'"
 import type { HostConfig } from '../types.js';
 import type { ComposeDiscovery } from './compose-discovery.js';
 
+const RESOLUTION_TIMEOUT_MS = 30000;  // 30 seconds
+
 export class HostResolver {
   constructor(private discovery: ComposeDiscovery) {}
 
@@ -1150,13 +1210,24 @@ export class HostResolver {
       return host;
     }
 
-    // Auto-discover: check all hosts in parallel
-    const results = await Promise.allSettled(
+    // Auto-discover: check all hosts in parallel with timeout
+    const discoveryPromise = Promise.allSettled(
       hosts.map(async (host) => {
         const path = await this.discovery.resolveProjectPath(host, projectName);
         return { host, path };
       })
     );
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(
+          `Host resolution timeout after ${RESOLUTION_TIMEOUT_MS}ms. ` +
+          `One or more hosts may be unresponsive.`
+        ));
+      }, RESOLUTION_TIMEOUT_MS);
+    });
+
+    const results = await Promise.race([discoveryPromise, timeoutPromise]);
 
     const found = results
       .filter((r): r is PromiseFulfilledResult<{ host: HostConfig; path: string }> =>
@@ -1202,6 +1273,24 @@ git commit -m "feat: implement auto-host resolution for compose operations"
 **Files:**
 - Modify: `src/services/compose.ts` (add discovery integration)
 - Test: `src/services/compose.test.ts` (update existing tests)
+
+**Architectural Decision: Bidirectional Dependency via Setter Injection**
+
+This task creates a bidirectional runtime dependency between ComposeService and ComposeDiscovery:
+- ComposeDiscovery depends on IComposeProjectLister (implemented by ComposeService) to query running projects
+- ComposeService depends on ComposeDiscovery (optional) to resolve compose file paths
+
+**Why setter injection is acceptable here:**
+1. **Circular dependency is inherent to the domain:** Discovery needs to query running projects (ComposeService responsibility), and compose operations benefit from discovery (ComposeDiscovery responsibility)
+2. **Optional dependency:** ComposeService works without discovery (falls back to Docker's default resolution)
+3. **Lazy initialization in ServiceContainer:** Both services are created first, then wired together after instantiation
+4. **Alternative considered:** Extracting a separate ComposeProjectLister service would add complexity without significant architectural benefit, as listComposeProjects is a core ComposeService responsibility
+
+**Trade-offs accepted:**
+- ✅ Simple implementation, minimal code changes
+- ✅ Optional dependency makes ComposeService independently testable
+- ⚠️ Hidden runtime dependency (not visible in constructor signature)
+- ⚠️ Requires careful initialization order in ServiceContainer
 
 **Step 1: Write failing test for ComposeService with discovery integration**
 
@@ -1279,8 +1368,8 @@ export class ComposeService implements IComposeService {
   // ... existing methods ...
 }
 
-// src/services/compose.ts - modify composeExec helper (around line 66)
-private async composeExec(
+// src/services/compose.ts - modify composeExec method (line 130-169)
+async composeExec(
   host: HostConfig,
   project: string,
   action: string,
@@ -1412,15 +1501,11 @@ export class ServiceContainer {
 }
 ```
 
-**Step 3: Verify Services interface includes composeDiscovery**
+**Step 3: Verify ServiceContainer exposes composeDiscovery**
 
 ```typescript
-// src/services/interfaces.ts - should already be added in Task 7c
-// Verify it includes:
-export interface Services {
-  // ... existing services
-  composeDiscovery: ComposeDiscovery;
-}
+// src/services/container.ts - verify getComposeDiscovery() method exists
+// from Step 2 above
 ```
 
 **Step 4: Verify build succeeds**
@@ -1444,6 +1529,14 @@ git commit -m "feat: wire ComposeDiscovery in ServiceContainer with lazy initial
 - Modify: `src/tools/handlers/compose.ts` (update ALL handlers)
 - Modify: `src/services/interfaces.ts` (add to Services interface)
 
+**Important: Error Detection Limitations**
+
+This implementation uses string-based error detection for cache invalidation. Be aware:
+- ⚠️ **Fragile:** Error messages may vary across Docker versions, OS locales, or custom configurations
+- ⚠️ **False negatives:** Internationalized errors (non-English) may not be detected
+- ⚠️ **Mitigation:** Users can manually refresh cache with `compose:refresh` if issues persist
+- 💡 **Future improvement:** Consider adding explicit file validation or cache TTL
+
 **Step 1: Create cache invalidation utility**
 
 ```typescript
@@ -1453,6 +1546,14 @@ import { logError } from '../../utils/errors.js';
 
 /**
  * Check if error is a file-not-found error
+ *
+ * LIMITATION: Uses string matching which may not work with:
+ * - Internationalized error messages (non-English locales)
+ * - Different Docker versions with different error formats
+ * - Custom Docker installations with modified error messages
+ *
+ * Users can manually refresh cache with compose:refresh if automatic
+ * invalidation fails to detect stale entries.
  */
 function isFileNotFoundError(error: unknown): boolean {
   return error instanceof Error &&
@@ -1496,20 +1597,9 @@ export async function withCacheInvalidation<T>(
 }
 ```
 
-**Step 2: Update Services interface**
+**Step 2: No interface changes needed**
 
-```typescript
-// src/services/interfaces.ts - add ComposeDiscovery to Services
-import type { ComposeDiscovery } from './compose-discovery.js';
-
-export interface Services {
-  dockerService: IDockerService;
-  composeService: IComposeService;
-  containerService: IContainerService;
-  composeDiscovery: ComposeDiscovery;  // Add this
-  // ... other services
-}
-```
+Handlers use `ServiceContainer` directly, which already has typed getter methods.
 
 **Step 3: Update compose handlers using DRY utility**
 
@@ -1517,25 +1607,26 @@ export interface Services {
 // src/tools/handlers/compose.ts - example for composeUp
 import { HostResolver } from '../../services/host-resolver.js';
 import { withCacheInvalidation } from './compose-utils.js';
+import type { ServiceContainer } from '../../services/container.js';
 
 export async function handleComposeUp(
   input: ComposeUpInput,
   hosts: HostConfig[],
-  services: Services
+  container: ServiceContainer
 ): Promise<string> {
   // Resolve host (may auto-resolve if host param omitted)
-  const resolver = new HostResolver(services.composeDiscovery);
+  const resolver = new HostResolver(container.getComposeDiscovery());
   const host = await resolver.resolveHost(hosts, input.host, input.project);
 
   // Execute operation with automatic cache invalidation
   return withCacheInvalidation(
     async () => {
-      const result = await services.composeService.composeUp(host, input.project, input.detach);
+      const result = await container.getComposeService().composeUp(host, input.project, input.detach);
       return formatComposeResult('up', host.name, input.project, result);
     },
     input.project,
     host.name,
-    services.composeDiscovery,
+    container.getComposeDiscovery(),
     'handleComposeUp'
   );
 }
@@ -1557,7 +1648,7 @@ Expected: Successful build
 **Step 5: Commit**
 
 ```bash
-git add src/tools/handlers/compose-utils.ts src/tools/handlers/compose.ts src/services/interfaces.ts
+git add src/tools/handlers/compose-utils.ts src/tools/handlers/compose.ts
 git commit -m "feat: add cache invalidation to compose handlers with DRY utility"
 ```
 
@@ -1705,21 +1796,37 @@ async refreshCache(host: HostConfig): Promise<void> {
   const cacheData = await this.cache.load(host.name);
   const searchPaths = this.getSearchPaths(host, cacheData.searchPaths);
 
-  // Get all projects from both sources
+  // Get all projects from both sources (null indicates failure)
   const dockerProjects = await this.discoverAllFromDockerLs(host);
   const filesystemProjects = await this.discoverAllFromFilesystem(host, searchPaths);
 
-  // Merge results (docker-ls takes precedence)
-  const projects: Record<string, CachedProject> = {};
-
-  for (const project of dockerProjects) {
-    projects[project.name] = project;
+  // Refuse to wipe cache if both methods failed
+  if (dockerProjects === null && filesystemProjects === null) {
+    throw new Error(
+      `Failed to refresh cache for host '${host.name}': ` +
+      `Both docker-ls and filesystem discovery failed. ` +
+      `This may indicate a network or SSH connection issue. ` +
+      `Cache has NOT been modified to prevent data loss.`
+    );
   }
 
-  for (const project of filesystemProjects) {
-    // Don't overwrite docker-ls entries (they're more authoritative)
-    if (!projects[project.name]) {
+  // Merge results (docker-ls takes precedence)
+  // Start with existing cache as fallback
+  const projects: Record<string, CachedProject> = { ...cacheData.projects };
+
+  // Update from successful discoveries only
+  if (dockerProjects !== null) {
+    for (const project of dockerProjects) {
       projects[project.name] = project;
+    }
+  }
+
+  if (filesystemProjects !== null) {
+    for (const project of filesystemProjects) {
+      // Don't overwrite docker-ls entries (they're more authoritative)
+      if (!projects[project.name]) {
+        projects[project.name] = project;
+      }
     }
   }
 
@@ -1733,8 +1840,9 @@ async refreshCache(host: HostConfig): Promise<void> {
 
 /**
  * Discover ALL projects from docker ls (not just one by name)
+ * Returns null on failure to distinguish from empty results
  */
-private async discoverAllFromDockerLs(host: HostConfig): Promise<CachedProject[]> {
+private async discoverAllFromDockerLs(host: HostConfig): Promise<CachedProject[] | null> {
   try {
     const projects = await this.projectLister.listComposeProjects(host);
     return projects
@@ -1750,17 +1858,18 @@ private async discoverAllFromDockerLs(host: HostConfig): Promise<CachedProject[]
       operation: 'discoverAllFromDockerLs',
       metadata: { host: host.name }
     });
-    return [];
+    return null;  // null indicates failure, not empty results
   }
 }
 
 /**
  * Discover ALL projects from filesystem scan
+ * Returns null on failure to distinguish from empty results
  */
 private async discoverAllFromFilesystem(
   host: HostConfig,
   searchPaths: string[]
-): Promise<CachedProject[]> {
+): Promise<CachedProject[] | null> {
   try {
     const files = await this.scanner.findComposeFiles(host, searchPaths);
 
@@ -1785,7 +1894,7 @@ private async discoverAllFromFilesystem(
       operation: 'discoverAllFromFilesystem',
       metadata: { host: host.name, searchPaths }
     });
-    return [];
+    return null;  // null indicates failure, not empty results
   }
 }
 ```
@@ -1797,7 +1906,7 @@ private async discoverAllFromFilesystem(
 export async function handleComposeRefresh(
   input: ComposeRefreshInput,
   hosts: HostConfig[],
-  services: Services
+  container: ServiceContainer
 ): Promise<string> {
   const hostsToRefresh = input.host
     ? hosts.filter(h => h.name === input.host)
@@ -1813,7 +1922,7 @@ export async function handleComposeRefresh(
 
   // Refresh all hosts in parallel
   await Promise.all(
-    hostsToRefresh.map(host => services.composeDiscovery.refreshCache(host))
+    hostsToRefresh.map(host => container.getComposeDiscovery().refreshCache(host))
   );
 
   const hostNames = hostsToRefresh.map(h => h.name).join(', ');
