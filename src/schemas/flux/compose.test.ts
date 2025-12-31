@@ -9,7 +9,8 @@ import {
   composeLogsSchema,
   composeBuildSchema,
   composePullSchema,
-  composeRecreateSchema
+  composeRecreateSchema,
+  composeRefreshSchema
 } from "./compose.js";
 
 describe("Compose Schemas", () => {
@@ -497,6 +498,47 @@ describe("Compose Schemas", () => {
 
       const result = composeRecreateSchema.parse(input);
       expect(result.host).toBeUndefined();
+    });
+  });
+
+  describe("composeRefreshSchema", () => {
+    it("should reject mismatched action", () => {
+      expect(() =>
+        composeRefreshSchema.parse({
+          action: "container",
+          subaction: "refresh",
+          host: "tootie"
+        })
+      ).toThrow();
+    });
+
+    it("should reject mismatched subaction", () => {
+      expect(() =>
+        composeRefreshSchema.parse({
+          action: "compose",
+          subaction: "list",
+          host: "tootie"
+        })
+      ).toThrow();
+    });
+
+    it("should require host parameter", () => {
+      expect(() =>
+        composeRefreshSchema.parse({
+          action: "compose",
+          subaction: "refresh"
+        })
+      ).toThrow();
+    });
+
+    it("should validate minimal refresh", () => {
+      const result = composeRefreshSchema.parse({
+        action: "compose",
+        subaction: "refresh",
+        host: "tootie"
+      });
+      expect(result.action_subaction).toBe("compose:refresh");
+      expect(result.host).toBe("tootie");
     });
   });
 });

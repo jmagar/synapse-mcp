@@ -29,7 +29,8 @@ import {
   composeLogsSchema,
   composeBuildSchema,
   composePullSchema,
-  composeRecreateSchema
+  composeRecreateSchema,
+  composeRefreshSchema
 } from "./compose.js";
 
 import {
@@ -51,7 +52,9 @@ import {
   hostUptimeSchema,
   hostServicesSchema,
   hostNetworkSchema,
-  hostMountsSchema
+  hostMountsSchema,
+  hostPortsSchema,
+  hostDoctorSchema
 } from "./host.js";
 
 /**
@@ -114,7 +117,7 @@ const unwrappedSchemas = [
   containerRecreateSchema,
   containerExecSchema,
   containerTopSchema,
-  // Compose (9)
+  // Compose (10)
   composeListSchema,
   composeStatusSchema,
   composeUpSchema,
@@ -124,6 +127,7 @@ const unwrappedSchemas = [
   composeBuildSchema,
   composePullSchema,
   composeRecreateSchema,
+  composeRefreshSchema,
   // Docker (9)
   dockerInfoSchema,
   dockerDfSchema,
@@ -134,14 +138,16 @@ const unwrappedSchemas = [
   dockerRmiSchema,
   dockerNetworksSchema,
   dockerVolumesSchema,
-  // Host (7)
+  // Host (9)
   hostStatusSchema,
   hostResourcesSchema,
   hostInfoSchema,
   hostUptimeSchema,
   hostServicesSchema,
   hostNetworkSchema,
-  hostMountsSchema
+  hostMountsSchema,
+  hostPortsSchema,
+  hostDoctorSchema
 ].map(unwrapPreprocess);
 
 // Runtime validation: ensure all unwrapped schemas are ZodObjects
@@ -166,12 +172,12 @@ export const FLUX_SUBACTION_COUNT = allSchemas.length;
  * Flux Tool Schema - Docker infrastructure management
  *
  * Actions: 5 (help, container, compose, docker, host)
- * Subactions: 40 total
+ * Subactions: 43 total
  *   - help: 1 (auto-generated documentation)
  *   - container: 14 (list, start, stop, restart, pause, resume, logs, stats, inspect, search, pull, recreate, exec, top)
- *   - compose: 9 (list, status, up, down, restart, logs, build, pull, recreate)
+ *   - compose: 10 (list, status, up, down, restart, logs, build, pull, recreate, refresh)
  *   - docker: 9 (info, df, prune, images, pull, build, rmi, networks, volumes)
- *   - host: 7 (status, resources, info, uptime, services, network, mounts)
+ *   - host: 9 (status, resources, info, uptime, services, network, mounts, ports, doctor)
  *
  * Uses composite discriminator: action_subaction (e.g., "container:list", "help")
  */

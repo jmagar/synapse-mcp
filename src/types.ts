@@ -159,6 +159,7 @@ export interface ComposeProject {
   status: "running" | "partial" | "stopped" | "unknown";
   configFiles: string[];
   services: ComposeServiceInfo[];
+  host?: string;  // Optional field indicating which host the project is on
 }
 
 /**

@@ -12,14 +12,21 @@ services:
       SYNAPSE_PORT: "3000"
       SYNAPSE_CONFIG_FILE: "/app/synapse.config.json"
 
-      # OAuth Configuration (Stateless JWT validation - no Redis needed!)
+      # OAuth Configuration (Pulse Architecture)
       MCP_ENABLE_OAUTH: "${MCP_ENABLE_OAUTH:-false}"
+      MCP_OAUTH_SECRET: "${MCP_OAUTH_SECRET}"
+      MCP_OAUTH_TOKEN_TTL: "${MCP_OAUTH_TOKEN_TTL:-3600}"
       GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+      GOOGLE_REDIRECT_URI: "${GOOGLE_REDIRECT_URI}"
+      REDIS_URL: "redis://synapse-redis:6379"
       SERVER_URL: "${SERVER_URL:-http://localhost:53200}"
 
     volumes:
       - ./synapse.config.json:/app/synapse.config.json:ro
       - ~/.ssh:/root/.ssh:ro  # SSH keys for remote hosts
+    depends_on:
+      - synapse-redis
     networks:
       - synapse-network
     restart: unless-stopped
@@ -29,6 +36,26 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  synapse-redis:
+    image: redis:7-alpine
+    container_name: synapse-redis
+    ports:
+      - "${REDIS_PORT:-53201}:6379"
+    volumes:
+      - synapse-redis-data:/data
+    networks:
+      - synapse-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  synapse-redis-data:
 
 networks:
   synapse-network:

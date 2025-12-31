@@ -11,10 +11,12 @@ import type {
   ComposeLogsInput,
   ComposeBuildInput,
   ComposePullInput,
-  ComposeRecreateInput
+  ComposeRecreateInput,
+  ComposeRefreshInput
 } from '../../schemas/flux/compose.js';
 import { loadHostConfigs } from '../../services/docker.js';
 import { ResponseFormat } from '../../types.js';
+import type { HostConfig } from '../../types.js';
 import {
   formatComposeListMarkdown,
   formatComposeStatusMarkdown
@@ -26,8 +28,10 @@ import {
   handleComposeLogs,
   handleComposeBuild,
   handleComposePull,
-  handleComposeRecreate
+  handleComposeRecreate,
+  handleComposeRefresh
 } from './compose-handlers.js';
+import { HostResolver } from '../../services/host-resolver.js';
 
 /**
  * Handle all compose subactions
@@ -49,15 +53,54 @@ export async function handleComposeAction(
   // Cast to the compose action union type - validated by Zod
   const inp = input as ComposeActionInput;
 
-  // Find the target host
-  const hostConfig = hosts.find(h => h.name === inp.host);
-  if (!hostConfig) {
-    throw new Error(`Host not found: ${inp.host}`);
-  }
-
   switch (inp.subaction) {
     case 'list': {
       const listInput = inp as ComposeListInput;
+
+      // If no host specified, aggregate from ALL hosts
+      if (!listInput.host) {
+        const allProjects = await Promise.all(
+          hosts.map(async (h) => {
+            try {
+              const projects = await composeService.listComposeProjects(h);
+              return projects.map(p => ({ ...p, host: h.name }));
+            } catch (error) {
+              console.error(`Failed to list projects on ${h.name}:`, error);
+              return [];
+            }
+          })
+        );
+
+        let projects = allProjects.flat();
+
+        // Apply name filter
+        if (listInput.name_filter) {
+          const nameFilter = listInput.name_filter;
+          projects = projects.filter(p =>
+            p.name.toLowerCase().includes(nameFilter.toLowerCase())
+          );
+        }
+
+        if (format === ResponseFormat.JSON) {
+          return JSON.stringify(projects, null, 2);
+        }
+
+        // Apply pagination
+        const offset = listInput.offset ?? 0;
+        const limit = listInput.limit ?? 50;
+        const total = projects.length;
+        const paginatedProjects = projects.slice(offset, offset + limit);
+        const hasMore = offset + limit < total;
+
+        return formatComposeListMarkdown(paginatedProjects, 'all-hosts', total, offset, hasMore);
+      }
+
+      // Single host mode (existing logic)
+      const hostConfig = hosts.find(h => h.name === listInput.host);
+      if (!hostConfig) {
+        throw new Error(`Host not found: ${listInput.host}`);
+      }
+
       let projects = await composeService.listComposeProjects(hostConfig);
 
       // Apply name filter if specified
@@ -84,6 +127,21 @@ export async function handleComposeAction(
 
     case 'status': {
       const statusInput = inp as ComposeStatusInput;
+
+      let hostConfig: HostConfig;
+
+      // Use HostResolver for auto-discovery if no host specified
+      if (!statusInput.host) {
+        const resolver = new HostResolver(container.getComposeDiscovery(), hosts);
+        hostConfig = await resolver.resolveHost(statusInput.project, undefined);
+      } else {
+        const found = hosts.find(h => h.name === statusInput.host);
+        if (!found) {
+          throw new Error(`Host not found: ${statusInput.host}`);
+        }
+        hostConfig = found;
+      }
+
       const project = await composeService.getComposeStatus(hostConfig, statusInput.project);
 
       // Apply service filter if specified
@@ -127,92 +185,27 @@ export async function handleComposeAction(
 
     case 'logs': {
       const logsInput = inp as ComposeLogsInput;
-      const options: {
-        tail?: number;
-        since?: string;
-        until?: string;
-        services?: string[];
-      } = {};
-
-      if (logsInput.lines !== undefined) {
-        options.tail = logsInput.lines;
-      }
-      if (logsInput.since) {
-        options.since = logsInput.since;
-      }
-      if (logsInput.until) {
-        options.until = logsInput.until;
-      }
-      if (logsInput.service) {
-        options.services = [logsInput.service];
-      }
-
-      let logs = await composeService.composeLogs(hostConfig, logsInput.project, options);
-
-      // Apply grep filter if specified
-      if (logsInput.grep) {
-        const grepPattern = logsInput.grep;
-        const lines = logs.split('\n');
-        const filtered = lines.filter(line => line.includes(grepPattern));
-        logs = filtered.join('\n');
-      }
-
-      if (format === ResponseFormat.JSON) {
-        return JSON.stringify({ project: logsInput.project, host: hostConfig.name, logs }, null, 2);
-      }
-
-      return `## Logs: ${logsInput.project} (${hostConfig.name})\n\n\`\`\`\n${logs}\n\`\`\``;
+      return handleComposeLogs(logsInput, hosts, container);
     }
 
     case 'build': {
       const buildInput = inp as ComposeBuildInput;
-      const options: {
-        service?: string;
-        noCache?: boolean;
-        pull?: boolean;
-      } = {};
-
-      if (buildInput.service) {
-        options.service = buildInput.service;
-      }
-      if (buildInput.no_cache) {
-        options.noCache = buildInput.no_cache;
-      }
-
-      await composeService.composeBuild(hostConfig, buildInput.project, options);
-      return `Project '${buildInput.project}' build completed on ${hostConfig.name}`;
+      return handleComposeBuild(buildInput, hosts, container);
     }
 
     case 'pull': {
       const pullInput = inp as ComposePullInput;
-      const options: {
-        service?: string;
-        ignorePullFailures?: boolean;
-        quiet?: boolean;
-      } = {};
-
-      if (pullInput.service) {
-        options.service = pullInput.service;
-      }
-
-      await composeService.composePull(hostConfig, pullInput.project, options);
-      return `Project '${pullInput.project}' pull completed on ${hostConfig.name}`;
+      return handleComposePull(pullInput, hosts, container);
     }
 
     case 'recreate': {
       const recreateInput = inp as ComposeRecreateInput;
-      const options: {
-        service?: string;
-        forceRecreate?: boolean;
-        noDeps?: boolean;
-      } = {};
+      return handleComposeRecreate(recreateInput, hosts, container);
+    }
 
-      if (recreateInput.service) {
-        options.service = recreateInput.service;
-      }
-
-      await composeService.composeRecreate(hostConfig, recreateInput.project, options);
-      return `Project '${recreateInput.project}' recreated on ${hostConfig.name}`;
+    case 'refresh': {
+      const refreshInput = inp as ComposeRefreshInput;
+      return handleComposeRefresh(refreshInput, hosts, container);
     }
 
     default: {

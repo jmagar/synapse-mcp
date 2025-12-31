@@ -7,12 +7,14 @@ import {
   handleComposeLogs,
   handleComposeBuild,
   handleComposePull,
-  handleComposeRecreate
+  handleComposeRecreate,
+  handleComposeRefresh
 } from './compose-handlers.js';
 import type { ServiceContainer } from '../../services/container.js';
 import type { ComposeService } from '../../services/compose.js';
 import type { ComposeDiscovery } from '../../services/compose-discovery.js';
-import type { HostResolver } from '../../services/host-resolver.js';
+import type { ComposeScanner } from '../../services/compose-scanner.js';
+import type { ComposeProjectCache } from '../../services/compose-cache.js';
 import type { HostConfig } from '../../types.js';
 import type {
   ComposeUpInput,
@@ -21,7 +23,8 @@ import type {
   ComposeLogsInput,
   ComposeBuildInput,
   ComposePullInput,
-  ComposeRecreateInput
+  ComposeRecreateInput,
+  ComposeRefreshInput
 } from '../../schemas/flux/compose.js';
 
 // Mock loadHostConfigs
@@ -38,6 +41,8 @@ vi.mock('../../services/docker.js', async (importOriginal) => {
 describe('Compose Handlers with Discovery', () => {
   let mockComposeService: Partial<ComposeService>;
   let mockDiscovery: Partial<ComposeDiscovery>;
+  let mockScanner: Partial<ComposeScanner>;
+  let mockCache: Partial<ComposeProjectCache>;
   let mockContainer: Partial<ServiceContainer>;
   let mockHosts: HostConfig[];
 
@@ -52,15 +57,25 @@ describe('Compose Handlers with Discovery', () => {
       composeRecreate: vi.fn().mockResolvedValue('Recreated')
     };
 
-    mockDiscovery = {
-      cache: {
-        removeProject: vi.fn()
-      } as any
+    mockCache = {
+      removeProject: vi.fn(),
+      updateProject: vi.fn().mockResolvedValue(undefined)
     };
+
+    mockScanner = {
+      findComposeFiles: vi.fn().mockResolvedValue([]),
+      parseComposeName: vi.fn().mockResolvedValue(null),
+      extractProjectName: vi.fn().mockReturnValue('test-project')
+    };
+
+    mockDiscovery = {
+      cache: mockCache
+    } as unknown as ComposeDiscovery;
 
     mockContainer = {
       getComposeServiceWithDiscovery: vi.fn().mockReturnValue(mockComposeService),
-      getComposeDiscovery: vi.fn().mockReturnValue(mockDiscovery)
+      getComposeDiscovery: vi.fn().mockReturnValue(mockDiscovery),
+      getComposeScanner: vi.fn().mockReturnValue(mockScanner)
     };
 
     mockHosts = [
@@ -348,6 +363,114 @@ describe('Compose Handlers with Discovery', () => {
       ).rejects.toThrow();
 
       expect(mockDiscovery.cache?.removeProject).toHaveBeenCalledWith('tootie', 'plex');
+    });
+  });
+
+  describe('handleComposeRefresh', () => {
+    it('should throw error for invalid host', async () => {
+      const input: ComposeRefreshInput = {
+        action: 'compose',
+        subaction: 'refresh',
+        action_subaction: 'compose:refresh',
+        host: 'invalid-host'
+      };
+
+      await expect(
+        handleComposeRefresh(input, mockHosts, mockContainer as ServiceContainer)
+      ).rejects.toThrow("Host 'invalid-host' not found");
+    });
+
+    it('should refresh cache with discovered projects', async () => {
+      const input: ComposeRefreshInput = {
+        action: 'compose',
+        subaction: 'refresh',
+        action_subaction: 'compose:refresh',
+        host: 'tootie'
+      };
+
+      // Mock scanner to return compose files
+      (mockScanner.findComposeFiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+        '/opt/stacks/plex/compose.yaml',
+        '/opt/stacks/jellyfin/docker-compose.yml'
+      ]);
+
+      // Mock parseComposeName to return explicit names for first project
+      (mockScanner.parseComposeName as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce('plex-server')
+        .mockResolvedValueOnce(null);
+
+      // Mock extractProjectName for fallback
+      (mockScanner.extractProjectName as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce('plex')
+        .mockReturnValueOnce('jellyfin');
+
+      const result = await handleComposeRefresh(input, mockHosts, mockContainer as ServiceContainer);
+
+      // Verify scanner was called
+      expect(mockScanner.findComposeFiles).toHaveBeenCalled();
+
+      // Verify cache was updated for both projects
+      expect(mockCache.updateProject).toHaveBeenCalledTimes(2);
+
+      // Verify result message
+      expect(result).toContain("Cache refreshed for host 'tootie'");
+      expect(result).toContain('Discovered 2 project(s)');
+      expect(result).toContain('plex-server');
+      expect(result).toContain('jellyfin');
+    });
+
+    it('should handle empty search results', async () => {
+      const input: ComposeRefreshInput = {
+        action: 'compose',
+        subaction: 'refresh',
+        action_subaction: 'compose:refresh',
+        host: 'tootie'
+      };
+
+      // Mock scanner to return no files
+      (mockScanner.findComposeFiles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      const result = await handleComposeRefresh(input, mockHosts, mockContainer as ServiceContainer);
+
+      expect(result).toContain("Cache refreshed for host 'tootie'");
+      expect(result).toContain('Discovered 0 project(s)');
+      expect(mockCache.updateProject).not.toHaveBeenCalled();
+    });
+
+    it('should use default search paths when not configured', async () => {
+      const input: ComposeRefreshInput = {
+        action: 'compose',
+        subaction: 'refresh',
+        action_subaction: 'compose:refresh',
+        host: 'tootie'
+      };
+
+      const hostWithoutSearchPaths = { ...mockHosts[0] };
+      delete (hostWithoutSearchPaths as { composeSearchPaths?: string[] }).composeSearchPaths;
+
+      await handleComposeRefresh(input, [hostWithoutSearchPaths], mockContainer as ServiceContainer);
+
+      // Verify scanner was called (will use defaults internally)
+      expect(mockScanner.findComposeFiles).toHaveBeenCalled();
+    });
+
+    it('should use custom search paths when configured', async () => {
+      const input: ComposeRefreshInput = {
+        action: 'compose',
+        subaction: 'refresh',
+        action_subaction: 'compose:refresh',
+        host: 'tootie'
+      };
+
+      const hostWithCustomPaths = {
+        ...mockHosts[0],
+        composeSearchPaths: ['/custom/path', '/another/path']
+      };
+
+      await handleComposeRefresh(input, [hostWithCustomPaths], mockContainer as ServiceContainer);
+
+      // Verify scanner was called with the host (search paths are read from host.composeSearchPaths)
+      expect(mockScanner.findComposeFiles).toHaveBeenCalledWith(hostWithCustomPaths);
     });
   });
 });

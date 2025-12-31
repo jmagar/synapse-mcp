@@ -13,13 +13,15 @@ vi.mock('../../services/docker.js', async (importOriginal) => {
   return {
     ...actual,
     loadHostConfigs: vi.fn().mockReturnValue([
-      { name: 'tootie', host: 'tootie', protocol: 'http', port: 2375 }
+      { name: 'tootie', host: 'tootie', protocol: 'http', port: 2375 },
+      { name: 'server', host: 'server', protocol: 'http', port: 2375 }
     ])
   };
 });
 
 describe('Compose Handler', () => {
   let mockComposeService: Partial<IComposeService>;
+  let mockDiscovery: any;
   let mockContainer: Partial<ServiceContainer>;
 
   beforeEach(() => {
@@ -35,8 +37,17 @@ describe('Compose Handler', () => {
       composeRecreate: vi.fn()
     };
 
+    mockDiscovery = {
+      cache: {
+        removeProject: vi.fn()
+      },
+      resolveProjectPath: vi.fn()
+    };
+
     mockContainer = {
-      getComposeService: vi.fn().mockReturnValue(mockComposeService)
+      getComposeService: vi.fn().mockReturnValue(mockComposeService),
+      getComposeServiceWithDiscovery: vi.fn().mockReturnValue(mockComposeService),
+      getComposeDiscovery: vi.fn().mockReturnValue(mockDiscovery)
     };
   });
 
@@ -97,6 +108,31 @@ describe('Compose Handler', () => {
       expect(result).toContain('plex');
       expect(result).not.toContain('jellyfin');
     });
+
+    it('should list projects from all hosts when host not specified', async () => {
+      const input: FluxInput = {
+        action: 'compose',
+        subaction: 'list',
+        action_subaction: 'compose:list',
+        response_format: ResponseFormat.MARKDOWN
+      };
+
+      // Mock listComposeProjects to return different projects per host
+      (mockComposeService.listComposeProjects as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce([
+          { name: 'proj1', status: 'running', configFiles: ['/path1'], services: [] }
+        ])
+        .mockResolvedValueOnce([
+          { name: 'proj2', status: 'running', configFiles: ['/path2'], services: [] }
+        ]);
+
+      const result = await handleComposeAction(input, mockContainer as ServiceContainer);
+
+      // Should call listComposeProjects for each host
+      expect(mockComposeService.listComposeProjects).toHaveBeenCalledTimes(2);
+      expect(result).toContain('proj1');
+      expect(result).toContain('proj2');
+    });
   });
 
   describe('status subaction', () => {
@@ -122,6 +158,38 @@ describe('Compose Handler', () => {
       expect(mockComposeService.getComposeStatus).toHaveBeenCalled();
       expect(result).toContain('plex');
       expect(result).toContain('running');
+    });
+
+    it('should auto-resolve host for compose:status when not specified', async () => {
+      const input: FluxInput = {
+        action: 'compose',
+        subaction: 'status',
+        action_subaction: 'compose:status',
+        project: 'plex',
+        response_format: ResponseFormat.MARKDOWN
+      };
+
+      const mockProject: ComposeProject = {
+        name: 'plex',
+        status: 'running',
+        configFiles: ['/config/docker-compose.yml'],
+        services: [
+          { name: 'plex', status: 'running', health: 'healthy' }
+        ]
+      };
+
+      // Mock discovery to simulate finding project ONLY on tootie (first host)
+      (mockDiscovery.resolveProjectPath as ReturnType<typeof vi.fn>) = vi.fn()
+        .mockResolvedValueOnce('/path/to/plex')  // Found on tootie
+        .mockRejectedValueOnce(new Error('Not found'));  // Not found on server
+
+      (mockComposeService.getComposeStatus as ReturnType<typeof vi.fn>).mockResolvedValue(mockProject);
+
+      const result = await handleComposeAction(input, mockContainer as ServiceContainer);
+
+      // Should discover and use the host that has the project
+      expect(mockComposeService.getComposeStatus).toHaveBeenCalled();
+      expect(result).toContain('plex');
     });
   });
 

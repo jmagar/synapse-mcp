@@ -54,8 +54,8 @@ describe('withCacheInvalidation', () => {
     mockDiscovery = {
       cache: {
         removeProject: vi.fn()
-      } as any
-    };
+      }
+    } as ComposeDiscovery;
   });
 
   it('should execute operation and return result on success', async () => {

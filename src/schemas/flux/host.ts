@@ -128,7 +128,7 @@ export const hostPortsSchema = z.preprocess(
         .optional(),
       response_format: responseFormatSchema
     })
-    .describe("List all ports in use across all sources (host + docker + compose)")
+    .describe("List all port mappings for containers on a host")
 );
 
 export const hostDoctorSchema = z.preprocess(
@@ -153,7 +153,7 @@ export const hostDoctorSchema = z.preprocess(
         .optional(),
       response_format: responseFormatSchema
     })
-    .describe("Comprehensive health diagnostics")
+    .describe("Run diagnostic checks on host Docker configuration")
 );
 
 // Type exports

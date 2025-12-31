@@ -162,6 +162,19 @@ export const composeRecreateSchema = z.preprocess(
     .describe("Recreate Docker Compose project containers")
 );
 
+export const composeRefreshSchema = z.preprocess(
+  preprocessWithDiscriminator,
+  z
+    .object({
+      action_subaction: z.literal("compose:refresh"),
+      action: z.literal("compose"),
+      subaction: z.literal("refresh"),
+      host: hostSchema,
+      response_format: responseFormatSchema
+    })
+    .describe("Refresh compose project cache by scanning filesystem")
+);
+
 // Type exports for each compose subaction
 export type ComposeListInput = z.infer<typeof composeListSchema>;
 export type ComposeStatusInput = z.infer<typeof composeStatusSchema>;
@@ -172,6 +185,7 @@ export type ComposeLogsInput = z.infer<typeof composeLogsSchema>;
 export type ComposeBuildInput = z.infer<typeof composeBuildSchema>;
 export type ComposePullInput = z.infer<typeof composePullSchema>;
 export type ComposeRecreateInput = z.infer<typeof composeRecreateSchema>;
+export type ComposeRefreshInput = z.infer<typeof composeRefreshSchema>;
 
 /**
  * Union type of all compose action inputs
@@ -186,4 +200,5 @@ export type ComposeActionInput =
   | ComposeLogsInput
   | ComposeBuildInput
   | ComposePullInput
-  | ComposeRecreateInput;
+  | ComposeRecreateInput
+  | ComposeRefreshInput;

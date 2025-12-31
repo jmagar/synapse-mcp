@@ -62,7 +62,7 @@ Both tools include auto-generated help:
 
 ### Tool 1: `flux` - Docker Infrastructure Management
 
-**4 actions, 39 subactions** - State changes, lifecycle control, destructive operations.
+**4 actions, 40 subactions** - State changes, lifecycle control, destructive operations.
 
 #### Container Operations (`action: "container"`) - 14 subactions
 
@@ -83,19 +83,20 @@ Both tools include auto-generated help:
 | `exec` | Execute command inside a container (allowlist validated) |
 | `top` | Show running processes in a container |
 
-#### Docker Compose Operations (`action: "compose"`) - 9 subactions
+#### Docker Compose Operations (`action: "compose"`) - 10 subactions
 
 | Subaction | Description |
 | ---------|-------------|
-| `list` | List Docker Compose projects on a host |
-| `status` | Get status of services in a project |
-| `up` | Start a compose project |
-| `down` | Stop a compose project |
-| `restart` | Restart a compose project |
-| `logs` | Get logs from compose project services |
-| `build` | Build images for a compose project |
-| `pull` | Pull images for a compose project |
-| `recreate` | Force recreate containers in a project |
+| `list` | List Docker Compose projects (host optional, auto-discovers if omitted) |
+| `status` | Get status of services in a project (host optional, auto-discovers if omitted) |
+| `up` | Start a compose project (host optional, auto-discovers if omitted) |
+| `down` | Stop a compose project (host optional, auto-discovers if omitted) |
+| `restart` | Restart a compose project (host optional, auto-discovers if omitted) |
+| `logs` | Get logs from compose project services (host optional, auto-discovers if omitted) |
+| `build` | Build images for a compose project (host optional, auto-discovers if omitted) |
+| `pull` | Pull images for a compose project (host optional, auto-discovers if omitted) |
+| `recreate` | Force recreate containers in a project (host optional, auto-discovers if omitted) |
+| `refresh` | Refresh compose project cache (force rescan) |
 
 #### Docker System Operations (`action: "docker"`) - 9 subactions
 
@@ -162,6 +163,102 @@ Both tools include auto-generated help:
 
 ---
 
+## Compose Auto-Discovery
+
+The MCP server automatically discovers and caches Docker Compose project locations, eliminating the need to specify file paths for every operation.
+
+### How It Works
+
+The discovery system uses a multi-layer approach:
+
+1. **Cache Check**: Looks up project in local cache (`.cache/compose-projects/`)
+2. **Docker List**: Queries `docker compose ls` for running projects
+3. **Filesystem Scan**: Scans configured search paths for compose files
+4. **Error**: Returns error if project not found in any layer
+
+Discovery results are cached for 24 hours (configurable via `COMPOSE_CACHE_TTL_HOURS` environment variable).
+
+### Configuration
+
+Add optional `composeSearchPaths` to your host configuration:
+
+```json
+{
+  "hosts": [
+    {
+      "name": "my-host",
+      "host": "192.168.1.100",
+      "protocol": "ssh",
+      "composeSearchPaths": ["/opt/stacks", "/srv/docker"]
+    }
+  ]
+}
+```
+
+**Default search paths**: `["/compose", "/mnt/cache/compose", "/mnt/cache/code"]` if not specified.
+
+### Optional Host Parameter
+
+Most compose operations accept an optional `host` parameter. When omitted, the system automatically searches all configured hosts in parallel to find the project:
+
+```json
+// Explicit host (faster - no search needed)
+{ "action": "compose", "subaction": "up", "project": "plex", "host": "server1" }
+
+// Auto-discover (searches all hosts in parallel)
+{ "action": "compose", "subaction": "up", "project": "plex" }
+```
+
+Auto-discovery times out after 30 seconds if the project cannot be found on any host. If a project exists on multiple hosts, you'll receive an error asking you to specify the `host` parameter explicitly.
+
+### Cache Management
+
+- **TTL**: 24 hours (default, configurable)
+- **Storage**: `.cache/compose-projects/` directory (gitignored)
+- **Invalidation**: Automatic when operations fail due to stale paths
+- **Manual Refresh**: Use `compose:refresh` subaction
+
+### Manual Cache Refresh
+
+Force a cache refresh by scanning the filesystem:
+
+```json
+// Refresh all hosts
+{ "action": "compose", "subaction": "refresh" }
+
+// Refresh specific host
+{ "action": "compose", "subaction": "refresh", "host": "server1" }
+```
+
+Returns a list of discovered projects with their paths and discovery source (docker-ls or filesystem scan).
+
+### Architecture
+
+```
+┌─────────────┐
+│   Handler   │
+└──────┬──────┘
+       │
+       v
+┌──────────────┐      ┌──────────────┐
+│ HostResolver │─────>│  Discovery   │
+└──────────────┘      └──────┬───────┘
+                             │
+                    ┌────────┴────────┐
+                    v                 v
+             ┌──────────┐      ┌──────────┐
+             │  Cache   │      │ Scanner  │
+             └──────────┘      └──────────┘
+```
+
+**Components**:
+- **HostResolver**: Finds which host contains the project (parallel search)
+- **ComposeDiscovery**: Orchestrates cache, docker-ls, and filesystem scanning
+- **ComposeProjectCache**: File-based cache with TTL validation
+- **ComposeScanner**: Filesystem scanning for compose files (respects max depth of 3)
+
+---
+
 ## Example Usage
 
 ### Flux Tool Examples
@@ -173,8 +270,14 @@ Both tools include auto-generated help:
 // Restart a container
 { "tool": "flux", "action": "container", "subaction": "restart", "container_id": "plex", "host": "tootie" }
 
-// Start a compose project
+// Start a compose project (auto-discovers location and host)
+{ "tool": "flux", "action": "compose", "subaction": "up", "project": "media-stack" }
+
+// Start a compose project on specific host
 { "tool": "flux", "action": "compose", "subaction": "up", "host": "tootie", "project": "media-stack" }
+
+// Refresh compose project cache
+{ "tool": "flux", "action": "compose", "subaction": "refresh" }
 
 // Get host resources
 { "tool": "flux", "action": "host", "subaction": "resources", "host": "tootie" }
@@ -226,6 +329,8 @@ pnpm install
 # Build
 pnpm run build
 ```
+
+The server will create a `.cache/compose-projects/` directory for storing discovered project locations. This directory is automatically gitignored.
 
 ## Configuration
 
@@ -645,10 +750,10 @@ synapse-mcp/
 ### Key Architectural Decisions
 
 **V3 Schema Refactor - Two Tools Pattern**:
-- **Flux**: 4 actions (container, compose, docker, host) with 39 total subactions
+- **Flux**: 4 actions (container, compose, docker, host) with 40 total subactions
 - **Scout**: 11 actions (9 simple + 2 with subactions) for 16 total operations
 - Clean separation: Flux = Docker/state changes, Scout = SSH/read operations
-- Total: 55 discriminator keys across both tools
+- Total: 56 discriminator keys across both tools
 
 **Discriminated Union for O(1) Validation**:
 - **Flux**: Composite `action_subaction` discriminator (`container:list`, `compose:up`, etc.)

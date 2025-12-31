@@ -80,9 +80,9 @@ describe('FluxSchema', () => {
     })).toThrow();
   });
 
-  it('should count 39 total subactions', () => {
+  it('should count 43 total subactions', () => {
     // Use exported constant instead of accessing Zod internals
-    expect(FLUX_SUBACTION_COUNT).toBe(39);
+    expect(FLUX_SUBACTION_COUNT).toBe(43);
   });
 
   it('should successfully unwrap preprocessed schemas', () => {

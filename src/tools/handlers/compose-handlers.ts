@@ -8,7 +8,8 @@ import type {
   ComposeLogsInput,
   ComposeBuildInput,
   ComposePullInput,
-  ComposeRecreateInput
+  ComposeRecreateInput,
+  ComposeRefreshInput
 } from '../../schemas/flux/compose.js';
 import { HostResolver } from '../../services/host-resolver.js';
 import { withCacheInvalidation } from './compose-utils.js';
@@ -22,7 +23,6 @@ function formatComposeResult(
   projectName: string,
   result?: string
 ): string {
-  const action = operation.charAt(0).toUpperCase() + operation.slice(1);
   return `Project '${projectName}' ${operation} completed on ${hostName}${result ? `\n${result}` : ''}`;
 }
 
@@ -149,8 +149,9 @@ export async function handleComposeLogs(
 
       // Apply grep filter if specified
       if (input.grep) {
+        const grepPattern = input.grep;
         const lines = logs.split('\n');
-        const filtered = lines.filter(line => line.includes(input.grep!));
+        const filtered = lines.filter(line => line.includes(grepPattern));
         logs = filtered.join('\n');
       }
 
@@ -275,4 +276,42 @@ export async function handleComposeRecreate(
     container.getComposeDiscovery(),
     'handleComposeRecreate'
   );
+}
+
+/**
+ * Handle compose refresh operation - scans filesystem and updates cache
+ */
+export async function handleComposeRefresh(
+  input: ComposeRefreshInput,
+  hosts: HostConfig[],
+  container: ServiceContainer
+): Promise<string> {
+  const host = hosts.find(h => h.name === input.host);
+  if (!host) {
+    throw new Error(`Host '${input.host}' not found`);
+  }
+
+  const discovery = container.getComposeDiscovery();
+  const scanner = container.getComposeScanner();
+
+  // Scan filesystem for compose files (scanner uses host.composeSearchPaths internally)
+  const composePaths = await scanner.findComposeFiles(host);
+
+  const projects: string[] = [];
+  for (const composePath of composePaths) {
+    const explicitName = await scanner.parseComposeName(host, composePath);
+    const projectName = explicitName ?? scanner.extractProjectName(composePath);
+
+    // Update cache with discovered project
+    await discovery.cache.updateProject(host.name, projectName, {
+      name: projectName,
+      path: composePath,
+      discoveredFrom: 'scan',
+      lastSeen: new Date().toISOString()
+    });
+
+    projects.push(`${projectName} (${composePath})`);
+  }
+
+  return `Cache refreshed for host '${host.name}'\nDiscovered ${projects.length} project(s):\n${projects.join('\n')}`;
 }
