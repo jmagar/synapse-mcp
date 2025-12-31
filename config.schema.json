@@ -74,6 +74,14 @@
         }
       },
       "required": ["name", "host", "protocol"],
+      "if": {
+        "properties": {
+          "protocol": { "const": "ssh" }
+        }
+      },
+      "then": {
+        "required": ["sshUser"]
+      },
       "additionalProperties": false
     }
   }
