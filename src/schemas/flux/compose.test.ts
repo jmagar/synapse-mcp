@@ -24,15 +24,6 @@ describe("Compose Schemas", () => {
       ).toThrow();
     });
 
-    it("should require host", () => {
-      expect(() =>
-        composeListSchema.parse({
-          action: "compose",
-          subaction: "list"
-        })
-      ).toThrow();
-    });
-
     it("should validate with host", () => {
       const result = composeListSchema.parse({
         action: "compose",
@@ -61,6 +52,16 @@ describe("Compose Schemas", () => {
       });
       expect(result.name_filter).toBe("plex");
     });
+
+    it("should accept compose:list without host parameter", () => {
+      const input = {
+        action: "compose",
+        subaction: "list"
+      };
+
+      const result = composeListSchema.parse(input);
+      expect(result.host).toBeUndefined();
+    });
   });
 
   describe("composeStatusSchema", () => {
@@ -75,7 +76,7 @@ describe("Compose Schemas", () => {
       ).toThrow();
     });
 
-    it("should require host and project", () => {
+    it("should require project", () => {
       expect(() =>
         composeStatusSchema.parse({
           action: "compose",
@@ -103,6 +104,17 @@ describe("Compose Schemas", () => {
         service_filter: "web"
       });
       expect(result.service_filter).toBe("web");
+    });
+
+    it("should accept compose:status without host parameter", () => {
+      const input = {
+        action: "compose",
+        subaction: "status",
+        project: "plex"
+      };
+
+      const result = composeStatusSchema.parse(input);
+      expect(result.host).toBeUndefined();
     });
   });
 
@@ -137,6 +149,17 @@ describe("Compose Schemas", () => {
         detach: false
       });
       expect(result.detach).toBe(false);
+    });
+
+    it("should accept compose:up without host parameter", () => {
+      const input = {
+        action: "compose",
+        subaction: "up",
+        project: "plex"
+      };
+
+      const result = composeUpSchema.parse(input);
+      expect(result.host).toBeUndefined();
     });
   });
 
