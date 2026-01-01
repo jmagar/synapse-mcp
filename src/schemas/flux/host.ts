@@ -4,7 +4,7 @@ import { responseFormatSchema, hostSchema, preprocessWithDiscriminator } from ".
 import { SYSTEMD_SERVICE_NAME_PATTERN } from "../../utils/index.js";
 
 /**
- * Host subaction schemas for Flux tool (7 subactions)
+ * Host subaction schemas for Flux tool (9 subactions)
  */
 
 export const hostStatusSchema = z.preprocess(

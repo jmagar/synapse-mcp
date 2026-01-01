@@ -11,7 +11,7 @@ import {
 import { DEFAULT_LOG_LINES, MAX_LOG_LINES } from "../../constants.js";
 
 /**
- * Compose subaction schemas for Flux tool (9 subactions)
+ * Compose subaction schemas for Flux tool (10 subactions)
  */
 
 export const composeListSchema = z.preprocess(

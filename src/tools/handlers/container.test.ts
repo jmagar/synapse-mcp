@@ -6,6 +6,7 @@ import type { IDockerService } from '../../services/interfaces.js';
 import type { FluxInput } from '../../schemas/flux/index.js';
 import { ResponseFormat } from '../../types.js';
 import { logError } from '../../utils/errors.js';
+import * as dockerModule from '../../services/docker.js';
 
 vi.mock('../../utils/errors.js', () => ({
   logError: vi.fn()
@@ -212,6 +213,149 @@ describe('Container Handler', () => {
 
       expect(mockDockerService.getContainerStats).toHaveBeenCalled();
       expect(result).toContain('5.5');
+    });
+
+    it('should get stats for all running containers without redundant host lookups', async () => {
+      // Mock loadHostConfigs to return test hosts
+      const testHosts = [
+        { name: 'host1', host: 'localhost', protocol: 'http' as const },
+        { name: 'host2', host: 'localhost', protocol: 'http' as const }
+      ];
+      vi.spyOn(dockerModule, 'loadHostConfigs').mockReturnValue(testHosts as any);
+
+      // Setup: 3 containers from different hosts
+      mockDockerService.listContainers.mockResolvedValue([
+        {
+          id: 'abc123',
+          name: 'nginx',
+          image: 'nginx:latest',
+          state: 'running',
+          status: 'Up 2 hours',
+          created: '2024-01-01T00:00:00Z',
+          ports: [],
+          labels: {},
+          hostName: 'host1'
+        },
+        {
+          id: 'def456',
+          name: 'postgres',
+          image: 'postgres:15',
+          state: 'running',
+          status: 'Up 1 hour',
+          created: '2024-01-01T01:00:00Z',
+          ports: [],
+          labels: {},
+          hostName: 'host2'
+        },
+        {
+          id: 'ghi789',
+          name: 'redis',
+          image: 'redis:7',
+          state: 'running',
+          status: 'Up 30 minutes',
+          created: '2024-01-01T01:30:00Z',
+          ports: [],
+          labels: {},
+          hostName: 'host1'
+        }
+      ]);
+
+      // Mock getContainerStats to return different names based on container ID
+      mockDockerService.getContainerStats.mockImplementation(async (containerId: string) => {
+        const nameMap: Record<string, string> = {
+          'abc123': 'nginx',
+          'def456': 'postgres',
+          'ghi789': 'redis'
+        };
+        return {
+          containerId,
+          containerName: nameMap[containerId] || 'unknown',
+          cpuPercent: 5.5,
+          memoryPercent: 10.2,
+          memoryUsage: 100,
+          memoryLimit: 1000,
+          networkRx: 1000,
+          networkTx: 2000,
+          blockRead: 3000,
+          blockWrite: 4000
+        };
+      });
+
+      const result = await handleContainerAction({
+        action: 'container',
+        subaction: 'stats',
+        action_subaction: 'container:stats'
+      } as FluxInput, mockContainer);
+
+      // Should NOT call findContainerHost since hostName is already available
+      expect(mockDockerService.findContainerHost).not.toHaveBeenCalled();
+      // Should call getContainerStats 3 times (once per container)
+      expect(mockDockerService.getContainerStats).toHaveBeenCalledTimes(3);
+      expect(result).toContain('nginx');
+      expect(result).toContain('postgres');
+      expect(result).toContain('redis');
+
+      // Cleanup
+      vi.restoreAllMocks();
+    });
+
+    it('should handle missing host gracefully and log error', async () => {
+      // Mock loadHostConfigs to return test hosts
+      const testHosts = [
+        { name: 'host1', host: 'localhost', protocol: 'http' as const },
+        { name: 'host2', host: 'localhost', protocol: 'http' as const }
+      ];
+      vi.spyOn(dockerModule, 'loadHostConfigs').mockReturnValue(testHosts as any);
+
+      // Container with hostName that doesn't exist in hosts array
+      mockDockerService.listContainers.mockResolvedValue([
+        {
+          id: 'abc123',
+          name: 'nginx',
+          image: 'nginx:latest',
+          state: 'running',
+          status: 'Up 2 hours',
+          created: '2024-01-01T00:00:00Z',
+          ports: [],
+          labels: {},
+          hostName: 'nonexistent-host'
+        }
+      ]);
+
+      mockDockerService.getContainerStats.mockResolvedValue({
+        containerId: 'abc123',
+        containerName: 'nginx',
+        cpuPercent: 5.5,
+        memoryPercent: 10.2,
+        memoryUsage: 100,
+        memoryLimit: 1000,
+        networkRx: 1000,
+        networkTx: 2000,
+        blockRead: 3000,
+        blockWrite: 4000
+      });
+
+      const result = await handleContainerAction({
+        action: 'container',
+        subaction: 'stats',
+        action_subaction: 'container:stats'
+      } as FluxInput, mockContainer);
+
+      // Should NOT call getContainerStats since host was not found
+      expect(mockDockerService.getContainerStats).not.toHaveBeenCalled();
+      // Should log error with context
+      expect(logError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Host not found for container: abc123' }),
+        expect.objectContaining({
+          operation: 'getContainerStats:abc123',
+          metadata: { hostName: 'nonexistent-host' }
+        })
+      );
+      // Result should indicate no running containers found since no valid stats were retrieved
+      expect(result).toBe('No running containers found.');
+
+      // Cleanup
+      vi.restoreAllMocks();
     });
   });
 

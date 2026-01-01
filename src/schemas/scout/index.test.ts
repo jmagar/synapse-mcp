@@ -174,14 +174,14 @@ describe('ScoutSchema', () => {
     })).toThrow();
   });
 
-  it('should have 11 top-level schema options (9 simple + 2 nested)', () => {
+  it('should have 12 top-level schema options (1 help + 9 simple + 2 nested)', () => {
     // ScoutSchema is a z.union, so we can introspect its options
     const schemaOptions = ScoutSchema.options;
 
-    // 9 simple actions + 2 nested discriminators (zfs, logs) = 11 top-level options
-    expect(schemaOptions).toHaveLength(11);
+    // 1 help + 9 simple actions + 2 nested discriminators (zfs, logs) = 12 top-level options
+    expect(schemaOptions).toHaveLength(12);
 
-    // Verify all 11 action types can be parsed by the schema
+    // Verify all 12 action types can be parsed by the schema
     const allActionTypes = [
       { action: 'nodes' },
       { action: 'peek', target: 'host:/path' },
