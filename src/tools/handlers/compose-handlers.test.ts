@@ -445,8 +445,7 @@ describe('Compose Handlers with Discovery', () => {
         host: 'tootie'
       };
 
-      const hostWithoutSearchPaths = { ...mockHosts[0] };
-      delete (hostWithoutSearchPaths as { composeSearchPaths?: string[] }).composeSearchPaths;
+      const { composeSearchPaths: _removed, ...hostWithoutSearchPaths } = mockHosts[0];
 
       await handleComposeRefresh(input, [hostWithoutSearchPaths], mockContainer as ServiceContainer);
 

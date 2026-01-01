@@ -109,7 +109,8 @@ export class ComposeProjectCache {
 
   async removeProject(host: string, projectName: string): Promise<void> {
     const data = await this.load(host);
-    delete data.projects[projectName];
+    const { [projectName]: _removed, ...remaining } = data.projects;
+    data.projects = remaining;
     await this.save(host, data);
   }
 

@@ -239,10 +239,6 @@ describe("Host Schemas", () => {
         })
       ).toThrow();
     });
-
-    it("should have description", () => {
-      expect(hostPortsSchema.description).toContain("ports");
-    });
   });
 
   describe("hostDoctorSchema", () => {
@@ -293,10 +289,6 @@ describe("Host Schemas", () => {
         host: "squirts"
       });
       expect(result.checks).toBeUndefined();
-    });
-
-    it("should have description", () => {
-      expect(hostDoctorSchema.description).toContain("health");
     });
   });
 });

@@ -161,12 +161,20 @@ export async function handleContainerAction(
       const allContainers = await dockerService.listContainers(hosts, { state: 'running' });
       const statsPromises = allContainers.map(async (c) => {
         try {
-          const found = await dockerService.findContainerHost(c.id, hosts);
-          if (!found) return null;
-          const stats = await dockerService.getContainerStats(c.id, found.host);
-          return { stats, host: found.host.name };
+          // ContainerInfo already has hostName populated from listContainers
+          // Use it directly instead of redundant findContainerHost call
+          const host = hosts.find((h) => h.name === c.hostName);
+          if (!host) {
+            logError(
+              new Error(`Host not found for container: ${c.id}`),
+              { operation: `getContainerStats:${c.id}`, metadata: { hostName: c.hostName } }
+            );
+            return null;
+          }
+          const stats = await dockerService.getContainerStats(c.id, host);
+          return { stats, host: host.name };
         } catch (error) {
-          logError(error, { operation: `getContainerStats:${c.id}` });
+          logError(error, { operation: `getContainerStats:${c.id}`, metadata: { hostName: c.hostName } });
           return null;
         }
       });

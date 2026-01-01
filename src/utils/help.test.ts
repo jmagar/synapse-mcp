@@ -4,8 +4,8 @@ import { generateHelp, formatHelpMarkdown, formatHelpJson } from "./help.js";
 import { FluxSchema } from "../schemas/flux/index.js";
 import { ScoutSchema } from "../schemas/scout/index.js";
 
-const EXPECTED_FLUX_ACTION_COUNT = 39; // 14 container + 9 compose + 9 docker + 7 host = 39
-const EXPECTED_SCOUT_ACTION_COUNT = 16; // 9 simple + 3 zfs subactions + 4 logs subactions
+const EXPECTED_FLUX_ACTION_COUNT = 43; // 14 container + 10 compose + 9 docker + 9 host = 42 (host has 9: status, resources, info, uptime, services, network, mounts, ports, doctor) + 1 help = 43
+const EXPECTED_SCOUT_ACTION_COUNT = 17; // 1 help + 9 simple + 3 zfs subactions + 4 logs subactions
 
 describe("Help Handler", () => {
   const testSchema = z.discriminatedUnion("action_subaction", [
@@ -97,10 +97,9 @@ describe("Help Handler", () => {
   });
 
   describe("Integration with FluxSchema", () => {
-    it("should generate help for all 39 flux actions", () => {
+    it("should generate help for all 43 flux actions", () => {
       const help = generateHelp(FluxSchema);
-      // 14 container + 9 compose + 9 docker + 7 host = 39
-      // (networks, volumes implemented)
+      // 1 help + 14 container + 9 compose + 9 docker + 9 host (including ports, doctor)
       expect(help.length).toBe(EXPECTED_FLUX_ACTION_COUNT);
     });
 
@@ -116,9 +115,9 @@ describe("Help Handler", () => {
   });
 
   describe("Integration with ScoutSchema", () => {
-    it("should generate help for all 16 scout actions (9 simple + 3 zfs + 4 logs)", () => {
+    it("should generate help for all 17 scout actions (1 help + 9 simple + 3 zfs + 4 logs)", () => {
       const help = generateHelp(ScoutSchema);
-      // 9 simple + 3 zfs subactions + 4 logs subactions = 16
+      // 1 help + 9 simple + 3 zfs subactions + 4 logs subactions = 17
       expect(help.length).toBe(EXPECTED_SCOUT_ACTION_COUNT);
     });
 

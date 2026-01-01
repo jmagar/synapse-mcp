@@ -76,8 +76,9 @@ export class HostResolver {
 	 */
 	private async findMatchingHosts(projectName: string): Promise<HostConfig[]> {
 		const checkPromise = this.checkAllHosts(projectName);
+		let timeoutId: NodeJS.Timeout | undefined;
 		const timeoutPromise = new Promise<never>((_, reject) => {
-			setTimeout(() => {
+			timeoutId = setTimeout(() => {
 				reject(
 					new HostResolutionError(
 						`Host resolution timed out after ${RESOLUTION_TIMEOUT_MS}ms`,
@@ -86,7 +87,18 @@ export class HostResolver {
 			}, RESOLUTION_TIMEOUT_MS);
 		});
 
-		return Promise.race([checkPromise, timeoutPromise]);
+		try {
+			return await Promise.race([checkPromise, timeoutPromise]);
+		} finally {
+			// Clear timeout to prevent memory leak
+			if (timeoutId !== undefined) {
+				try {
+					clearTimeout(timeoutId);
+				} catch {
+					// Ignore clearTimeout errors
+				}
+			}
+		}
 	}
 
 	/**

@@ -117,6 +117,94 @@ describe("SSHService", () => {
         service.executeSSHCommand(testHost, "sleep", ["10"], { timeoutMs: 100 })
       ).rejects.toThrow(/timeout/);
     });
+
+    it("should clear timeout on successful execution", async () => {
+      const mockConnection = {
+        execCommand: vi.fn().mockResolvedValue({ code: 0, stdout: "success", stderr: "" })
+      } as unknown as NodeSSH;
+
+      (pool.getConnection as ReturnType<typeof vi.fn>).mockResolvedValue(mockConnection);
+
+      // Spy on clearTimeout to verify it's called
+      const clearTimeoutSpy = vi.spyOn(global, "clearTimeout");
+
+      await service.executeSSHCommand(testHost, "echo", ["test"]);
+
+      // Verify clearTimeout was called
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      clearTimeoutSpy.mockRestore();
+    });
+
+    it("should clear timeout when command fails", async () => {
+      const mockConnection = {
+        execCommand: vi.fn().mockResolvedValue({ code: 1, stdout: "", stderr: "error" })
+      } as unknown as NodeSSH;
+
+      (pool.getConnection as ReturnType<typeof vi.fn>).mockResolvedValue(mockConnection);
+
+      const clearTimeoutSpy = vi.spyOn(global, "clearTimeout");
+
+      try {
+        await service.executeSSHCommand(testHost, "false");
+      } catch {
+        // Expected to fail
+      }
+
+      // Verify clearTimeout was called even on failure
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      clearTimeoutSpy.mockRestore();
+    });
+
+    it("should clear timeout when timeout occurs", async () => {
+      const mockConnection = {
+        execCommand: vi.fn().mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(() => resolve({ code: 0, stdout: "slow", stderr: "" }), 5000);
+            })
+        )
+      } as unknown as NodeSSH;
+
+      (pool.getConnection as ReturnType<typeof vi.fn>).mockResolvedValue(mockConnection);
+
+      const clearTimeoutSpy = vi.spyOn(global, "clearTimeout");
+
+      try {
+        await service.executeSSHCommand(testHost, "sleep", ["10"], { timeoutMs: 100 });
+      } catch {
+        // Expected to timeout
+      }
+
+      // Verify clearTimeout was called even on timeout
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      clearTimeoutSpy.mockRestore();
+    });
+
+    it("should release connection even if clearTimeout fails", async () => {
+      const mockConnection = {
+        execCommand: vi.fn().mockResolvedValue({ code: 0, stdout: "test", stderr: "" })
+      } as unknown as NodeSSH;
+
+      (pool.getConnection as ReturnType<typeof vi.fn>).mockResolvedValue(mockConnection);
+
+      // Mock clearTimeout to throw an error (edge case)
+      const originalClearTimeout = global.clearTimeout;
+      global.clearTimeout = vi.fn(() => {
+        throw new Error("clearTimeout failed");
+      });
+
+      try {
+        await service.executeSSHCommand(testHost, "echo", ["test"]);
+      } catch {
+        // May throw due to clearTimeout error
+      } finally {
+        // Restore clearTimeout
+        global.clearTimeout = originalClearTimeout;
+      }
+
+      // Connection should still be released despite clearTimeout failure
+      expect(pool.releaseConnection).toHaveBeenCalledWith(testHost, mockConnection);
+    });
   });
 
   describe("getHostResources", () => {

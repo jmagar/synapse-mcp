@@ -44,10 +44,11 @@ export class SSHService implements ISSHService {
     // Build full command
     const fullCommand = args.length > 0 ? `${command} ${args.join(" ")}` : command;
 
+    let timeoutId: NodeJS.Timeout | undefined;
     try {
       // Execute with timeout
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           reject(new Error(`SSH command timeout after ${timeoutMs}ms: ${command}`));
         }, timeoutMs);
       });
@@ -95,6 +96,15 @@ export class SSHService implements ISSHService {
         error
       );
     } finally {
+      // Clear timeout to prevent memory leak
+      // Wrapped in try-catch to ensure connection release happens even if clearTimeout fails
+      if (timeoutId !== undefined) {
+        try {
+          clearTimeout(timeoutId);
+        } catch {
+          // Ignore clearTimeout errors to ensure cleanup continues
+        }
+      }
       // Always release connection back to pool
       await this.pool.releaseConnection(host, connection);
     }

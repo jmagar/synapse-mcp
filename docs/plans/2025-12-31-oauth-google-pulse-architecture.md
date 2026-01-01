@@ -19,53 +19,9 @@
 **Files:**
 - Modify: `package.json`
 - Create: `pnpm-lock.yaml` (auto-generated)
+- Create: `src/config/deps.test.ts`
 
-**Step 1: Install google-auth-library**
-
-Run:
-```bash
-pnpm add google-auth-library@^10.5.0
-```
-
-Expected: Dependency added to package.json
-
-**Step 2: Install jose for JWT handling**
-
-Run:
-```bash
-pnpm add jose@^6.1.3
-```
-
-Expected: Dependency added to package.json
-
-**Step 3: Install ioredis for Redis client**
-
-Run:
-```bash
-pnpm add ioredis@^5.8.0
-```
-
-Expected: Dependency added to package.json
-
-**Step 4: Install helmet for security headers**
-
-Run:
-```bash
-pnpm add helmet@^8.1.0
-```
-
-Expected: Dependency added to package.json
-
-**Step 5: Install types for development**
-
-Run:
-```bash
-pnpm add -D @types/node
-```
-
-Expected: Dev dependency added
-
-**Step 6: Write test to verify dependencies are available (TDD)**
+**Step 1: Write test to verify dependencies are available (TDD - RED)**
 
 Create `src/config/deps.test.ts`:
 ```typescript
@@ -95,16 +51,35 @@ describe('OAuth Dependencies', () => {
 });
 ```
 
-**Step 7: Run test to verify dependencies**
+**Step 2: Run test to verify it fails (RED)**
 
 Run:
 ```bash
 pnpm test src/config/deps.test.ts
 ```
 
-Expected output: All tests PASS with green checkmarks. Verify all OAuth dependencies are properly installed.
+Expected output: Test FAILS with error messages like "Cannot find module 'google-auth-library'" for each missing dependency. Verify RED state before proceeding.
 
-**Step 8: Commit dependencies**
+**Step 3: Install all OAuth dependencies**
+
+Run:
+```bash
+pnpm add google-auth-library@^10.5.0 jose@^6.1.3 ioredis@^5.8.0 helmet@^8.1.0
+pnpm add -D @types/node
+```
+
+Expected: All dependencies added to package.json in one operation.
+
+**Step 4: Run test to verify it passes (GREEN)**
+
+Run:
+```bash
+pnpm test src/config/deps.test.ts
+```
+
+Expected output: All tests PASS with green checkmarks. Verify GREEN state confirms all OAuth dependencies are properly installed.
+
+**Step 5: Commit dependencies**
 
 ```bash
 git add package.json pnpm-lock.yaml src/config/deps.test.ts
@@ -1516,34 +1491,27 @@ pnpm test src/services/container.oauth.test.ts
 
 Expected output: Test FAILS with "container.getGoogleClient is not a function" or similar. Verify RED state before proceeding.
 
-**Step 7a: Add OAuth imports to ServiceContainer**
+**Step 7: Add OAuth service getters to ServiceContainer**
 
-Modify `src/services/container.ts` - add imports at top:
+Modify `src/services/container.ts`:
 
+**7.1 - Add imports at top of file:**
 ```typescript
-// Add imports at top of file
 import { getOAuthConfig, type OAuthConfig } from '../config/oauth.js';
 import { GoogleOAuthClient } from '../oauth/google-client.js';
 import { TokenManager } from '../oauth/token-manager.js';
 import { RedisOAuthStore } from '../oauth/redis-store.js';
 ```
 
-**Step 7b: Add OAuth private fields to ServiceContainer class**
-
-Add to ServiceContainer class private fields section:
-
+**7.2 - Add private fields to ServiceContainer class:**
 ```typescript
-// Add to private fields
 private oauthConfig?: OAuthConfig;
 private googleClient?: GoogleOAuthClient;
 private tokenManager?: TokenManager;
 private redisStore?: RedisOAuthStore;
 ```
 
-**Step 7c: Add getOAuthConfig method**
-
-Add method to ServiceContainer class:
-
+**7.3 - Add OAuth service getter methods:**
 ```typescript
 getOAuthConfig(): OAuthConfig {
   if (!this.oauthConfig) {
@@ -1551,13 +1519,7 @@ getOAuthConfig(): OAuthConfig {
   }
   return this.oauthConfig;
 }
-```
 
-**Step 7d: Add getGoogleClient method**
-
-Add method to ServiceContainer class:
-
-```typescript
 getGoogleClient(): GoogleOAuthClient | null {
   const config = this.getOAuthConfig();
   if (!config.enabled) return null;
@@ -1571,13 +1533,7 @@ getGoogleClient(): GoogleOAuthClient | null {
   }
   return this.googleClient;
 }
-```
 
-**Step 7e: Add getTokenManager method**
-
-Add method to ServiceContainer class:
-
-```typescript
 getTokenManager(): TokenManager | null {
   const config = this.getOAuthConfig();
   if (!config.enabled) return null;
@@ -1587,13 +1543,7 @@ getTokenManager(): TokenManager | null {
   }
   return this.tokenManager;
 }
-```
 
-**Step 7f: Add getRedisStore method**
-
-Add method to ServiceContainer class:
-
-```typescript
 getRedisStore(): RedisOAuthStore | null {
   const config = this.getOAuthConfig();
   if (!config.enabled) return null;
@@ -1605,12 +1555,8 @@ getRedisStore(): RedisOAuthStore | null {
 }
 ```
 
-**Step 7g: Update cleanup method**
-
-Update the cleanup() method to include Redis:
-
+**7.4 - Update cleanup() method to include Redis:**
 ```typescript
-// Update cleanup() method to include Redis:
 async cleanup(): Promise<void> {
   console.error('Cleaning up resources...');
   if (this.sshPool) {
@@ -1635,80 +1581,9 @@ pnpm test src/services/container.oauth.test.ts
 
 Expected output: All tests PASS with green checkmarks. Verify GREEN state.
 
-**Step 9: Modify index.ts to use OAuth services**
+**Step 9: Wire OAuth routes into HTTP server**
 
-Modify `src/index.ts` - add imports at top:
-
-```typescript
-// Add imports at top
-import { getOAuthConfig, type OAuthConfig } from '../config/oauth.js';
-import { GoogleOAuthClient } from '../oauth/google-client.js';
-import { TokenManager } from '../oauth/token-manager.js';
-import { RedisOAuthStore } from '../oauth/redis-store.js';
-
-// Add to ServiceContainer class:
-private oauthConfig?: OAuthConfig;
-private googleClient?: GoogleOAuthClient;
-private tokenManager?: TokenManager;
-private redisStore?: RedisOAuthStore;
-
-getOAuthConfig(): OAuthConfig {
-  if (!this.oauthConfig) {
-    this.oauthConfig = getOAuthConfig();
-  }
-  return this.oauthConfig;
-}
-
-getGoogleClient(): GoogleOAuthClient | null {
-  const config = this.getOAuthConfig();
-  if (!config.enabled) return null;
-
-  if (!this.googleClient) {
-    this.googleClient = new GoogleOAuthClient(
-      config.googleClientId,
-      config.googleClientSecret,
-      config.googleRedirectUri
-    );
-  }
-  return this.googleClient;
-}
-
-getTokenManager(): TokenManager | null {
-  const config = this.getOAuthConfig();
-  if (!config.enabled) return null;
-
-  if (!this.tokenManager) {
-    this.tokenManager = new TokenManager(config.oauthSecret, config.tokenTTL);
-  }
-  return this.tokenManager;
-}
-
-getRedisStore(): RedisOAuthStore | null {
-  const config = this.getOAuthConfig();
-  if (!config.enabled) return null;
-
-  if (!this.redisStore) {
-    this.redisStore = new RedisOAuthStore(config.redisUrl);
-  }
-  return this.redisStore;
-}
-
-// Update cleanup() method to include Redis:
-async cleanup(): Promise<void> {
-  console.error('Cleaning up resources...');
-  if (this.sshPool) {
-    await this.sshPool.closeAll();
-  }
-  if (this.dockerService) {
-    this.dockerService.clearClients();
-  }
-  if (this.redisStore) {
-    await this.redisStore.close();
-  }
-}
-```
-
-Then, modify `src/index.ts` to use ServiceContainer:
+Modify `src/index.ts` to add OAuth routes using the ServiceContainer:
 
 ```typescript
 // Add imports at top
@@ -1937,7 +1812,7 @@ describe('OAuth Flow Integration', () => {
     const googleClient = new GoogleOAuthClient(
       'test-client-id',
       'test-client-secret',
-      'http://localhost:3001/auth/callback'
+      'http://localhost:53300/auth/callback'
     );
     const tokenManager = new TokenManager('test-secret-key-minimum-32-characters-long', 3600);
     redisStore = new RedisOAuthStore('redis://localhost:6379');
@@ -1948,8 +1823,8 @@ describe('OAuth Flow Integration', () => {
       res.json({ user: req.user });
     });
 
-    server = app.listen(3001);
-    baseUrl = 'http://localhost:3001';
+    server = app.listen(53300);
+    baseUrl = 'http://localhost:53300';
   });
 
   afterAll(async () => {
@@ -2046,16 +1921,35 @@ describe('OAuth Deployment Smoke Tests', () => {
 });
 ```
 
-**Step 4: Run smoke tests**
+**Step 4: Run smoke test with services DOWN to verify RED state**
 
-Run:
+First, ensure services are stopped:
+```bash
+docker compose down
+```
+
+Then run test:
 ```bash
 pnpm test tests/smoke/oauth-deployment.test.ts
 ```
 
-Expected output: All smoke tests PASS with green checkmarks. Verify Docker Compose services are healthy.
+Expected output: Test FAILS with connection errors (ECONNREFUSED or fetch failed). Verify RED state confirms test detects missing services before proceeding.
 
-**Step 5: Final commit**
+**Step 5: Start services and verify GREEN state**
+
+Start services:
+```bash
+docker compose up -d
+```
+
+Wait for services to be ready (5 seconds), then run test again:
+```bash
+pnpm test tests/smoke/oauth-deployment.test.ts
+```
+
+Expected output: All smoke tests PASS with green checkmarks. Verify GREEN state confirms Docker Compose services are healthy.
+
+**Step 6: Final commit**
 
 ```bash
 git add tests/smoke/oauth-deployment.test.ts

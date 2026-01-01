@@ -22,15 +22,60 @@ MCP server for managing Docker infrastructure across multiple homelab hosts.
 ## Architecture
 ```
 src/
-├── index.ts          # Entry point, transport setup
-├── types.ts          # TypeScript interfaces
-├── constants.ts      # Configuration constants
-├── tools/index.ts    # MCP tool registrations
-├── services/
-│   ├── docker.ts     # Docker API client
-│   ├── ssh.ts        # SSH command runner
-│   └── compose.ts    # Docker Compose management
-└── schemas/index.ts  # Zod validation schemas
+├── index.ts                    # MCP server setup with stdio/HTTP transports
+├── types.ts                    # TypeScript type definitions & interfaces
+├── constants.ts                # Configuration constants & defaults
+├── formatters/
+│   └── index.ts                # Markdown/JSON response formatters
+├── tools/
+│   ├── index.ts                # Tool registration (flux & scout)
+│   ├── flux.ts                 # Flux tool: Docker infrastructure (40 actions)
+│   ├── scout.ts                # Scout tool: SSH remote operations (12 actions)
+│   └── handlers/               # Handler functions for each action (21 files)
+│       ├── docker.ts           # Container image & daemon operations
+│       ├── container.ts        # Container lifecycle management
+│       ├── compose.ts          # Docker Compose orchestration
+│       ├── compose-handlers.ts # Compose action dispatchers
+│       ├── compose-utils.ts    # Compose parsing & utilities
+│       ├── host.ts             # Host system operations
+│       ├── scout-simple.ts     # SSH simple commands (9 actions)
+│       ├── scout-logs.ts       # Log file retrieval (4 actions)
+│       └── scout-zfs.ts        # ZFS pool operations (3 actions)
+├── services/                   # Core business logic services
+│   ├── container.ts            # Dependency injection container
+│   ├── interfaces.ts           # Service interface contracts
+│   ├── docker.ts               # dockerode wrapper & API client
+│   ├── compose.ts              # Compose file validation & execution
+│   ├── compose-scanner.ts      # Compose file scanning & parsing
+│   ├── compose-discovery.ts    # Auto-discovery of compose files
+│   ├── compose-cache.ts        # Project state caching
+│   ├── ssh-pool.ts             # SSH connection pooling & lifecycle
+│   ├── ssh-pool-exec.ts        # SSH command execution via pool
+│   ├── ssh-service.ts          # SSH command execution wrapper
+│   ├── ssh-config-loader.ts    # SSH config file parsing
+│   ├── host-resolver.ts        # Host address resolution
+│   ├── local-executor.ts       # Local command execution
+│   ├── file-service.ts         # File operations utility
+│   └── ssh.ts                  # Legacy SSH module
+├── schemas/                    # Zod validation schemas
+│   ├── common.ts               # Shared validators & discriminators
+│   ├── discriminator.ts        # Discriminator utilities
+│   ├── flux/                   # Flux action schemas (40 actions)
+│   │   ├── container.ts
+│   │   ├── compose.ts
+│   │   ├── docker.ts
+│   │   └── host.ts
+│   └── scout/                  # Scout action schemas (12 actions)
+│       ├── simple.ts
+│       ├── logs.ts
+│       └── zfs.ts
+└── utils/                      # Shared utilities
+    ├── errors.ts               # Custom error classes
+    ├── help.ts                 # Help documentation generation
+    ├── command-security.ts     # Input sanitization & validation
+    ├── path-security.ts        # Path traversal prevention
+    ├── host-utils.ts           # Host utility functions
+    └── index.ts                # Utility exports
 ```
 
 ## Code Conventions
@@ -50,15 +95,25 @@ src/
 - Never silently catch without logging
 - See docs/error-handling.md for details
 
-## Adding New Tools (TDD Flow)
-1. Write test for new schema validation
-2. Add Zod schema in src/schemas/index.ts — see test pass
-3. Write test for service function behavior
-4. Add service function — see test pass
-5. Write test for tool registration (optional)
-6. Register tool in src/tools/index.ts
-7. Add formatting helper for markdown output
-8. Update README.md tools table
+## Adding New Actions to Flux or Scout (TDD Flow)
+
+### For new Flux action:
+1. Write test for new schema validation in `src/schemas/flux/[category].test.ts`
+2. Add Zod schema in `src/schemas/flux/[category].ts` (container/compose/docker/host) — verify test passes
+3. Write test for handler function in `src/tools/handlers/[category].test.ts`
+4. Implement handler in `src/tools/handlers/[category].ts` — verify test passes
+5. Register action in `src/tools/flux.ts` with proper dispatch logic
+6. Update help documentation in `src/utils/help.ts`
+7. Update README.md with new action
+
+### For new Scout action:
+1. Write test for new schema validation in `src/schemas/scout/[category].test.ts`
+2. Add Zod schema in `src/schemas/scout/[category].ts` (simple/logs/zfs) — verify test passes
+3. Write test for handler function in `src/tools/handlers/scout-[category].test.ts`
+4. Implement handler in `src/tools/handlers/scout-[category].ts` — verify test passes
+5. Register action in `src/tools/scout.ts` with proper dispatch logic
+6. Update help documentation in `src/utils/help.ts`
+7. Update README.md with new action
 
 ## Security Notes
 - Docker API on port 2375 is insecure without TLS
